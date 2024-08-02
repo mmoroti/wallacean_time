@@ -22,30 +22,34 @@ pwd <- readline() # your gbif.org password
 email <- "mmoroti@gmail.com" # your email 
 
 # DATA FROM RGBIF USING TETRAPODTRAITS AS BACKBONE ----
-# TetraData<-data.table::fread("00_raw_data/TetrapodTraits_1.0.0.csv")
+TetraData<- data.table::fread("00_raw_data/TetrapodTraits_1.0.0.csv")
 
 # download using usageKey
-#tetrapods_gbif <- TetraData %>% 
-#  pull("Scientific.Name") %>% # use fewer names if you want to just test 
-#  name_backbone_checklist() %>%
-#  filter(!matchType == "NONE" & !matchType == "HIGHERRANK") %>%
-#  pull(usageKey) 
+tetrapods_gbif <- TetraData %>% 
+  pull("Scientific.Name") %>% # use fewer names if you want to just test 
+  name_backbone_checklist() %>%
+  filter(!matchType == "NONE" & !matchType == "HIGHERRANK") %>%
+  pull(usageKey) 
 
 # query
-#occ_download(
-#  pred_in("taxonKey", tetrapods_gbif),
-#  pred_in("basisOfRecord", c('PRESERVED_SPECIMEN',
-#                             'OCCURRENCE',
-#                             'MATERIAL_SAMPLE')),
-#  pred("country", "BR"),
-#  format = "SIMPLE_CSV",
-#  user=user,pwd=pwd,email=email
-#)
+occ_download(
+  pred_in("taxonKey", tetrapods_gbif),
+  pred_in("basisOfRecord", c('PRESERVED_SPECIMEN',
+                             'OCCURRENCE',
+                             'MATERIAL_SAMPLE')),
+  pred_in("country", c('BR','AR','BO', 
+                    'CL', 'CO', 'EC',
+                    'GY', 'GF', 'PY',
+                    'PE', 'SR', 'UY',
+                    'VE')),
+  format = "SIMPLE_CSV",
+  user=user,pwd=pwd,email=email
+)
 
-#occ_download_wait('0030633-240626123714530')
+occ_download_wait('0043730-240626123714530')
 
-#tetrapodstraits_gbif <- occ_download_get('0030633-240626123714530') %>%
-#  occ_download_import()
+tetrapodstraits_gbif <- occ_download_get('0043730-240626123714530') %>%
+  occ_download_import()
 
 
 # DATA USING CLASSKEY FILTER IN RGBIF ----
@@ -91,18 +95,46 @@ occ_download(
   pred_in("basisOfRecord", c('PRESERVED_SPECIMEN',
                              'OCCURRENCE',
                              'MATERIAL_SAMPLE')),
-  pred("country", "BR"),
+  pred_in("country", c('BR','AR','BO', 
+                       'CL', 'CO', 'EC',
+                       'GY', 'GF', 'PY',
+                       'PE', 'SR', 'UY',
+                       'VE')),
   format = "SIMPLE_CSV",
   user=user,pwd=pwd,email=email
 )
 
-# occ_download_wait('0031127-240626123714530')
+occ_download_wait('0043734-240626123714530')
+
 data_tetrapods_rgbif <- occ_download_get(
-  '0031127-240626123714530',
+  '0043734-240626123714530',
   path = "00_raw_data"
 ) %>% 
   occ_download_import()
 
+# Explorar diferencas
+length(table(tetrapodstraits_gbif$taxonKey))
+length(unique(data_tetrapods_rgbif$taxonKey))
+
+length(table(tetrapodstraits_gbif$countryCode))
+length(unique(data_tetrapods_rgbif$countryCode))
+
+backbone <- tetrapodstraits_gbif %>%
+  filter(species == "Boana polytaenia")
+
+classkey <- data_tetrapods_rgbif %>%
+       filter(species == "Boana polytaenia")
+
+table(backbone$stateProvince)
+table(classkey$stateProvince)
+
+table(backbone$stateProvince)
+table(classkey$basisOfRecord)
+
+View(classkey %>%
+       filter(stateProvince == "Goiás"))
+
+# Salva o dataset
 save(data_tetrapods_rgbif, 
      file = here(
        "00_raw_data",
