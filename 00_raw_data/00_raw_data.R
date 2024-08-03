@@ -29,11 +29,24 @@ tetrapods_gbif <- TetraData %>%
   pull("Scientific.Name") %>% # use fewer names if you want to just test 
   name_backbone_checklist() %>%
   filter(!matchType == "NONE" & !matchType == "HIGHERRANK") %>%
-  pull(usageKey) 
+  pull(usageKey)
 
+# if we download with usageKey instead of speciesKey, we will use exactly
+# the code number corresponding to the species, for example, in TetrapodTraits
+# we have Hypsiboas polytaenius instead of Boana polytaenia, so we will 
+# download all records of Hypsiboas polytaenius, because it has a different 
+# usageKey than Boana polytaenia the key that defines the "current" identity 
+# of the species, in speciesKey
+tetrapods_gbif_accept <- TetraData %>% 
+  pull("Scientific.Name") %>% # use fewer names if you want to just test 
+  name_backbone_checklist() %>%
+  filter(!matchType == "NONE" & !matchType == "HIGHERRANK") %>%
+  pull(speciesKey)
+
+tetrapods_gbif_accept_na <- na.omit(tetrapods_gbif_accept)
 # query
 occ_download(
-  pred_in("taxonKey", tetrapods_gbif),
+  pred_in("taxonKey", tetrapods_gbif_accept_na),
   pred_in("basisOfRecord", c('PRESERVED_SPECIMEN',
                              'OCCURRENCE',
                              'MATERIAL_SAMPLE')),
@@ -46,13 +59,13 @@ occ_download(
   user=user,pwd=pwd,email=email
 )
 
-occ_download_wait('0043730-240626123714530')
+occ_download_wait('0046879-240626123714530')
 
-tetrapodstraits_gbif <- occ_download_get('0043730-240626123714530') %>%
+data_tetrapodstraits <- occ_download_get('0046879-240626123714530',
+                                         path = "00_raw_data") %>%
   occ_download_import()
 
-
-# DATA USING CLASSKEY FILTER IN RGBIF ----
+# DATA USING CLASSKEY FILTER IN RGBIF
 # Please always cite the download DOI when using this data.
 # https://www.gbif.org/citation-guidelines
 # DOI: 10.15468/dl.x8mf7a
@@ -112,30 +125,62 @@ data_tetrapods_rgbif <- occ_download_get(
 ) %>% 
   occ_download_import()
 
-# Explorar diferencas
-length(table(tetrapodstraits_gbif$taxonKey))
-length(unique(data_tetrapods_rgbif$taxonKey))
+#---- confering  classkey != TetrapodTraitsbackbone
+# basis of record
+nrow(data_tetrapods_rgbif)
+# 2889406
+nrow(data_tetrapodstraits)
+# 2465860
 
-length(table(tetrapodstraits_gbif$countryCode))
-length(unique(data_tetrapods_rgbif$countryCode))
+table(data_tetrapodstraits$basisOfRecord)
+table(data_tetrapods_rgbif$basisOfRecord)
 
-backbone <- tetrapodstraits_gbif %>%
-  filter(species == "Boana polytaenia")
+table(data_tetrapodstraits$taxonRank)
+table(data_tetrapods_rgbif$taxonRank)
 
-classkey <- data_tetrapods_rgbif %>%
-       filter(species == "Boana polytaenia")
+table(data_tetrapodstraits$class)
+table(data_tetrapods_rgbif$class)
 
-table(backbone$stateProvince)
-table(classkey$stateProvince)
+# count records
+data_tetrapodstraits_count <- data_tetrapodstraits %>%
+  group_by(species) %>%
+  summarise(count = n())
 
-table(backbone$stateProvince)
-table(classkey$basisOfRecord)
+data_rgbif_count <- data_tetrapods_rgbif %>%
+  group_by(species) %>%
+  summarise(count = n())
 
-View(classkey %>%
-       filter(stateProvince == "Goiás"))
+comparative_df <- left_join(
+  data_rgbif_count,
+  data_tetrapodstraits_count,
+  by = "species")
+
+View(comparative_df %>%
+  filter(count.x != count.y) %>%
+  mutate(dif = count.x - count.y)) # apenas 43 spp possuem 
+                              # diferencas nos numeros de registros, mas diferencas
+                              # pequenas
+
+View(comparative_df %>%
+       filter(if_any(everything(), is.na))) # 1169 especies diferentes, ou seja,
+                                            # nao estavam no backbone do tetrapodtraits
+
+# checar o vazio em species do rgbif 
+### apenas duas tem linhas com coluna  'species' vazias, ou seja, a diferenca
+# dos dois df em 377,040 a menos eh por isso
+blank_rgbif <- data_tetrapods_rgbif %>%
+  filter(species == "")
+
+table(blank_rgbif$taxonRank) 
+
+glue::glue("So, {nrow(blank_rgbif)} occurrences correspond to records that have \\
+not been identified to the species level. Make the \\
+difference in records between the two dataframes only \\
+be {(nrow(data_tetrapods_rgbif) - nrow(data_tetrapodstraits)) - nrow(blank_rgbif)} "
+)
 
 # Salva o dataset
-save(data_tetrapods_rgbif, 
+save(data_tetrapodstraits, 
      file = here(
        "00_raw_data",
        "data_tetrapods_brasil.RData")
