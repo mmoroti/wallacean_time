@@ -183,5 +183,5 @@ be {(nrow(data_tetrapods_rgbif) - nrow(data_tetrapodstraits)) - nrow(blank_rgbif
 save(data_tetrapodstraits, 
      file = here(
        "00_raw_data",
-       "data_tetrapods_brasil.RData")
+       "data_tetrapods_southamerica.RData")
      )
