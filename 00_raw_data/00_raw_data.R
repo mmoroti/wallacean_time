@@ -1,7 +1,9 @@
+# TODO adaptar para usar o ambiente virtual
 # Functions and packages ----
 install.load.package <- function(x) {
   if (!require(x, character.only = TRUE)) {
-    install.packages(x, repos = "http://cran.us.r-project.org")
+    renv::restore()
+    #install.packages(x, repos = "http://cran.us.r-project.org")
   }
   require(x, character.only = TRUE)
 }
@@ -10,7 +12,8 @@ install.load.package <- function(x) {
 package_vec <- c(
   "rgbif",
   "tidyverse",
-  "here"
+  "here",
+  "data.table"
 )
 
 ## executing install & load for each package
@@ -24,29 +27,25 @@ email <- "mmoroti@gmail.com" # your email
 # DATA FROM RGBIF USING TETRAPODTRAITS AS BACKBONE ----
 TetraData<- data.table::fread("00_raw_data/TetrapodTraits_1.0.0.csv")
 
-# download using usageKey
-tetrapods_gbif <- TetraData %>% 
-  pull("Scientific.Name") %>% # use fewer names if you want to just test 
-  name_backbone_checklist() %>%
-  filter(!matchType == "NONE" & !matchType == "HIGHERRANK") %>%
-  pull(usageKey)
-
 # if we download with usageKey instead of speciesKey, we will use exactly
 # the code number corresponding to the species, for example, in TetrapodTraits
 # we have Hypsiboas polytaenius instead of Boana polytaenia, so we will 
 # download all records of Hypsiboas polytaenius, because it has a different 
 # usageKey than Boana polytaenia the key that defines the "current" identity 
 # of the species, in speciesKey
-tetrapods_gbif_accept <- TetraData %>% 
+species_list_tetrapods <- TetraData %>% 
   pull("Scientific.Name") %>% # use fewer names if you want to just test 
-  name_backbone_checklist() %>%
-  filter(!matchType == "NONE" & !matchType == "HIGHERRANK") %>%
-  pull(speciesKey)
+  name_backbone_checklist() 
 
-tetrapods_gbif_accept_na <- na.omit(tetrapods_gbif_accept)
+# only matchType with matchType EXACT or FUZZY 
+species_list_tetrapods_key <- species_list_tetrapods %>%
+  dplyr::filter(!is.na(speciesKey)) %>%
+  filter(!matchType == "NONE" & !matchType == "HIGHERRANK") %>%
+  pull(speciesKey) 
+  
 # query
 occ_download(
-  pred_in("taxonKey", tetrapods_gbif_accept_na),
+  pred_in("taxonKey", species_list_tetrapods_key),
   pred_in("basisOfRecord", c('PRESERVED_SPECIMEN',
                              'OCCURRENCE',
                              'MATERIAL_SAMPLE')),
@@ -61,11 +60,23 @@ occ_download(
 
 occ_download_wait('0046879-240626123714530')
 
-data_tetrapodstraits <- occ_download_get('0046879-240626123714530',
+# 11-09-2024
+occ_download_wait('0011974-240906103802322') 
+
+data_tetrapodstraits <- occ_download_get('0011974-240906103802322',
                                          path = "00_raw_data") %>%
   occ_download_import()
 
-# DATA USING CLASSKEY FILTER IN RGBIF
+# Salva o dataset
+save(species_list_tetrapods, # lista com as chaves e os nomes
+     species_list_tetrapods_key, # so as chaves
+     data_tetrapodstraits, # dados baixados
+     file = file.path(
+       "00_raw_data",
+       "tetrapodstraits_data.RData")
+)
+
+# DATA USING CLASSKEY FILTER IN RGBIF ----
 # Please always cite the download DOI when using this data.
 # https://www.gbif.org/citation-guidelines
 # DOI: 10.15468/dl.x8mf7a
@@ -119,13 +130,21 @@ occ_download(
 
 occ_download_wait('0043734-240626123714530')
 
+# 11-09-2024
+occ_download_wait('0012222-240906103802322')
+
 data_tetrapods_rgbif <- occ_download_get(
-  '0043734-240626123714530',
+  '0012222-240906103802322',
   path = "00_raw_data"
 ) %>% 
   occ_download_import()
 
-#---- confering  classkey != TetrapodTraitsbackbone
+save(data_tetrapods_rgbif, 
+     file = file.path(
+       "00_raw_data",
+       "classKey_data.RData"))
+
+# COMPARING  DOWNLOAD RGBIF classKey != TetrapodTraitsbackbone ----
 # basis of record
 nrow(data_tetrapods_rgbif)
 # 2889406
@@ -179,9 +198,123 @@ difference in records between the two dataframes only \\
 be {(nrow(data_tetrapods_rgbif) - nrow(data_tetrapodstraits)) - nrow(blank_rgbif)} "
 )
 
-# Salva o dataset
-save(data_tetrapodstraits, 
+# DATASET BioTIME -----
+rm(list=ls()); gc() # clean local enviroment
+# aqui vou identificar as especies no BioTime pela speciesKey do gbif para 
+# dar o join entre os dois datasets, fazendo com que as nomenclaturas fiquem
+# homogeneizadas 
+biotime_data_raw <- data.table::fread(here(
+  "00_raw_data", 
+  "BioTIMEQuery_24_06_2021",
+  "BioTIMEQuery_24_06_2021.csv"),
+  stringsAsFactors=T)
+
+#biotime_data <- biotime_data_raw %>%
+#  select(STUDY_ID, GENUS_SPECIES, LATITUDE, LONGITUDE, YEAR)
+
+species_list_biotime <- biotime_data_raw %>% 
+  distinct(GENUS_SPECIES, .keep_all = TRUE) %>%
+  mutate(GENUS_SPECIES = as.character(GENUS_SPECIES)) %>%
+  pull("GENUS_SPECIES") %>% 
+  name_backbone_checklist()
+
+tetrapodsKey <- c(212,    # aves
+               11418114, # testudines
+               11592253, # squamata
+               11493978, # crocodylia
+               131,      # amphibia
+               359       # mammals
+)
+
+species_list_biotime_key <- species_list_biotime %>%
+  dplyr::filter(!matchType == "NONE" & !matchType == "HIGHERRANK") %>%
+  dplyr::filter(classKey %in% tetrapodsKey) %>%
+  dplyr::select(verbatim_name, speciesKey) %>% 
+  dplyr::filter(!is.na(speciesKey)) # remover os que nao tem chave, 
+                                    # pois nao foram encontrados
+                                    # correspondentes no gbif
+
+biotime_data_key <- right_join(
+  biotime_data_raw,
+  species_list_biotime_key,
+  by = c("GENUS_SPECIES" = "verbatim_name"))
+
+save(species_list_biotime, # backbone do rgbif
+     species_list_biotime_key, # lista das spp no biotime + chaves
+     biotime_data_key, # dataset biotime filtrado pelo backbone
      file = here(
        "00_raw_data",
-       "data_tetrapods_southamerica.RData")
-     )
+       "biotime_data.RData")
+)
+load(file.path(
+  "00_raw_data",
+  "biotime_data.RData"))
+
+# DATASET specieslink -----
+rm(list=ls()); gc() # clean local enviroment
+
+# if don't necessary rerun backbone
+load(file.path(
+  "00_raw_data",
+  "splinks_backbonelist.RData"))
+
+splink_data_raw <- data.table::fread(file.path(
+  "00_raw_data", 
+  "speciesLink-20240909151829-0009656",
+  "20240909151829-0009656.txt"),
+  stringsAsFactors=T)
+
+names(splink_data_raw)
+
+table(splink_data_raw$basisofrecord)
+table(splink_data_raw$kingdom)
+table(splink_data_raw$taxonclass)
+
+splink_data <- splink_data_raw %>%
+  filter(basisofrecord == "PreservedSpecimen" | 
+           basisofrecord == "Occurrence") %>%
+  filter(kingdom %in% c("Animalia", "Animalia; Animalia", "Annimalia"))
+
+table(splink_data$basisofrecord)
+table(splink_data$kingdom)
+table(splink_data$taxonclass)
+
+# if you need rerun name_backbone_checklist, use this
+species_list_splink <- splink_data %>% 
+  distinct(scientificname, .keep_all = TRUE) %>%
+  mutate(scientificname = as.character(scientificname)) %>%
+  pull("scientificname") %>% 
+  name_backbone_checklist()
+
+names(species_list_splink)
+
+# filtrar per classKey
+tetrapodsKey <- c(212,    # aves
+                  11418114, # testudines
+                  11592253, # squamata
+                  11493978, # crocodylia
+                  131,      # amphibia
+                  359       # mammals
+)
+
+species_list_splink_key <- species_list_splink %>%
+  dplyr::filter(!matchType == "NONE" & !matchType == "HIGHERRANK") %>%
+  dplyr::filter(classKey %in% tetrapodsKey) %>%
+  dplyr::select(verbatim_name, speciesKey) %>% 
+  dplyr::filter(!is.na(speciesKey)) # remover os que nao tem chave, 
+                                    # pois nao foram encontrados
+                                    # correspondentes no gbif
+names(species_list_splink_key)
+splink_data_key <- right_join(
+  splink_data,
+  species_list_splink_key,
+  by = c("scientificname" = "verbatim_name"))
+
+View(splink_data_key)
+
+save(species_list_splink, 
+     species_list_splink_key, 
+     splink_data_key, 
+     file = file.path(
+      "00_raw_data",
+       "splinks_data.RData"))
