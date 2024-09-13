@@ -68,9 +68,6 @@ occ_download(
   user=user,pwd=pwd,email=email
 )
 
-# past
-occ_download_wait('0046879-240626123714530')
-
 # 11-09-2024
 occ_download_wait('0011974-240906103802322') 
 
@@ -209,7 +206,7 @@ difference in records between the two dataframes only \\
 be {(nrow(data_tetrapods_rgbif) - nrow(data_tetrapodstraits)) - nrow(blank_rgbif)} "
 )
 
-# DATASET BioTIME -----
+# DATASET BioTIME (needs unzip) -----
 rm(list=ls()); gc() # clean local enviroment
 
 # if you don't needs to rerun backbone, use this
@@ -276,14 +273,14 @@ biotime_data_key_precleaned <- right_join(
   by = c("GENUS_SPECIES" = "verbatim_name")) 
 
 save(species_list_biotime, # backbone do rgbif
-     biotime_data_key_precleaned, # lista das spp no biotime + chaves
+     species_list_biotime_key_precleaned, # lista das spp no biotime + chaves
      biotime_data_key_precleaned, # dataset biotime filtrado pelo backbone
      file = file.path(
        "00_raw_data",
        "biotime_data.RData")
 )
 
-# DATASET specieslink -----
+# DATASET specieslink (needs unzip) -----
 rm(list=ls()); gc() # clean local enviroment
 
 # if you don't needs rerun backbone, run this
