@@ -1,4 +1,3 @@
-# TODO adaptar para usar o ambiente virtual
 # Functions and packages ----
 comparative_plot <- function(data_original, data_filtered,
                              year_column, title = "Comparative Plot") {
@@ -44,12 +43,13 @@ package_vec <- c(
 )
 
 # executing install & load for each package
+# TODO adaptar para uso do ambiente virtual renv
 sapply(package_vec, install.load.package)
 
 # GBIF FILTER AND CLEAN ----
 rm(list=ls()); gc() # clean local enviroment
-
 # load data
+start_time <- Sys.time()
 load(file.path(
   "00_raw_data",
   "tetrapodstraits_data.RData")
@@ -153,16 +153,16 @@ data_tetrapods_filtered <- data_tetrapods_filter_spatial_temp %>%
   filter(coordinateUncertaintyInMeters / 1000 <= 100 | is.na(coordinateUncertaintyInMeters)) %>%
   filter(year >1899)
 
-# Use polygons to filter points without natural range of species
-ggplot() +
-  coord_fixed() +
-  wm +
-  geom_point(data = data_tetrapods_filtered,
-             aes(x = decimalLongitude, y = decimalLatitude),
-             colour = "darkred",
-             size = 0.5) +
-  theme_bw()
+# Save data
+save(data_tetrapods_filtered, # dados limpos
+     file = file.path(
+       "01_data_cleaned",
+       "data_gbif_filtered.RData")
+)
+end_time <- Sys.time()
+print(end_time - start_time) # Time difference of 1h49
 
+# check data from gbif ----
 # check difference per species
 length(unique(data_tetrapods_clean$speciesKey)) # 9786 spp
 length(unique(data_tetrapods_filtered$speciesKey)) # 7900 spp
@@ -182,14 +182,43 @@ comparative_plot(data_tetrapods_clean,
                  "year",
                  title = "GBIF dataset")
 
-# Save data
-save(data_tetrapods_filtered, # dados limpos
-     file = file.path(
-       "01_data_cleaned",
-       "data_gbif_filtered.RData")
-)
+# lat 0
+nrow(data_tetrapods_filtered %>%
+       filter(decimalLatitude == 0 & decimalLongitude != 0)) 
+# long 0
+nrow(data_tetrapods_filtered %>%
+       filter(decimalLatitude != 0 & decimalLongitude == 0)) 
+# 0 long 0 lat
+nrow(data_tetrapods_filtered %>%
+       filter(decimalLatitude == 0 & decimalLongitude == 0))
+
+nrow(data_tetrapods_filtered %>% 
+       filter(is.na(year))) # 0 anos com NA
+
+nrow(data_tetrapods_filtered %>%
+       filter(year == 0)) # 0 anos com zero
+
+nrow(data_tetrapods_filtered %>%
+       filter(year > 2024)) # 0 registros depois de 2024
+
+nrow(data_tetrapods_filtered %>%
+       filter(year < 1899)) # 0 nomes antes de 1900
+
+nrow(data_tetrapods_clean) - nrow(data_tetrapods_filtered) 
+
+data_tetrapods_filtered %>% 
+  summarise(missing_lat = sum(is.na(decimalLatitude)),
+            missing_long = sum(is.na(decimalLongitude)), 
+            missing_year = sum(is.na(year))) # without missing data
 
 # BIOTIME FILTER AND CLEAN ----
+rm(list=ls()); gc() # clean local enviroment
+start_time <- Sys.time()
+load(file.path(
+  "00_raw_data",
+  "biotime_data.RData")
+) 
+
 data_biotime_clean <- biotime_data_key_precleaned %>%
   select("speciesKey", "class", "order", "family", "GENUS_SPECIES", 
          "LATITUDE", "LONGITUDE", "YEAR", "STUDY_ID") %>%
@@ -206,7 +235,74 @@ data_biotime_clean %>%
             missing_long = sum(is.na(decimalLongitude)), 
             missing_year = sum(is.na(year))) # without missing data
 
-summary(data_biotime_clean$decimalLatitude)
+flags <- clean_coordinates(x = data_biotime_clean, 
+                           lon = "decimalLongitude", 
+                           lat = "decimalLatitude",
+                           species = "species",
+                           tests = c("capitals", "centroids",
+                                     "equal", "zeros")) # EQ = 0
+
+#Exclude problematic records
+data_biotime_filter_spatialpoints <- data_biotime_clean[
+  flags$.summary,
+]
+
+#The flagged records
+# dat_fl <- data_teste[!flags$.summary,]
+# Remove records that are temporal outliers
+flags_temporal <- cf_age(x = data_biotime_filter_spatialpoints,
+                         lon = "decimalLongitude",
+                         lat = "decimalLatitude",
+                         taxon = "species", 
+                         min_age = "year", 
+                         max_age = "year", 
+                         value = "flagged") 
+
+data_biotime_filtered <- data_biotime_filter_spatialpoints[
+  flags_temporal,
+] # TODO arrumar
+
+end_time <- Sys.time()
+print(end_time - start_time)
+
+save(data_biotime_filter_spatialpoints,
+     file = file.path(
+       "01_data_cleaned",
+       "data_biotime_filtered.RData")
+)
+# check data from biotime ----
+data_biotime_clean_compare <- data_biotime_clean %>%
+  filter(year >1899 & year < 2025)
+
+# quantos registros foram perdidos depois do coordscleaned
+nrow(data_biotime_clean_compare) - nrow(data_biotime_filter_spatialpoints)
+
+comparative_plot(data_biotime_clean_compare,
+                 data_biotime_filter_spatialpoints,
+                 "year", title = "BioTime dataset")
+
+# conferencia
+# lat 0
+nrow(data_biotime_filter_spatialpoints %>%
+       filter(decimalLatitude == 0 & decimalLongitude != 0)) 
+# long 0
+nrow(data_biotime_filter_spatialpoints %>%
+       filter(decimalLatitude != 0 & decimalLongitude == 0)) 
+# 0 long 0 lat
+nrow(data_biotime_filter_spatialpoints %>%
+       filter(decimalLatitude == 0 & decimalLongitude == 0))
+
+nrow(data_biotime_filter_spatialpoints %>% 
+       filter(is.na(year))) # 0 anos com NA
+
+nrow(data_biotime_filter_spatialpoints %>%
+       filter(year == 0)) # 0 anos com zero
+
+nrow(data_biotime_filter_spatialpoints %>%
+       filter(year > 2024)) # 0 registros depois de 2024
+
+nrow(data_biotime_filter_spatialpoints %>%
+       filter(year < 1899)) # 0 nomes antes de 1900
 
 # plot time series of biotime
 df_filter <- as.data.frame(table(data_biotime_clean$year)) %>%
@@ -225,11 +321,18 @@ ggplot(df_filter, aes(x = Year, y = Freq)) +
 #       filter(decimalLatitude == 0 | decimalLongitude == 0))
 
 # SPLINK FILTER AND CLEAN ----
-names(splink_data_key_precleaned)
+rm(list=ls()); gc() # clean local enviroment
+# start_time <- Sys.time()
+start_time <- Sys.time()
+load(file.path(
+  "00_raw_data",
+  "splinks_data.RData")
+) 
 
+# names(splink_data_key_precleaned)
 data_splink_clean <- splink_data_key_precleaned %>%
   select("speciesKey", "taxonclass", "ordem", "family", "scientificname", 
-         "latitude", "longitude", "yearcollected") %>%
+         "latitude", "longitude", "yearcollected", "coordinateprecision") %>%
   rename(decimalLatitude = latitude, 
          decimalLongitude = longitude,
          class = taxonclass,
@@ -238,85 +341,126 @@ data_splink_clean <- splink_data_key_precleaned %>%
          year = yearcollected) %>%
   mutate(origin_of_data = "splink") %>%
   mutate(year = na_if(year, "")) %>%
-  mutate(year = as.integer(as.character(year))) 
-  
-names(data_splink_clean)
-nrow(data_splink_clean) # 660.781 ocorrencias
+  mutate(coordinateprecision = na_if(coordinateprecision, "")) %>% 
+  mutate(year = as.integer(as.character(year))) %>%
+  filter(!is.na(year)) 
 
-# alguns casos tem 0 em uma das coordenadas
-# latitude com 0
-nrow(data_splink_clean %>%
+#data_tetrapods_filter$countryCode <-  countrycode(
+#  data_tetrapods_filter$countryCode,
+#  origin =  'iso2c',
+#  destination = 'iso3c')
+
+# invalidity coordinates
+linhas <- c(19875, 20466, 20880, 21001, 28844, 30254, 33799, 34412, 34414, 34417, 
+            34419, 34421, 34423, 34425, 34427, 34428, 34484, 34503, 34505, 34507, 
+            34509, 34543, 34544, 50890, 169028, 170394, 170509, 171025, 171026, 
+            211771, 211792, 211838, 317962, 344777, 410378, 411561, 411826, 411953, 
+            412124, 412125, 413906, 414511, 422472, 424368, 424546, 424563, 426423, 
+            426424, 428909, 429430, 429772, 429885, 430079, 445636, 445642, 445728, 
+            445729, 445730, 445731, 445732, 445733, 445734, 445735, 445736, 445737, 
+            445738, 445739, 445740, 445741, 445742, 445743, 583627)
+data_splink_cleaned <-  data_splink_clean[-linhas, ]
+
+flags <- clean_coordinates(x = data_splink_cleaned, 
+                           lon = "decimalLongitude", 
+                           lat = "decimalLatitude",
+                           species = "species",
+                           tests = c("capitals", "centroids",
+                                     "equal", "zeros")) # EQ = 0.36.
+
+#Exclude problematic records
+data_splink_filter_spatialpoints <- data_splink_cleaned[
+  flags$.summary,
+]
+
+#The flagged records
+# dat_fl <- data_teste[!flags$.summary,]
+
+# Remove records that are temporal outliers
+flags_temporal <- cf_age(x = data_splink_filter_spatialpoints,
+                         lon = "decimalLongitude",
+                         lat = "decimalLatitude",
+                         taxon = "species", 
+                         min_age = "year", 
+                         max_age = "year", 
+                         value = "flagged") # Flagged 16743 records
+
+data_splink_filter_spatial_temp <- data_splink_filter_spatialpoints[
+  flags_temporal,
+]
+nrow(data_splink_filter_spatial_temp) # 368513 registros
+
+# Remove records with low coordinate precision
+#data_tetrapods_filter_spatial_temp %>% 
+#  mutate(Uncertainty = coordinateUncertaintyInMeters / 1000) %>% 
+#  ggplot(aes(x = Uncertainty)) + 
+#  geom_histogram() +
+#  xlab("Coordinate uncertainty in meters") +
+#  theme_bw()
+
+# filter coordinates uncertain > 100km
+# filter years from 1900
+data_splink_filtered <- data_splink_filter_spatial_temp %>%
+  filter(coordinateprecision / 1000 <= 100 | is.na(coordinateprecision)) %>%
+  filter(year >1899 & year < 2025)
+nrow(data_splink_filtered) # 294080
+
+end_time <- Sys.time()
+print(end_time - start_time) # 7min57s
+
+save(data_splink_filtered,
+  file = file.path(
+    "01_data_cleaned",
+    "data_splink_filtered.RData")
+  )
+
+# check data from splink data ----
+# the wrongs years difficult to visualize temporal series tendence 
+data_splink_clean_compare <- data_splink_clean %>%
+  filter(year >1899 & year < 2025)
+
+comparative_plot(data_splink_clean_compare, data_splink_filtered,
+                 "year", title = "splink dataset")
+
+# check difference per species
+length(unique(data_splink_filtered$speciesKey)) # 6264 spp
+length(unique(data_splink_clean_compare$speciesKey)) # 7252 spp
+
+# Comparative plots of original vs filtered GBIF datasets
+comparative_plot(data_splink_clean_compare,
+                 data_splink_filtered,
+                 "year",
+                 title = "splink dataset")
+# lat 0
+nrow(data_splink_filtered %>%
        filter(decimalLatitude == 0 & decimalLongitude != 0)) 
-# longitude com 0
-nrow(data_splink_clean %>%
+# long 0
+nrow(data_splink_filtered %>%
        filter(decimalLatitude != 0 & decimalLongitude == 0)) 
+# 0 long 0 lat
+nrow(data_splink_filtered %>%
+       filter(decimalLatitude == 0 & decimalLongitude == 0))
 
-nrow(data_splink_clean %>%
-  filter(decimalLatitude == 0 & decimalLongitude == 0)) # coordenadas com zero
-# ocorrencias de coordenadas e longitudes iguais a zero = 243.006
+nrow(data_splink_filtered %>% 
+       filter(is.na(year))) # 0 anos com NA
 
-nrow(data_splink_clean %>% 
-  filter(is.na(year))) # 63.167 anos com NA
+nrow(data_splink_filtered %>%
+       filter(year == 0)) # 0 anos com zero
 
-nrow(data_splink_clean %>%
-       filter(year == 0)) # 605 anos com zero
+nrow(data_splink_filtered %>%
+       filter(year > 2024)) # 0 registros depois de 2024
 
-nrow(data_splink_clean %>%
-       filter(year > 2024)) # 6 registros depois de 2024
+nrow(data_splink_filtered %>%
+       filter(year < 1899)) # 0 nomes antes de 1900
 
-nrow(data_splink_clean %>%
-       filter(year < 1756)) # 1017 nomes antes de linneu, muitos 1111 e 0
+nrow(data_splink_clean) - nrow(data_splink_filtered) # 303.534
 
-nrow(data_splink_clean %>%
-  filter(year > 1755 & year <2025)) # 596.591
-
-# remove coordenadas com 0 na lat e na long
-# filtra dados sem ano
-data_splink_filter <- data_splink_clean %>%
-  filter(!(decimalLatitude == 0 & decimalLongitude == 0)) %>% 
-  filter(!is.na(year)) %>%
-  filter(year > 1755 & year <2025)
-
-nrow(data_splink_clean) - nrow(data_splink_filter) # 269.489 occ removed
-
-data_splink_filter %>% 
+data_splink_filtered %>% 
   summarise(missing_lat = sum(is.na(decimalLatitude)),
             missing_long = sum(is.na(decimalLongitude)), 
             missing_year = sum(is.na(year))) # without missing data
 
-# the wrongs years difficult to visualize temporal series tendence 
-data_splink_clean_compare <- data_splink_clean %>%
-  filter(!is.na(year)) %>%
-  filter(year > 1755 & year < 2025)
-
-comparative_plot(data_splink_clean_compare, data_splink_filter,
-                "year", title = "splink dataset")
-
-save(
-  data_tetrapods_filter,
-  data_biotime_clean, 
-  data_splink_filter,
-  file = file.path(
-    "01_data_cleaned",
-    "occurences_filter_data.RData")
-  )
-
-
 # UNIFYING OCCURENCES DATA ---- 
-# load data
-load(file.path(
-  "01_data_cleaned",
-  "data_gbif_cleaned.RData")
-) 
-load(file.path(
-  "01_data_cleaned",
-  "data_biotime_cleaned.RData")
-)
-load(file.path(
-  "01_data_cleaned",
-  "data_splink_cleaned.RData")
-)
-
 # TODO aqui vai ser necessario checar quando usarmos dados globais
 # a maioria sao de especies fora da america do sul
 # por isso estamos perdendo tantos dados aqui
@@ -331,8 +475,21 @@ load(file.path(
 #nrow(key_losing) # 1022095 occurences
 #View(key_losing %>%
 #  distinct(speciesKey, .keep_all = TRUE))
-rm(list=ls()); gc() # clean local enviroment
 
+# load data
+rm(list=ls()); gc() # clean local enviroment
+load(file.path(
+  "01_data_cleaned",
+  "data_gbif_filtered.RData")
+) 
+load(file.path(
+  "01_data_cleaned",
+  "data_biotime_filtered.RData")
+)
+load(file.path(
+  "01_data_cleaned",
+  "data_splink_filtered.RData")
+)
 # load data
 load(file.path(
   "01_data_cleaned",
@@ -340,32 +497,37 @@ load(file.path(
 ) 
 
 chaves_perdidas_biotime <- setdiff(
-  data_biotime_clean$speciesKey,
+  data_biotime_filter_spatialpoints$speciesKey,
   data_tetrapods_filtered$speciesKey
 ) 
 
-data_biotime_clean_sa <- data_biotime_clean %>% 
+data_biotime_filter_spatialpoints_sa <- data_biotime_filter_spatialpoints %>% 
   filter(!(speciesKey %in% chaves_perdidas_biotime)) 
 
 chaves_perdidas_splink <- setdiff(
-  data_splink_filter$speciesKey,
+  data_splink_filtered$speciesKey,
   data_tetrapods_filtered$speciesKey
 ) 
 
-data_splink_clean_sa <- data_splink_filter %>% 
+data_splink_filtered_sa <- data_splink_filtered %>% 
   filter(!(speciesKey %in% chaves_perdidas_splink))
 
-glimpse(data_splink_clean_sa)
-glimpse(data_biotime_clean_sa)
+glimpse(data_splink_filtered_sa)
+glimpse(data_biotime_filter_spatialpoints_sa)
 
 data_wallacean_knownledge <- bind_rows(
   data_tetrapods_filtered,
-  data_biotime_clean_sa,
-  data_splink_clean_sa)
+  data_biotime_filter_spatialpoints_sa,
+  data_splink_filtered_sa)
 
+save(data_wallacean_knownledge, # dados limpos
+     file = file.path(
+       "01_data_cleaned",
+       "data_occurences_cleaned.RData"))
+
+# conference of data ----
 table(data_wallacean_knownledge$origin_of_data)
 
-# plot time series
 df_count <- data_wallacean_knownledge %>%
   group_by(year, origin_of_data) %>%
   summarise(Occurences = n()) %>%
@@ -393,12 +555,33 @@ ggplot() +
   scale_fill_brewer(palette = "Set1") +  # Paleta para barras
   scale_color_brewer(palette = "Set1")
 
-nrow(data_wallacean_knownledge) # 2497990 total occurences 
+nrow(data_wallacean_knownledge) # 2226686 total occurences 
 table(data_wallacean_knownledge$class) # occurences per classes 
 
+# POLYGONS AS A FILTER POINTS WITHOUT NATURAL RANGE OF SPECIES ----
+# TODO: precisa passar o coordinatescleaned em todas as bases, unir, e depois
+# fazer o filtro dentro do poligono de uma vez. Para isso, precisamos
+# separar em classes o dataset geral, e unir pela chave speciesKey
+# a funcao faz por especie, precisa estruturar isso no codigo
+# precisamos do shapefile das especies e os pontos de ocorrencia por spp.
+rm(list=ls()); gc() # clean local enviroment
+load(file.path(
+  "01_data_cleaned",
+  "data_occurences_cleaned.RData"))
 
+wm <- borders("world", colour = "gray50", fill = "gray50")
+ggplot() +
+  coord_fixed() +
+  wm +
+  geom_point(data = data_wallacean_knownledge,
+             aes(x = decimalLongitude, y = decimalLatitude),
+             colour = "darkred",
+             size = 0.5) +
+  theme_bw()
 
 # NESTED DATAFRAME ----
+# TODO: o objeto nested devera ja vir com as coordendas filtradas 
+# portanto, nao sera o 'data_wallacean_knownledge' 
 data_tetrapods_nested <- data_wallacean_knownledge %>%
   group_by(speciesKey) %>%  # Agrupa pelo speciesKey
   nest() %>%
