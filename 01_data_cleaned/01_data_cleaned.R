@@ -565,19 +565,42 @@ table(data_wallacean_knownledge$class) # occurences per classes
 # a funcao faz por especie, precisa estruturar isso no codigo
 # precisamos do shapefile das especies e os pontos de ocorrencia por spp.
 rm(list=ls()); gc() # clean local enviroment
-load(file.path(
+# shapefile
+load(file = file.path(
+  "00_raw_data",
+  "shapefiles_data.RData"))
+# occurences data
+load(file = file.path(
   "01_data_cleaned",
   "data_occurences_cleaned.RData"))
 
-wm <- borders("world", colour = "gray50", fill = "gray50")
+# plot points without polygons filter
 ggplot() +
   coord_fixed() +
-  wm +
+  borders("world", colour = "gray50", fill = "gray50") +
   geom_point(data = data_wallacean_knownledge,
              aes(x = decimalLongitude, y = decimalLatitude),
              colour = "darkred",
              size = 0.5) +
   theme_bw()
+
+# deixar apenas as especies que tem poligonos
+data_wallacean_knownledge_sa <- data_wallacean_knownledge %>%
+  filter(speciesKey %in% tetrapod_shapefile$speciesKey)
+# deixar apenas os poligonos que tem dados de distribuicao
+data_tetrapods_sa <- tetrapod_shapefile %>% 
+  filter(speciesKey %in% data_wallacean_knownledge_sa$speciesKey)    
+# tem que ter o mesmo numero de especies (speciesKey)
+length(unique(data_wallacean_knownledge_sa $speciesKey))
+length(unique(data_tetrapods_sa$speciesKey))
+
+# run cc_iucn()
+range_flags <- cc_iucn(x = data_wallacean_knownledge_sa,
+                       range = data_tetrapods_sa,
+                       species = "speciesKey",
+                       lon = "decimalLongitude",
+                       lat = "decimalLatitude",
+                       value = "flagged")
 
 # NESTED DATAFRAME ----
 # TODO: o objeto nested devera ja vir com as coordendas filtradas 
