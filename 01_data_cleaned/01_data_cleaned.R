@@ -161,7 +161,6 @@ save(data_tetrapods_filtered, # dados limpos
 )
 end_time <- Sys.time()
 print(end_time - start_time) # Time difference of 1h49
-
 # check data from gbif ----
 # check difference per species
 length(unique(data_tetrapods_clean$speciesKey)) # 9786 spp
@@ -559,11 +558,6 @@ nrow(data_wallacean_knownledge) # 2226686 total occurences
 table(data_wallacean_knownledge$class) # occurences per classes 
 
 # POLYGONS AS A FILTER POINTS WITHOUT NATURAL RANGE OF SPECIES ----
-# TODO: precisa passar o coordinatescleaned em todas as bases, unir, e depois
-# fazer o filtro dentro do poligono de uma vez. Para isso, precisamos
-# separar em classes o dataset geral, e unir pela chave speciesKey
-# a funcao faz por especie, precisa estruturar isso no codigo
-# precisamos do shapefile das especies e os pontos de ocorrencia por spp.
 rm(list=ls()); gc() # clean local enviroment
 # shapefile
 load(file = file.path(
@@ -591,21 +585,83 @@ data_wallacean_knownledge_sa <- data_wallacean_knownledge %>%
 data_tetrapods_sa <- tetrapod_shapefile %>% 
   filter(speciesKey %in% data_wallacean_knownledge_sa$speciesKey)    
 # tem que ter o mesmo numero de especies (speciesKey)
-length(unique(data_wallacean_knownledge_sa $speciesKey))
-length(unique(data_tetrapods_sa$speciesKey))
+length(unique(data_wallacean_knownledge_sa $speciesKey)) # 2735 spp 
+length(unique(data_tetrapods_sa$speciesKey)) # 2735 spp
 
 # run cc_iucn()
-range_flags <- cc_iucn(x = data_wallacean_knownledge_sa,
-                       range = data_tetrapods_sa,
-                       species = "speciesKey",
-                       lon = "decimalLongitude",
-                       lat = "decimalLatitude",
-                       value = "flagged")
+# terra::vect(data_tetrapods_sa) se funcionar vai dar certo
+# check if list_occurences_clean is empty before run
+unique_species_keys <- unique(data_wallacean_knownledge_sa$speciesKey)
+list_occurences_clean <- data.frame()
+
+start_time <- Sys.time()
+for (species_key in unique_species_keys){
+  # Selecionar o polígono correspondente à espécie
+  especie_poligono <- data_tetrapods_sa %>% filter(speciesKey == species_key)
+  subset_data <- data_wallacean_knownledge_sa %>% filter(speciesKey == species_key) 
+  # Aplicar a função cc_iucn
+  range_flags <- cc_iucn(
+    x = subset_data,
+    range = especie_poligono,
+    species = "speciesKey",
+    lon = "decimalLongitude",
+    lat = "decimalLatitude",
+    value = "flagged"
+  )
+  # Filtrar os dados usando os valores retornados por range_flags
+  subset_data_filtered <- subset_data[range_flags == TRUE, ]
+  list_occurences_clean <- rbind(list_occurences_clean, 
+                                 subset_data_filtered)
+}
+
+end_time <- Sys.time()
+print(end_time - start_time) # Time difference of 
+
+nrow(list_occurences_clean)
+nrow(data_wallacean_knownledge_sa)
+length(unique(list_occurences_clean$speciesKey))
+length(unique(data_tetrapods_sa$speciesKey))
+
+# Compare
+plot_sujo <- ggplot() +
+  coord_fixed() +
+  borders("world", colour = "gray50", fill = "gray50") +
+  geom_point(data = data_wallacean_knownledge_sa,
+             aes(x = decimalLongitude, y = decimalLatitude),
+             colour = "darkred",
+             size = 0.5) +
+  theme_bw()
+
+plot_clean <- ggplot() +
+  coord_fixed() +
+  borders("world", colour = "gray50", fill = "gray50") +
+  geom_point(data = list_occurences_clean,
+             aes(x = decimalLongitude, y = decimalLatitude),
+             colour = "darkred",
+             size = 0.5) +
+  theme_bw()
+
+# quem sao as especies que perdemos?
+View(anti_join(data_tetrapods_sa,
+  list_occurences_clean,
+  by = "speciesKey"))
+
+# Save 
+save(list_occurences_clean, 
+     file = here(
+       "01_data_cleaned",
+       "list_occurences_clean.RData")
+)
 
 # NESTED DATAFRAME ----
 # TODO: o objeto nested devera ja vir com as coordendas filtradas 
 # portanto, nao sera o 'data_wallacean_knownledge' 
-data_tetrapods_nested <- data_wallacean_knownledge %>%
+load(file = here(
+       "01_data_cleaned",
+       "list_occurences_clean.RData")
+)
+
+data_tetrapods_nested <- list_occurences_clean %>%
   group_by(speciesKey) %>%  # Agrupa pelo speciesKey
   nest() %>%
   rename(event_table = data) 
