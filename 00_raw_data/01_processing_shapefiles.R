@@ -47,7 +47,7 @@ mammals_shape_key <- left_join(
   filter(!(is.na(speciesKey))) # 33 spp
 
 # AMPHIBIANS ----
-rm(shape_combined, shape_data, shape_data_valid)
+rm(mammals_shape_filter, mammals_shape_data)
 amphibia_shape_data <- st_read(here::here(
   "Shapefiles",
   "AMPHIBIANS",
@@ -88,7 +88,7 @@ amphibia_shape_key <- left_join(amphibia_shape_filter,
 # View(amphibia_shape_key %>%
 #       filter(is.na(speciesKey)) )
 # REPTILES ----
-rm(amphibia_shape_combined, amphibia_shape_data, amphibia_shape_data_valid)
+rm(amphibia_shape_filter, amphibia_shape_data)
 reptilia_shape_data <- st_read(here::here(
   "Shapefiles",
   "REPTILES",
@@ -194,7 +194,7 @@ tetrapod_shapefile <- rbind(
 )
 # birds_shape_key,)
 end_time <- Sys.time()
-print(end_time - start_time) # Time difference of 1h49
+print(end_time - start_time) # Time difference of 11.62086 mins
 
 save(tetrapod_shapefile,
   file = file.path(
