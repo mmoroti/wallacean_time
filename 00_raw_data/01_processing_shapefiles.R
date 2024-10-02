@@ -241,6 +241,5 @@ tetrapod_shapefile <- rbind(mammals_shape_key,
       #birds_shape_key,)
 
 save(tetrapod_shapefile,
-     file = file.path(
-       "00_raw_data",
-       "shapefiles_data.RData"))
+     file = file.path("00_raw_data",
+      "shapefiles_data.RData")) 
