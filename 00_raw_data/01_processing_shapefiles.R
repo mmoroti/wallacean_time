@@ -127,72 +127,51 @@ reptilia_shape_key <- left_join(reptilia_shape_filter,
   filter(!(is.na(speciesKey))) # 35 spp sem shapefile
 
 # BIRDS ----
-#rm(reptilia_shape_combined, reptilia_shape_data, reptilia_shape_data_valid)
-#birds_shape_data <- st_read(here::here(
-#  "Shapefiles",
-#  "REPTILES",
-#  "REPTILES_PART2.shp"
-#))
-## check data
-#names(birds_shape_data)
-#nrow(birds_shape_data)
-#unique(birds_shape_data$legend) # only extant (resident)
-#table(birds_shape_data$legend) # only extant (resident)
-#
-## we need a list with unique species with one geometry and only extant (resident)
-## st_union doesn't work, it's necessary check invalid geometries when using st_combine
-#birds_shape_combined <- birds_shape_data %>%
-#  filter(legend == "Extant (resident)") %>%
-#  group_by(sci_name) %>%
-#  summarize(geometry = st_combine(geometry))
-#
-#length(unique(birds_shape_data$sci_name)) # 4932 nomes unicos
-#length(unique(birds_shape_combined$sci_name)) # 4905
-#
-## Verifique quais geometrias são inválidas
-## invalid_geoms <- shape_combined %>%
-##  filter(!st_is_valid(geometry))
-## plot(shape_data_valid %>% filter(sci_name == "Bos gaurus"))
-## Corrija as geometrias inválidas
-#birds_shape_data_valid <- birds_shape_combined %>%
-#  mutate(geometry = st_make_valid(geometry))
-#
-## shape_combined <- shape_combined %>%
-##  mutate(geometry = st_collection_extract(geometry, "POLYGON"))
-##
-### Opcional: remover polígonos muito pequenos
-## shape_combined <- shape_combined %>%
-##  mutate(geometry = st_simplify(geometry, dTolerance = 0.001))
-#
-## plot(shape_data_valid %>% filter(sci_name == "Bos gaurus"))
-#
-## Search by the speciesKey in rgbif
-#birds_iucn_key <- birds_shape_data_valid %>%
-#  pull("sci_name") %>% # use fewer names if you want to just test
-#  name_backbone_checklist()
-#
-#table(birds_iucn_key$rank)
-#table(birds_iucn_key$matchType)
-#
-#birds_iucn_key_clean <- birds_iucn_key %>%
-#  filter(rank == "SPECIES") %>%
-#  filter(matchType != "HIGHERRANK") %>%
-#  select("speciesKey", "verbatim_name") %>%
-#  rename("sci_name" = "verbatim_name")
-#
-#birds_shape_key <- left_join(birds_shape_data_valid,
-#  birds_iucn_key_clean,
-#  by = "sci_name"
-#) %>%
-#  filter(!(is.na(speciesKey))) # 32 spp sem shapefile
+rm(reptilia_shape_combined, reptilia_shape_data, reptilia_shape_data_valid)
+birds_shape_data <- st_read(here::here(
+  "Shapefiles",
+  "REPTILES",
+  "REPTILES_PART2.shp"
+))
+birds_shape_data <- sf::st_transform(birds_shape_data, crs = 4326)
+# check data
+names(birds_shape_data)
+nrow(birds_shape_data)
+unique(birds_shape_data$legend) # only extant (resident)
+table(birds_shape_data$legend) # only extant (resident)
+
+birds_shape_filter <- birds_shape_data %>%
+  filter(legend == "Extant (resident)")
+
+birds_shape_list <- unique(birds_shape_filter$sci_name)
+
+# Search by the speciesKey in rgbif
+birds_iucn_key <- birds_shape_list %>%
+  name_backbone_checklist()
+
+table(birds_iucn_key$rank)
+table(birds_iucn_key$matchType)
+
+birds_iucn_key_clean <- birds_iucn_key %>%
+  filter(rank == "SPECIES") %>%
+  filter(matchType != "HIGHERRANK") %>%
+  select("speciesKey", "verbatim_name") %>%
+  rename("sci_name" = "verbatim_name")
+
+birds_shape_key <- left_join(
+  birds_shape_filter,
+  birds_iucn_key_clean,
+  by = "sci_name"
+) %>%
+  filter(!(is.na(speciesKey))) # checar missing
 
 # SAVE SHAPEFILES WITH SPECIESKEY ----
 tetrapod_shapefile <- rbind(
   mammals_shape_key,
   amphibia_shape_key,
-  reptilia_shape_key
+  reptilia_shape_key,
+  birds_shape_key
 )
-# birds_shape_key,)
 end_time <- Sys.time()
 print(end_time - start_time) # Time difference of 11.62086 mins
 
