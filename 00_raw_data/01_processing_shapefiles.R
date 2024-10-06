@@ -91,21 +91,20 @@ amphibia_shape_key <- left_join(amphibia_shape_filter,
 rm(amphibia_shape_filter, amphibia_shape_data)
 reptilia_shape_data <- st_read(here::here(
   "Shapefiles",
-  "REPTILES",
-  "REPTILES_PART2.shp"
+  "REPTILES_GARD",
+  "Gard_1_7_ranges.shp"
 ))
 reptilia_shape_data <- sf::st_transform(reptilia_shape_data, crs = 4326)
+
 # check data
 names(reptilia_shape_data)
-nrow(reptilia_shape_data)
-unique(reptilia_shape_data$legend) # only extant (resident)
-table(reptilia_shape_data$legend) # only extant (resident)
+head(reptilia_shape_data)
+#unique(reptilia_shape_data$legend) # only extant (resident)
+#table(reptilia_shape_data$legend) # only extant (resident)
 
-# we need a list with unique species with one geometry and only extant (resident)
-# st_union doesn't work, it's necessary check invalid geometries when using st_combine
-reptilia_shape_filter <- reptilia_shape_data %>%
-  filter(legend == "Extant (resident)") 
-reptilia_shape_list <- unique(reptilia_shape_filter$sci_name)
+#reptilia_shape_filter <- reptilia_shape_data %>%
+#  filter(legend == "Extant (resident)")
+reptilia_shape_list <- unique(reptilia_shape_data$binomial)
 
 # Search by the speciesKey in rgbif
 reptilia_iucn_key <- reptilia_shape_list %>%
@@ -116,24 +115,26 @@ table(reptilia_iucn_key$matchType)
 
 reptilia_iucn_key_clean <- reptilia_iucn_key %>%
   filter(rank == "SPECIES") %>%
-  filter(matchType != "HIGHERRANK") %>%
+  filter(matchType != "HIGHERRANK" | matchType != "NONE") %>%
   select("speciesKey", "verbatim_name") %>%
-  rename("sci_name" = "verbatim_name")
+  rename("binomial" = "verbatim_name")
 
-reptilia_shape_key <- left_join(reptilia_shape_filter,
+reptilia_shape_key <- left_join(reptilia_shape_data,
   reptilia_iucn_key_clean,
-  by = "sci_name"
+  by = "binomial"
 ) %>%
   filter(!(is.na(speciesKey))) # 35 spp sem shapefile
 
 # BIRDS ----
-rm(reptilia_shape_combined, reptilia_shape_data, reptilia_shape_data_valid)
-birds_shape_data <- st_read(here::here(
-  "Shapefiles",
-  "REPTILES",
-  "REPTILES_PART2.shp"
-))
+rm(reptilia_shape_filter, reptilia_shape_data)
+
+# st_layers("Shapefiles/BOTW_2023_1/BOTW.gdb")
+
+birds_shape_data <- st_read(
+  dsn = "Shapefiles/BIRDS/BOTW.gdb",
+  layer = "All_Species")
 birds_shape_data <- sf::st_transform(birds_shape_data, crs = 4326)
+
 # check data
 names(birds_shape_data)
 nrow(birds_shape_data)
@@ -141,7 +142,9 @@ unique(birds_shape_data$legend) # only extant (resident)
 table(birds_shape_data$legend) # only extant (resident)
 
 birds_shape_filter <- birds_shape_data %>%
-  filter(legend == "Extant (resident)")
+  filter(presence == 1) %>% # only extant 
+  filter(origin == 1) %>% # only native
+  filter(seasonal == 1) # only resident
 
 birds_shape_list <- unique(birds_shape_filter$sci_name)
 
@@ -150,11 +153,11 @@ birds_iucn_key <- birds_shape_list %>%
   name_backbone_checklist()
 
 table(birds_iucn_key$rank)
-table(birds_iucn_key$matchType)
+table(birds_iucn_key_clean$matchType)
 
 birds_iucn_key_clean <- birds_iucn_key %>%
   filter(rank == "SPECIES") %>%
-  filter(matchType != "HIGHERRANK") %>%
+  filter(matchType != "HIGHERRANK" | matchType != "NONE") %>%
   select("speciesKey", "verbatim_name") %>%
   rename("sci_name" = "verbatim_name")
 
@@ -166,14 +169,25 @@ birds_shape_key <- left_join(
   filter(!(is.na(speciesKey))) # checar missing
 
 # SAVE SHAPEFILES WITH SPECIESKEY ----
+mammals_shape <- mammals_shape_key %>%
+ select(speciesKey, sci_name, geometry)
+amphibia_shape <- amphibia_shape_key %>% 
+  select(speciesKey, sci_name, geometry)
+reptilia_shape <- reptilia_shape_key %>% 
+  select(speciesKey, binomial, geometry) %>%
+  rename(sci_name = binomial)
+birds_shape <- birds_shape_key %>% 
+  select(speciesKey, sci_name, Shape) %>%
+  rename(geometry = Shape)
+
 tetrapod_shapefile <- rbind(
-  mammals_shape_key,
-  amphibia_shape_key,
-  reptilia_shape_key,
-  birds_shape_key
+  mammals_shape,
+  amphibia_shape,
+  reptilia_shape,
+  birds_shape
 )
 end_time <- Sys.time()
-print(end_time - start_time) # Time difference of 11.62086 mins
+print(end_time - start_time) # Time difference of 45 min
 
 save(tetrapod_shapefile,
   file = file.path(

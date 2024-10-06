@@ -39,7 +39,9 @@ package_vec <- c(
   "cowplot",
   "tidyverse",
   "here",
-  "CoordinateCleaner"
+  "CoordinateCleaner",
+  "sf",
+  "countrycode"
 )
 
 # executing install & load for each package
@@ -53,7 +55,7 @@ start_time <- Sys.time()
 load(file.path(
   "00_raw_data",
   "tetrapodstraits_data.RData")
-) 
+)
 
 # conferir as chaves dos dados baixados
 # conferir % das colunas var. resp e preditoras
@@ -110,13 +112,14 @@ data_tetrapods_filter$countryCode <-  countrycode(
   origin =  'iso2c',
   destination = 'iso3c')
 
-flags <- clean_coordinates(x = data_tetrapods_filter, 
-                           lon = "decimalLongitude", 
+flags <- clean_coordinates(x = data_tetrapods_filter,
+                           lon = "decimalLongitude",
                            lat = "decimalLatitude",
                            countries = "countryCode",
                            species = "species",
-                           tests = c("capitals", "centroids",
-                                     "equal", "zeros", "countries"))
+                           tests = c("capitals", "centroids", "equal",
+                            "gbif","institutions", "outliers",
+                            "seas","zeros")) # Flagged 58867 of 1153622 records, EQ = 0.05.
 
 #Exclude problematic records
 data_tetrapods_filter_spatialpoints <- data_tetrapods_filter[
@@ -160,7 +163,7 @@ save(data_tetrapods_filtered, # dados limpos
        "data_gbif_filtered.RData")
 )
 end_time <- Sys.time()
-print(end_time - start_time) # Time difference of 1h49
+print(end_time - start_time) # Time difference of 16.41639 mins
 # check data from gbif ----
 # check difference per species
 length(unique(data_tetrapods_clean$speciesKey)) # 9786 spp
@@ -238,8 +241,9 @@ flags <- clean_coordinates(x = data_biotime_clean,
                            lon = "decimalLongitude", 
                            lat = "decimalLatitude",
                            species = "species",
-                           tests = c("capitals", "centroids",
-                                     "equal", "zeros")) # EQ = 0
+                           tests = c("capitals", "centroids", "equal",
+                            "gbif","institutions", "outliers",
+                            "seas","zeros")) # Flagged 397771 of 1982430 records, EQ = 0.2.
 
 #Exclude problematic records
 data_biotime_filter_spatialpoints <- data_biotime_clean[
@@ -252,10 +256,10 @@ data_biotime_filter_spatialpoints <- data_biotime_clean[
 flags_temporal <- cf_age(x = data_biotime_filter_spatialpoints,
                          lon = "decimalLongitude",
                          lat = "decimalLatitude",
-                         taxon = "species", 
-                         min_age = "year", 
-                         max_age = "year", 
-                         value = "flagged") 
+                         taxon = "species",
+                         min_age = "year",
+                         max_age = "year",
+                         value = "flagged")
 
 data_biotime_filtered <- data_biotime_filter_spatialpoints[
   flags_temporal,
@@ -342,7 +346,7 @@ data_splink_clean <- splink_data_key_precleaned %>%
   mutate(year = na_if(year, "")) %>%
   mutate(coordinateprecision = na_if(coordinateprecision, "")) %>% 
   mutate(year = as.integer(as.character(year))) %>%
-  filter(!is.na(year)) 
+  filter(!is.na(year))
 
 #data_tetrapods_filter$countryCode <-  countrycode(
 #  data_tetrapods_filter$countryCode,
@@ -364,8 +368,9 @@ flags <- clean_coordinates(x = data_splink_cleaned,
                            lon = "decimalLongitude", 
                            lat = "decimalLatitude",
                            species = "species",
-                           tests = c("capitals", "centroids",
-                                     "equal", "zeros")) # EQ = 0.36.
+                           tests = c("capitals", "centroids", "equal",
+                            "gbif","institutions", "outliers",
+                            "seas","zeros")) # EQ = 0.39.
 
 #Exclude problematic records
 data_splink_filter_spatialpoints <- data_splink_cleaned[
@@ -379,15 +384,15 @@ data_splink_filter_spatialpoints <- data_splink_cleaned[
 flags_temporal <- cf_age(x = data_splink_filter_spatialpoints,
                          lon = "decimalLongitude",
                          lat = "decimalLatitude",
-                         taxon = "species", 
-                         min_age = "year", 
-                         max_age = "year", 
+                         taxon = "species",
+                         min_age = "year",
+                         max_age = "year",
                          value = "flagged") # Flagged 16743 records
 
 data_splink_filter_spatial_temp <- data_splink_filter_spatialpoints[
   flags_temporal,
 ]
-nrow(data_splink_filter_spatial_temp) # 368513 registros
+nrow(data_splink_filter_spatial_temp) # 348817 registros
 
 # Remove records with low coordinate precision
 #data_tetrapods_filter_spatial_temp %>% 
@@ -402,7 +407,7 @@ nrow(data_splink_filter_spatial_temp) # 368513 registros
 data_splink_filtered <- data_splink_filter_spatial_temp %>%
   filter(coordinateprecision / 1000 <= 100 | is.na(coordinateprecision)) %>%
   filter(year >1899 & year < 2025)
-nrow(data_splink_filtered) # 294080
+nrow(data_splink_filtered) # 279494
 
 end_time <- Sys.time()
 print(end_time - start_time) # 7min57s
@@ -452,7 +457,7 @@ nrow(data_splink_filtered %>%
 nrow(data_splink_filtered %>%
        filter(year < 1899)) # 0 nomes antes de 1900
 
-nrow(data_splink_clean) - nrow(data_splink_filtered) # 303.534
+nrow(data_splink_clean) - nrow(data_splink_filtered) # 318.120
 
 data_splink_filtered %>% 
   summarise(missing_lat = sum(is.na(decimalLatitude)),
@@ -489,11 +494,6 @@ load(file.path(
   "01_data_cleaned",
   "data_splink_filtered.RData")
 )
-# load data
-load(file.path(
-  "01_data_cleaned",
-  "occurences_filter_data.RData")
-) 
 
 chaves_perdidas_biotime <- setdiff(
   data_biotime_filter_spatialpoints$speciesKey,
@@ -514,12 +514,12 @@ data_splink_filtered_sa <- data_splink_filtered %>%
 glimpse(data_splink_filtered_sa)
 glimpse(data_biotime_filter_spatialpoints_sa)
 
-data_wallacean_knownledge <- bind_rows(
+data_occurences_precleaned <- bind_rows(
   data_tetrapods_filtered,
   data_biotime_filter_spatialpoints_sa,
   data_splink_filtered_sa)
 
-save(data_wallacean_knownledge, # dados limpos
+save(data_occurences_precleaned, # dados limpos
      file = file.path(
        "01_data_cleaned",
        "data_occurences_cleaned.RData"))
@@ -559,6 +559,7 @@ table(data_wallacean_knownledge$class) # occurences per classes
 
 # POLYGONS AS A FILTER POINTS WITHOUT NATURAL RANGE OF SPECIES ----
 rm(list=ls()); gc() # clean local enviroment
+start_time <- Sys.time()
 # shapefile
 load(file = file.path(
   "00_raw_data",
@@ -569,59 +570,80 @@ load(file = file.path(
   "data_occurences_cleaned.RData"))
 
 # plot points without polygons filter
-ggplot() +
-  coord_fixed() +
-  borders("world", colour = "gray50", fill = "gray50") +
-  geom_point(data = data_wallacean_knownledge,
-             aes(x = decimalLongitude, y = decimalLatitude),
-             colour = "darkred",
-             size = 0.5) +
-  theme_bw()
+#ggplot() +
+#  coord_fixed() +
+#  borders("world", colour = "gray50", fill = "gray50") +
+#  geom_point(data = data_occurences_precleaned,
+#             aes(x = decimalLongitude, y = decimalLatitude),
+#             colour = "darkred",
+#             size = 0.5) +
+#  theme_bw()
 
 # deixar apenas as especies que tem poligonos
-data_wallacean_knownledge_sa <- data_wallacean_knownledge %>%
+data_wallacean_knownledge_sa <- data_occurences_precleaned %>%
   filter(speciesKey %in% tetrapod_shapefile$speciesKey)
 # deixar apenas os poligonos que tem dados de distribuicao
 data_tetrapods_sa <- tetrapod_shapefile %>% 
-  filter(speciesKey %in% data_wallacean_knownledge_sa$speciesKey)    
+  filter(speciesKey %in% data_occurences_precleaned$speciesKey)
 # tem que ter o mesmo numero de especies (speciesKey)
-length(unique(data_wallacean_knownledge_sa $speciesKey)) # 2735 spp 
-length(unique(data_tetrapods_sa$speciesKey)) # 2735 spp
+length(unique(data_wallacean_knownledge_sa$speciesKey)) # 6548 spp
+length(unique(data_tetrapods_sa$speciesKey)) # 6548 spp
 
 # run cc_iucn()
 # terra::vect(data_tetrapods_sa) se funcionar vai dar certo
+# Tentar converter todas as geometrias para MULTIPOLYGON
+data_tetrapods_sa_transf <- st_cast(data_tetrapods_sa,
+ "MULTIPOLYGON")
+# Verificar se a conversão funcionou
+geometry_types <- st_geometry_type(data_tetrapods_sa_transf)
+table(geometry_types) 
+
 # check if list_occurences_clean is empty before run
 unique_species_keys <- unique(data_wallacean_knownledge_sa$speciesKey)
 list_occurences_clean <- data.frame()
+species_keys_with_errors <- c()
 
-start_time <- Sys.time()
-for (species_key in unique_species_keys){
-  # Selecionar o polígono correspondente à espécie
-  especie_poligono <- data_tetrapods_sa %>% filter(speciesKey == species_key)
-  subset_data <- data_wallacean_knownledge_sa %>% filter(speciesKey == species_key) 
-  # Aplicar a função cc_iucn
-  range_flags <- cc_iucn(
-    x = subset_data,
-    range = especie_poligono,
-    species = "speciesKey",
-    lon = "decimalLongitude",
-    lat = "decimalLatitude",
-    value = "flagged"
-  )
-  # Filtrar os dados usando os valores retornados por range_flags
-  subset_data_filtered <- subset_data[range_flags == TRUE, ]
-  list_occurences_clean <- rbind(list_occurences_clean, 
-                                 subset_data_filtered)
+for (species_key in unique_species_keys) {
+  # Usar tryCatch para capturar erros
+  tryCatch({
+    # Selecionar o polígono correspondente à espécie
+    especie_poligono <- data_tetrapods_sa_transf %>%
+      filter(speciesKey == species_key)
+    
+    subset_data <- data_wallacean_knownledge_sa %>%
+      filter(speciesKey == species_key)
+    
+    # Aplicar a função cc_iucn
+    range_flags <- cc_iucn(
+      x = subset_data,
+      range = especie_poligono,
+      species = "speciesKey",
+      lon = "decimalLongitude",
+      lat = "decimalLatitude",
+      value = "flagged"
+    )
+    
+    # Filtrar os dados usando os valores retornados por range_flags
+    subset_data_filtered <- subset_data[range_flags == TRUE, ]
+    
+    # Adicionar os dados filtrados à lista final
+    list_occurences_clean <- rbind(list_occurences_clean, subset_data_filtered)
+    
+  }, error = function(e) {
+    # Se ocorrer um erro, salvar o species_key no vetor
+    species_keys_with_errors <<- c(species_keys_with_errors, species_key)
+    # Opcional: Printar o erro ou a species_key para depuração
+    message(paste("Erro no speciesKey:", species_key, "-", e$message))
+  })
 }
-
 end_time <- Sys.time()
-print(end_time - start_time) # Time difference of 
+print(end_time - start_time) # Time difference of 7.879655 hours
 
-nrow(list_occurences_clean)
-nrow(data_wallacean_knownledge_sa)
-length(unique(list_occurences_clean$speciesKey))
-length(unique(data_tetrapods_sa$speciesKey))
-
+nrow(list_occurences_clean) # 1.188.496 / 1240240
+nrow(data_wallacean_knownledge_sa) # 1628440
+length(unique(list_occurences_clean$speciesKey)) # 5659 spp
+length(unique(data_wallacean_knownledge_sa$speciesKey)) # 6548 spp
+table(list_occurences_clean$class)
 # Compare
 plot_sujo <- ggplot() +
   coord_fixed() +
@@ -641,13 +663,14 @@ plot_clean <- ggplot() +
              size = 0.5) +
   theme_bw()
 
-# quem sao as especies que perdemos?
-View(anti_join(data_tetrapods_sa,
-  list_occurences_clean,
-  by = "speciesKey"))
+## quem sao as especies que perdemos?
+#View(anti_join(data_tetrapods_sa,
+#  list_occurences_clean,
+#  by = "speciesKey"))
 
 # Save 
-save(list_occurences_clean, 
+save(list_occurences_clean,
+     species_keys_with_errors,
      file = here(
        "01_data_cleaned",
        "list_occurences_clean.RData")
@@ -656,10 +679,21 @@ save(list_occurences_clean,
 # NESTED DATAFRAME ----
 # TODO: o objeto nested devera ja vir com as coordendas filtradas 
 # portanto, nao sera o 'data_wallacean_knownledge' 
+rm(list=ls()); gc() # clean local enviroment
 load(file = here(
        "01_data_cleaned",
        "list_occurences_clean.RData")
 )
+load(file.path(
+  "00_raw_data",
+  "trait_data.RData")
+) # match taxonomic information with species key
+
+trait_data_filter <- trait_data %>%
+  select("speciesKey","scientificName","Class", "YearOfDescription",
+  "BodyLength_mm","ImputedLength","BodyMass_g","ImputedMass","Diu",
+  "Noc","Nocturnality", "Fos", "Ter", "Aqu", "Arb", "Aer", "ImputedHabitat",
+  "MajorHabitatSum","ImputedMajorHabitat","RangeSize", "HumanDensity")
 
 data_tetrapods_nested <- list_occurences_clean %>%
   group_by(speciesKey) %>%  # Agrupa pelo speciesKey
@@ -668,7 +702,7 @@ data_tetrapods_nested <- list_occurences_clean %>%
 
 anyDuplicated(data_tetrapods_nested$speciesKey) # ok
 
-tetrapods_key_species <- data_tetrapods_filter %>% 
+tetrapods_key_species <- trait_data_filter %>% 
   select(speciesKey, species, class, order, family) %>%
   distinct(speciesKey, .keep_all = TRUE)
 
@@ -687,8 +721,8 @@ head(data_wallacean_nested)
 
 # check data
 table(data_wallacean_nested$class)
-# Amphibia   Aves     Crocodylia   Mammalia   Squamata Testudines 
-# 2065       3230          8       1183       1571         65
+#     Amphibia    Crocodylia Mammalia   Squamata Testudines
+#        789          3        893        551          6
 anyDuplicated(data_wallacean_nested$species) # nenhum nome repetido
 anyDuplicated(data_wallacean_nested$speciesKey)
 

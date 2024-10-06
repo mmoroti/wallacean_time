@@ -46,8 +46,8 @@ species_list_tetrapods_key <- species_list_tetrapods %>%
 
 # confering species
 species_list_tetrapods_filter <- species_list_tetrapods %>%
-       dplyr::filter(!is.na(speciesKey)) %>%
-       filter(!matchType == "NONE" & !matchType == "HIGHERRANK") %>%
+       dplyr::filter(is.na(speciesKey)) %>%
+       filter(matchType == "NONE" | matchType == "HIGHERRANK") %>%
        dplyr::relocate(verbatim_name, .before = canonicalName)
 
 View(species_list_tetrapods_filter %>%
@@ -83,6 +83,18 @@ save(species_list_tetrapods, # lista com as chaves e os nomes
        "00_raw_data",
        "tetrapodstraits_data.RData")
 )
+
+# TetrapodTraits & GBIF
+trait_data <- left_join(
+  species_list_tetrapods_filter,
+  TetraData,
+  by = c(verbatim_name = "Scientific.Name"))
+
+save(trait_data,
+     file = file.path(
+      "00_raw_data",
+      "trait_data.RData")
+) # 33200 spp, sem correspondencia nos dados para 81 spp
 
 # DATA USING CLASSKEY FILTER IN RGBIF ----
 # Please always cite the download DOI when using this data.
