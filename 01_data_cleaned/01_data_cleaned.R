@@ -557,7 +557,7 @@ ggplot() +
 nrow(data_wallacean_knownledge) # 2226686 total occurences 
 table(data_wallacean_knownledge$class) # occurences per classes 
 
-# POLYGONS AS A FILTER POINTS WITHOUT NATURAL RANGE OF SPECIES ----
+# REMOVE DUPLICATES AND FILTER POINTS BY RANGE POLYGONS ----
 rm(list=ls()); gc() # clean local enviroment
 start_time <- Sys.time()
 # shapefile
@@ -579,12 +579,24 @@ load(file = file.path(
 #             size = 0.5) +
 #  theme_bw()
 
+# Remove duplicates
+duplicated_flags <- cc_dupl(
+  data_occurences_precleaned,
+  lon = "decimalLongitude",
+  lat = "decimalLatitude",
+  species = "speciesKey",
+  value = "flagged"
+)
+
+data_occurences_precleaned_duplicate <- data_occurences_precleaned[
+  duplicated_flags == TRUE, ]
+
 # deixar apenas as especies que tem poligonos
-data_wallacean_knownledge_sa <- data_occurences_precleaned %>%
+data_wallacean_knownledge_sa <- data_occurences_precleaned_duplicate %>%
   filter(speciesKey %in% tetrapod_shapefile$speciesKey)
 # deixar apenas os poligonos que tem dados de distribuicao
 data_tetrapods_sa <- tetrapod_shapefile %>% 
-  filter(speciesKey %in% data_occurences_precleaned$speciesKey)
+  filter(speciesKey %in% data_occurences_precleaned_duplicate$speciesKey)
 # tem que ter o mesmo numero de especies (speciesKey)
 length(unique(data_wallacean_knownledge_sa$speciesKey)) # 6548 spp
 length(unique(data_tetrapods_sa$speciesKey)) # 6548 spp
@@ -637,11 +649,18 @@ for (species_key in unique_species_keys) {
   })
 }
 end_time <- Sys.time()
-print(end_time - start_time) # Time difference of 7.879655 hours
+print(end_time - start_time) # Time difference of 1:30+-
 
-nrow(list_occurences_clean) # 1.188.496 / 1240240
-nrow(data_wallacean_knownledge_sa) # 1628440
-length(unique(list_occurences_clean$speciesKey)) # 5659 spp
+# Verificar speciesKey que tiveram erros
+print("SpeciesKey com erro:")
+print(species_keys_with_errors)
+
+#data_tetrapods_sa_transf <- data_tetrapods_sa %>%
+#    filter(speciesKey %in% species_keys_with_errors)
+
+nrow(list_occurences_clean) # 267.722
+nrow(data_wallacean_knownledge_sa) # 109931 excluidos pelo poligono
+length(unique(list_occurences_clean$speciesKey)) # 5726 spp
 length(unique(data_wallacean_knownledge_sa$speciesKey)) # 6548 spp
 table(list_occurences_clean$class)
 # Compare
@@ -663,11 +682,6 @@ plot_clean <- ggplot() +
              size = 0.5) +
   theme_bw()
 
-## quem sao as especies que perdemos?
-#View(anti_join(data_tetrapods_sa,
-#  list_occurences_clean,
-#  by = "speciesKey"))
-
 # Save 
 save(list_occurences_clean,
      species_keys_with_errors,
@@ -677,8 +691,6 @@ save(list_occurences_clean,
 )
 
 # NESTED DATAFRAME ----
-# TODO: o objeto nested devera ja vir com as coordendas filtradas 
-# portanto, nao sera o 'data_wallacean_knownledge' 
 rm(list=ls()); gc() # clean local enviroment
 load(file = here(
        "01_data_cleaned",
@@ -687,46 +699,43 @@ load(file = here(
 load(file.path(
   "00_raw_data",
   "trait_data.RData")
-) # match taxonomic information with species key
+) # match taxonomic and trait information with speciesKey
 
-trait_data_filter <- trait_data %>%
-  select("speciesKey","scientificName","Class", "YearOfDescription",
-  "BodyLength_mm","ImputedLength","BodyMass_g","ImputedMass","Diu",
-  "Noc","Nocturnality", "Fos", "Ter", "Aqu", "Arb", "Aer", "ImputedHabitat",
-  "MajorHabitatSum","ImputedMajorHabitat","RangeSize", "HumanDensity")
+tetrapods_key_species <- trait_data %>%
+  select("speciesKey","scientificName","Class", "Order","Family", 
+  "YearOfDescription","BodyLength_mm","ImputedLength","BodyMass_g",
+  "ImputedMass","Diu","Noc","Nocturnality", "Fos", "Ter", "Aqu", "Arb", "Aer",
+  "ImputedHabitat","MajorHabitatSum","ImputedMajorHabitat","RangeSize",
+   "HumanDensity", "AssessedStatus") %>%
+  distinct(speciesKey, .keep_all = TRUE) # 117 speciesKey duplicated
+anyDuplicated(tetrapods_key_species$speciesKey) # ok
 
 data_tetrapods_nested <- list_occurences_clean %>%
   group_by(speciesKey) %>%  # Agrupa pelo speciesKey
   nest() %>%
-  rename(event_table = data) 
-
+  rename(event_table = data)
 anyDuplicated(data_tetrapods_nested$speciesKey) # ok
 
-tetrapods_key_species <- trait_data_filter %>% 
-  select(speciesKey, species, class, order, family) %>%
-  distinct(speciesKey, .keep_all = TRUE)
-
-data_wallacean_nested_v1 <- left_join(
+data_wallacean_nested <- left_join(
   data_tetrapods_nested,
   tetrapods_key_species,
   by = "speciesKey"
-)
-
-data_wallacean_nested <-  data_wallacean_nested_v1 %>% 
-  relocate(event_table, .after = family) %>%
-  arrange(class, order, family) %>%
-  mutate(count_events = NA)
+) %>% 
+  mutate(count_events = NA) %>%
+  relocate(event_table,count_events, .after = Family) %>%
+  arrange(Class, Order, Family)
 
 head(data_wallacean_nested)
 
 # check data
-table(data_wallacean_nested$class)
-#     Amphibia    Crocodylia Mammalia   Squamata Testudines
-#        789          3        893        551          6
-anyDuplicated(data_wallacean_nested$species) # nenhum nome repetido
+table(data_wallacean_nested$Class)
+# Amphibia     Aves   Mammalia Reptilia
+#     789      2765      893     1279
+table(data_wallacean_nested$Order)
+
+anyDuplicated(data_wallacean_nested$scientificName) # nenhum nome repetido
 anyDuplicated(data_wallacean_nested$speciesKey)
 
-# TODO adicionar a contagem por origem dos dados por especie
 for (i in 1:nrow(data_wallacean_nested)) {
   data_wallacean_nested[i,"count_events"] <- nrow(
     data_wallacean_nested$event_table[[i]])
@@ -737,11 +746,23 @@ for (i in 1:nrow(data_wallacean_nested)) {
     ]
 }
 
-data_wallacean_nested <- data_wallacean_nested %>% 
-       relocate(count_events, .before = event_table) 
-
 save(data_wallacean_nested, 
      file = here(
        "01_data_cleaned",
        "data_wallacean_nested.RData")
 )
+
+# Explorar os dados
+ggplot(data_wallacean_nested, aes(x = log(RangeSize), y = log(count_events))) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +  # Adiciona uma linha de tendência
+  labs(x = "Comprimento do Corpo (mm)", y = "Número de Registros (count_events)", title = "Relação entre Comprimento do Corpo e Registros") +
+  theme_minimal()
+
+ggplot(data_wallacean_nested, aes(x = AssessedStatus, y = log(count_events))) +
+  geom_boxplot(fill = "lightblue", colour = "darkblue") +
+  theme_minimal() +
+  labs(title = "Comparação de quantidade de registros por categoria da IUCN",
+       x = "Categoria da IUCN",
+       y = "Quantidade de registros (event_counts)") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
