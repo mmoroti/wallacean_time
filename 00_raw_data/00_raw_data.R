@@ -1,4 +1,3 @@
-# TODO adaptar para usar o ambiente virtual
 # Functions and packages ----
 install.load.package <- function(x) {
   if (!require(x, character.only = TRUE)) {
@@ -38,20 +37,25 @@ TetraData<- data.table::fread("00_raw_data/TetrapodTraits_1.0.0.csv")
 #  pull("Scientific.Name") %>% # use fewer names if you want to just test 
 #  name_backbone_checklist() 
 
+# if you don't need to rerun backbone, use this
+load(file.path(
+  "00_raw_data",
+  "tetrapodstraits_data.RData")
+)
 # only matchType with matchType EXACT or FUZZY 
 species_list_tetrapods_key <- species_list_tetrapods %>%
   dplyr::filter(!is.na(speciesKey)) %>%
   filter(!matchType == "NONE" & !matchType == "HIGHERRANK") %>%
-  pull(speciesKey) 
+  filter(confidence > 95) %>%
+  pull(speciesKey)
+length(species_list_tetrapods_key) # 33200 sem I.C. e 33158 com I.C.
 
-# confering species
+# information about gbif backbone
 species_list_tetrapods_filter <- species_list_tetrapods %>%
-       dplyr::filter(is.na(speciesKey)) %>%
-       filter(matchType == "NONE" | matchType == "HIGHERRANK") %>%
-       dplyr::relocate(verbatim_name, .before = canonicalName)
-
-View(species_list_tetrapods_filter %>%
-    filter(confidence < 96))
+       dplyr::filter(!is.na(speciesKey)) %>%
+       filter(!matchType == "NONE" | !matchType == "HIGHERRANK") %>%
+       dplyr::relocate(verbatim_name, .before = canonicalName) %>%
+       filter(confidence > 95)
 
 # query
 occ_download(
@@ -76,7 +80,7 @@ data_tetrapodstraits <- occ_download_get('0011974-240906103802322',
   occ_download_import()
 
 # Salva o dataset
-save(species_list_tetrapods, # lista com as chaves e os nomes
+save(species_list_tetrapods_filter, # lista com as chaves e os nomes
      species_list_tetrapods_key, # so as chaves
      data_tetrapodstraits, # dados baixados
      file = file.path(
@@ -94,7 +98,7 @@ save(trait_data,
      file = file.path(
       "00_raw_data",
       "trait_data.RData")
-) # 33200 spp, sem correspondencia nos dados para 81 spp
+) # 33158 spp, sem correspondencia nos dados para 123 spp
 
 # DATA USING CLASSKEY FILTER IN RGBIF ----
 # Please always cite the download DOI when using this data.
@@ -221,16 +225,17 @@ be {(nrow(data_tetrapods_rgbif) - nrow(data_tetrapodstraits)) - nrow(blank_rgbif
 # DATASET BioTIME (needs unzip) -----
 rm(list=ls()); gc() # clean local enviroment
 
+biotime_data_raw <- data.table::fread(file.path(
+  "00_raw_data",
+  "raw_data",
+  "BioTIMEQuery_24_06_2021",
+  "BioTIMEQuery_24_06_2021.csv"),
+  stringsAsFactors=T)
+
 # if you don't needs to rerun backbone, use this
 load(file.path(
   "00_raw_data",
   "biotime_data.RData"))
-
-biotime_data_raw <- data.table::fread(file.path(
-  "00_raw_data", 
-  "BioTIMEQuery_24_06_2021",
-  "BioTIMEQuery_24_06_2021.csv"),
-  stringsAsFactors=T)
 
 # if you need to rerun backbone, use this
 #species_list_biotime <- biotime_data_raw %>% 
@@ -238,8 +243,7 @@ biotime_data_raw <- data.table::fread(file.path(
 #  mutate(GENUS_SPECIES = as.character(GENUS_SPECIES)) %>%
 #  pull("GENUS_SPECIES") %>% 
 #  name_backbone_checklist()
-
-hist(species_list_biotime$confidence)
+# hist(species_list_biotime$confidence)
 
 tetrapodsKey <- c(212,    # aves
                11418114, # testudines
@@ -251,13 +255,10 @@ tetrapodsKey <- c(212,    # aves
 
 species_list_biotime_key <- species_list_biotime %>%
   dplyr::filter(!matchType == "NONE" & !matchType == "HIGHERRANK") %>%
-  dplyr::filter(classKey %in% tetrapodsKey) %>%
-  dplyr::select(verbatim_name, speciesKey, confidence, matchType) %>% 
-  dplyr::filter(!is.na(speciesKey)) # remover os que nao tem chave, 
-                                    # pois nao foram encontrados
-                                    # correspondentes no gbif
+  dplyr::filter(!is.na(speciesKey)) %>% 
+  dplyr::filter(classKey %in% tetrapodsKey)
 
-hist(species_list_biotime_key$confidence) 
+# hist(species_list_biotime_key$confidence) 
 
 # aqui temos especies que aparecem com 'aff.' 'cf.' '?' e tambem serao removidas
 # para evitar adicionar dados com imprecisão taxonômica
@@ -274,15 +275,16 @@ glue::glue("Quantidade de nomes dúbios, com intervalo de confianca de >0.95 \\
 ou sem correspondência com o backbone: { \\
 nrow(species_list_biotime_key)-nrow(species_list_biotime_key_precleaned)}")
 
-biotime_data_key <- right_join(
-  biotime_data_raw,
-  species_list_biotime_key,
-  by = c("GENUS_SPECIES" = "verbatim_name"))
+#biotime_data_key <- right_join(
+#  biotime_data_raw,
+#  species_list_biotime_key,
+#  by = c("GENUS_SPECIES" = "verbatim_name"))
 
 biotime_data_key_precleaned <- right_join(
   biotime_data_raw,
   species_list_biotime_key_precleaned,
   by = c("GENUS_SPECIES" = "verbatim_name")) 
+nrow(biotime_data_key_precleaned)
 
 save(species_list_biotime, # backbone do rgbif
      species_list_biotime_key_precleaned, # lista das spp no biotime + chaves
@@ -291,6 +293,13 @@ save(species_list_biotime, # backbone do rgbif
        "00_raw_data",
        "biotime_data.RData")
 )
+
+# quantas ocorrencias?
+nrow(biotime_data_key_precleaned)
+# quantas espécies de cada classe?
+unique_species <- species_list_biotime_key_precleaned %>%
+ distinct(speciesKey, .keep_all = TRUE)
+table(unique_species$class)
 
 # DATASET specieslink (needs unzip) -----
 rm(list=ls()); gc() # clean local enviroment
@@ -303,6 +312,7 @@ load(file.path(
 # raw data splinks
 splink_data_raw <- data.table::fread(file.path(
   "00_raw_data", 
+  "raw_data",
   "speciesLink-20240909151829-0009656",
   "20240909151829-0009656.txt"),
   stringsAsFactors=T)
@@ -346,7 +356,7 @@ tetrapodsKey <- c(212,    # aves
 species_list_splink_key <- species_list_splink %>%
   dplyr::filter(!matchType == "NONE" & !matchType == "HIGHERRANK") %>%
   dplyr::filter(classKey %in% tetrapodsKey) %>%
-  dplyr::select(verbatim_name, speciesKey, confidence, matchType) %>% 
+  #dplyr::select(verbatim_name, speciesKey, confidence, matchType) %>% 
   dplyr::filter(!is.na(speciesKey)) # remover os que nao tem chave, 
                                     # pois nao foram encontrados
                                     # correspondentes no gbif
@@ -387,6 +397,12 @@ glue::glue("Quantidade de ocorrências que correspondiam a nomes dúbios,\\
 com intervalo de confiança <0.96 na correspondência de nomes\\
 ou sem correspondência com o backbone do GBIF: { \\
 nrow(splink_data_key)-nrow(splink_data_key_precleaned)}")
+
+# quantas espécies
+unique_species <- splink_data_key_precleaned %>% 
+  distinct(speciesKey, .keep_all = TRUE)
+table(unique_species$class) 
+nrow(unique_species)
 
 save(species_list_splink, # backbone splink
      species_list_splink_key_precleaned, # name splink and respective speciesKey
