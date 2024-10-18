@@ -567,7 +567,7 @@ data_occurences_precleaned_duplicate <- data_occurences_precleaned[
 
 nrow(data_occurences_precleaned_duplicate)*100/nrow(data_occurences_precleaned)
 # View(data_occurences_precleaned_duplicate)
-
+length(unique(data_occurences_precleaned_duplicate$speciesKey)) # 7897 spp
 # deixar apenas as especies que tem poligonos
 data_wallacean_knownledge_sa <- data_occurences_precleaned_duplicate %>%
   filter(speciesKey %in% tetrapod_shapefile$speciesKey)
@@ -628,16 +628,15 @@ for (species_key in unique_species_keys) {
 print("SpeciesKey com erro:")
 print(species_keys_with_errors)
 end_time <- Sys.time()
-print(end_time - start_time) # Time difference of 1:30+-
+print(end_time - start_time) # Time difference of 1h56min
 
 #data_tetrapods_sa_transf <- data_tetrapods_sa %>%
 #    filter(speciesKey %in% species_keys_with_errors)
 
-nrow(list_occurences_clean) # 263628
-nrow(data_wallacean_knownledge_sa)-nrow(list_occurences_clean) # 108513 excluidos pelo poligono
-length(unique(list_occurences_clean$speciesKey)) # 5710 spp
-length(unique(data_wallacean_knownledge_sa$speciesKey)) # 6548 spp
-table(list_occurences_clean$class)
+nrow(list_occurences_clean) # 269333 (com filtro temporal 263628)
+nrow(data_wallacean_knownledge_sa)-nrow(list_occurences_clean) # 111096 excluidos pelo poligono
+length(unique(list_occurences_clean$speciesKey)) # 5748 spp
+length(unique(data_wallacean_knownledge_sa$speciesKey)) # 6527 spp
 
 list_species <- list_occurences_clean %>%
  distinct(speciesKey, .keep_all=TRUE)
@@ -712,7 +711,6 @@ table(data_wallacean_nested$Class)
 #     789      2765      893     1279
 table(data_wallacean_nested$Order)
 
-anyDuplicated(data_wallacean_nested$scientificName) # nenhum nome repetido
 anyDuplicated(data_wallacean_nested$speciesKey)
 
 for (i in 1:nrow(data_wallacean_nested)) {
