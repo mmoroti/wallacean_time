@@ -28,7 +28,6 @@ The data underwent a cleaning process to remove records with imprecise or missin
 5. Duplicated coordinates
 
 ## How to Use the Data
-In development
 ![](Figures/visual_workflow.png)
 
 ## License
