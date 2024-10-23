@@ -29,8 +29,7 @@ The data underwent a cleaning process to remove records with imprecise or missin
 
 ## How to Use the Data
 In development
-![In development](Figures/visual_workflow.png)
-
+![](Figures/visual_workflow.png)
 
 ## License
 This repository is not released for use. 
