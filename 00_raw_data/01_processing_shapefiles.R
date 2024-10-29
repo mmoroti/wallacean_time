@@ -2,6 +2,7 @@
 library(sf)
 library(tidyverse)
 library(rgbif)
+library(rnaturalearth)
 
 # MAMMALS ----
 # load shapefile
@@ -193,5 +194,45 @@ save(tetrapod_shapefile,
   file = file.path(
     "00_raw_data",
     "shapefiles_data.RData"
+  )
+)
+# GEOGRAPHIC SHAPEFILES ----
+big_six <-  c("Brazil", "United States of America", "China", "Australia", "Russia", "Canada")
+
+world <- ne_countries(scale = "medium",
+ returnclass = "sf")
+admin_divisions <- ne_states(
+  country = big_six,
+  returnclass = "sf",
+)
+
+# check projection
+st_crs(world)
+# colunas compartilhadas
+intersect(names(admin_divisions), names(world))
+
+admin_divisions_filter <- admin_divisions %>%
+  select("adm0_a3", "name_en", "geometry")
+
+geographic_shape_data <- world %>%
+  select("adm0_a3", "name_en", "geometry") %>%
+  filter(!(adm0_a3 %in% unique(admin_divisions_filter$adm0_a3))) %>%
+  bind_rows(admin_divisions_filter) 
+
+# Identificar feições inválidas
+invalid_geometries <- geographic_shape_data[!st_is_valid(geographic_shape_data), ]
+invalid_geometries <-  st_make_valid(invalid_geometries) 
+
+geographic_shape_data <- geographic_shape_data %>%
+  filter(st_is_valid(geographic_shape_data)) %>% # 454 unidades administrativas
+  bind_rows(invalid_geometries) # 456 unidades administrativas
+
+plot(geographic_shape_data)
+plot(world)
+
+save(geographic_shape_data,
+  file = file.path(
+    "00_raw_data",
+    "geographic_shape_data.RData"
   )
 )

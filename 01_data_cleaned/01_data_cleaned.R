@@ -668,11 +668,96 @@ save(list_occurences_clean,
        "01_data_cleaned",
        "data_occurences_clean.RData")
 )
-# NESTED DATAFRAME ----
-rm(list=ls()); gc() # clean local enviroment
-load(file = here(
+
+# EXTRACTING GEOLOCATIONS ----
+load(file = file.path(
+       "00_raw_data",
+       "geographic_shape_data.RData")
+)
+
+load(file = file.path(
        "01_data_cleaned",
        "data_occurences_clean.RData")
+)
+
+# extracting geolocation per specie
+data_occurences <- st_as_sf(list_occurences_clean,
+                   coords = c("decimalLongitude", "decimalLatitude"),
+                   crs = st_crs(geographic_shape_data))
+
+nrow(data_occurences) # 269333
+nrow(list_occurences_clean) # 269333
+
+data_occurences <- data_occurences %>%
+  mutate(ID = 1:nrow(data_occurences))
+
+any(duplicated(data_occurences$ID))
+
+data_occurences_geo <- st_join(data_occurences,
+  geographic_shape_data, 
+  join = st_intersects, 
+  left = TRUE) %>% 
+  filter(!is.na(name_en)) %>% # filtra NA's (buracos nos poligonos)
+  group_by(ID) %>%
+  filter(n() == 1) %>% # remove registros em polígonos sobrepostos
+  ungroup()
+
+any(duplicated(data_occurences_geo$ID))
+# n registros duplicados e fora do poligono (oceano, areas em litigio, etc)
+nrow(data_occurences)-nrow(data_occurences_geo)
+
+names(data_occurences_geo)
+
+data_occurences_geometry <- data_occurences_geo %>%
+  select(speciesKey, species, year, origin_of_data, adm0_a3, name_en) %>%
+  rename(codeAdmUnit = adm0_a3, adm_unit = name_en)
+
+data_occurences_units <- data_occurences_geometry %>%
+  st_drop_geometry()
+
+#mapview(geographic_shape_data,
+# col.regions = "lightblue", alpha.regions = 0.4, color = "black", layer.name = "Regiões") +
+#  mapview(data_occurences_geo, 
+#  color = "red", cex = 2, layer.name = "Ocorrências", popup = popupTable(data_occurences_geo, zcol = "name_en"))
+
+# SPECIES LIST PER ADMINASTRIVE UNIT ---- 
+load(file = file.path(
+  "00_raw_data",
+  "shapefiles_data.RData"))
+
+keys_with_occurences <- data_occurences_units %>%
+  distinct(speciesKey) %>%
+  pull(speciesKey)
+
+tetrapod_shapefile_filter <- tetrapod_shapefile %>% 
+  filter(speciesKey %in% keys_with_occurences)
+
+# Corrigir geometrias nos shapefiles
+geographic_shape_data <- st_make_valid(geographic_shape_data)
+tetrapod_shapefile_filter <- st_make_valid(tetrapod_shapefile_filter)
+# Executar a interseção espacial para obter as sobreposições
+overlaps <- st_intersection(geographic_shape_data, tetrapod_shapefile_filter)
+
+# Contar quantas vezes cada estado se sobrepõe a um polígono de espécie
+richness_admunits_counts <- overlaps %>%
+  group_by(state_id) %>% # Ajuste para a coluna que identifica cada estado
+  summarise(overlap_count = n())
+View(richness_admunits_counts)
+
+save(data_occurences_geometry,
+     data_occurences_units,
+     richness_admunits_counts, 
+     file = file.path(
+       "01_data_cleaned",
+       "data_occurences_geolocation.RData")
+)
+
+# NESTED DATAFRAME WITH BIOLOGICAL TRAITS ----
+rm(list=ls()); gc() # clean local enviroment
+
+load(file = file.path(
+       "01_data_cleaned",
+       "data_occurences_geolocation.RData")
 )
 load(file.path(
   "00_raw_data",
@@ -688,7 +773,7 @@ tetrapods_key_species <- trait_data %>%
   distinct(speciesKey, .keep_all = TRUE) # 117 speciesKey duplicated
 anyDuplicated(tetrapods_key_species$speciesKey) # ok
 
-data_tetrapods_nested <- list_occurences_clean %>%
+data_tetrapods_nested <- data_occurences_units %>%
   group_by(speciesKey) %>%  # Agrupa pelo speciesKey
   nest() %>%
   rename(event_table = data)
@@ -708,11 +793,11 @@ head(data_wallacean_nested)
 # check data
 table(data_wallacean_nested$Class)
 # Amphibia     Aves   Mammalia Reptilia
-#     789      2765      893     1279
+#     797      2764      898     1281
 table(data_wallacean_nested$Order)
-
 anyDuplicated(data_wallacean_nested$speciesKey)
 
+# adicionar contagem de unidades administrativas diferentes
 for (i in 1:nrow(data_wallacean_nested)) {
   data_wallacean_nested[i,"count_events"] <- nrow(
     data_wallacean_nested$event_table[[i]])
@@ -723,10 +808,22 @@ for (i in 1:nrow(data_wallacean_nested)) {
     ]
 }
 
-save(data_wallacean_nested, 
+# unnest data
+data_wallacean_unnested <- data_wallacean_nested %>%
+  unnest(cols = c(event_table))
+
+# Change data to discovery
+data_wallacean_unnested_modified <- data_wallacean_unnested %>%
+  mutate(year_modified = if_else(year < YearOfDescription, YearOfDescription, year)) %>%
+  relocate(year, YearOfDescription, year_modified, .after = species)
+
+View(data_wallacean_unnested_modified)
+
+save(data_wallacean_nested,
+    data_wallacean_unnested, 
      file = here(
        "01_data_cleaned",
-       "data_wallacean_nested.RData")
+       "dataset_occurences.RData")
 )
 
 # Explorar os dados
