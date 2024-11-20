@@ -31,8 +31,8 @@ sapply(package_vec, install.load.package)
 ```
 
 ```{r, load institutions and country}
-data_institutions <- read.delim(file.path("00_raw_data", "raw_data", "institutions.tsv"))
-data_country <- readxl::read_xlsx(file.path("00_raw_data", "raw_data", "GlobalNorthVsSouth.xlsx"))
+data_institutions <- read.delim(file.path("00_raw_data", "raw_data", "biodiversity_paradox", "institutions.tsv"))
+data_country <- readxl::read_xlsx(file.path("00_raw_data", "raw_data", "biodiversity_paradox", "GlobalNorthVsSouth.xlsx"))
 
 # View(data_institutions)
 ```
@@ -179,14 +179,14 @@ mollusca_data <- occ_download_get(
 #      "00_raw_data",
 #      "datasets_paradox.RData") 
 #)
-write_parquet(tetrapods_data, file.path("00_raw_data", "tetrapods_data.parquet"))
+write_parquet(tetrapods_data, file.path("00_raw_data", "biodiversity_paradox", "tetrapods_data.parquet"))
 ```
 
 # Part 2. Clean raw data
 ```{r, apply filters}
 # apply filter
 tetrapods_data <- read_parquet(
-  file.path("00_raw_data", "tetrapods_data.parquet"))
+  file.path("00_raw_data", "biodiversity_paradox", "tetrapods_data.parquet"))
 
 #select_columns <- c(
 #  "kingdom", "phylum", "class", "order", 
@@ -254,13 +254,13 @@ duplicates_df <- tetrapods_data_filter_dup %>%
 ``` 
 
 ```{r, save filter data}
-write_parquet(without_duplicates_df, file.path("00_raw_data", "tetrapods_without_duplicates.parquet"))
+write_parquet(without_duplicates_df, file.path("00_raw_data", "biodiversity_paradox", "tetrapods_without_duplicates.parquet"))
 ```
 
 # Part 3. Obtain quantity of terrestrial tetrapods are deposited 
 ```{r}
 without_duplicates_df <- read_parquet(
-  file.path("00_raw_data", "tetrapods_without_duplicates.parquet"))
+  file.path("00_raw_data", "biodiversity_paradox", "tetrapods_without_duplicates.parquet"))
 
 # Numero de espécimes coletados por país
 without_duplicates_df_num <- without_duplicates_df %>%
@@ -272,17 +272,35 @@ without_duplicates_df_num <- without_duplicates_df %>%
   filter(!countryCode %in% c("XK", "ZZ")) %>%
   mutate(CountryName = countrycode(countryCode, origin = "iso2c", destination = "country.name")) 
 
-dados_north_south <- left_join(data_country, without_duplicates_df_num, by= "CountryName")
-View(dados_north_south)
+dados_north_south_abundance <- left_join(
+  data_country, 
+  without_duplicates_df_num,
+   by= "CountryName") %>%
+   select(-countryCode)
+
+#View(dados_north_south_abundance)
 
 # Numero de ocorrencias por pais 
 contagem_ocorrencias_por_pais <- without_duplicates_df %>%
   group_by(countryCode, class) %>%
-  summarise(total = n(), .groups = "drop") 
+  summarise(total = n(), .groups = "drop") %>%
+  pivot_wider(names_from = class, values_from = total, values_fill = 0) %>%
+  filter(!countryCode %in% c("XK", "ZZ")) %>%
+  mutate(CountryName = countrycode(countryCode, origin = "iso2c", destination = "country.name"))
 
-View(contagem_por_pais)
+dados_north_south_occurences <- left_join(
+  data_country, 
+  contagem_ocorrencias_por_pais,
+   by= "CountryName") %>%
+   select(-countryCode)
+
+#View(dados_north_south_occurences)
 ```
 
+```{r}
+write.csv2(dados_north_south_abundance, file.path("00_raw_data", "biodiversity_paradox", "dados_north_south_abundance.csv")) 
+write.csv2(dados_north_south_occurences, file.path("00_raw_data", "biodiversity_paradox", "dados_north_south_occurences.csv"))
+```
 # Part 4. Join with Institutions around the world
 ```{r}
 # check information about institution code
