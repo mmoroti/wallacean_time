@@ -1,0 +1,298 @@
+---
+title: "Biodiversity Paradox in Numbers"
+format: html
+---
+
+# Part 0. Loading
+```{r, loading packages}
+# Functions and packages ----
+install.load.package <- function(x) {
+  if (!require(x, character.only = TRUE)) {
+    renv::restore()
+    #install.packages(x, repos = "http://cran.us.r-project.org")
+  }
+  require(x, character.only = TRUE)
+}
+
+package_vec <- c(
+  "rgbif",
+  "tidyverse",
+  "data.table",
+  #"cowplot",
+  #"CoordinateCleaner",
+  #"sf",
+  "countrycode",
+  "arrow",
+  "duckdb"
+)
+
+## executing install & load for each package
+sapply(package_vec, install.load.package)
+```
+
+```{r, load institutions and country}
+data_institutions <- read.delim(file.path("00_raw_data", "raw_data", "institutions.tsv"))
+data_country <- readxl::read_xlsx(file.path("00_raw_data", "raw_data", "GlobalNorthVsSouth.xlsx"))
+
+# View(data_institutions)
+```
+
+```{r, credentials in GBIF api}
+# CREDENTIALS RGBIF ----
+user <- "mmoroti" # your gbif.org username 
+email <- "mmoroti@gmail.com" # your email 
+pwd <- readline() # your gbif.org password
+``` 
+
+# Part 1. Obtain raw data from GBIF
+```{r, tetrapods}
+# Tetrapods
+occ_download(
+    pred_in("classKey", 
+          c(212,    # aves
+          11418114, # testudines
+          11592253, # squamata
+          11493978, # crocodylia
+          131,      # amphibia
+          359      # mammals
+          )),
+  pred_in("basisOfRecord", c('PRESERVED_SPECIMEN',
+                             'MATERIAL_SAMPLE')),
+  format = "SIMPLE_CSV",
+  user=user,pwd=pwd,email=email
+)
+
+occ_download_wait("0017030-241107131044228")
+#Status: SUCCEEDED
+#DOI: 10.15468/dl.mah959
+#Format: SIMPLE_CSV
+#Download key: 0017030-241107131044228
+#Created: 2024-11-15T20:16:52.574+00:00
+#Modified: 2024-11-15T20:28:56.014+00:00
+#Download link: https://api.gbif.org/v1/occurrence/download/request/0017030-241107131044228.zip
+#Total records: 24101128
+
+tetrapods_data <- occ_download_get(
+  "0017030-241107131044228",
+  path = "00_raw_data"
+) %>% 
+  occ_download_import()
+
+```
+
+```{r, plants}
+# Plantae
+name_backbone("Thismia mantiqueirensis") # plants
+# we need to descontruct em three phylum: tracheophyta, bryophyta and another plants
+
+occ_download(
+  pred_in("kingdomKey", 6), # plants
+  pred_in("basisOfRecord", c('PRESERVED_SPECIMEN',
+                             'MATERIAL_SAMPLE')),
+  format = "SIMPLE_CSV",
+  user=user,pwd=pwd,email=email
+)
+
+occ_download_wait("0017038-241107131044228")
+#Status: SUCCEEDED
+#DOI: 10.15468/dl.hb2hpy
+#Format: SIMPLE_CSV
+#Download key: 0017038-241107131044228
+#Created: 2024-11-15T20:30:27.684+00:00
+#Modified: 2024-11-15T20:41:36.257+00:00
+#Download link: https://api.gbif.org/v1/occurrence/download/request/0017038-241107131044228.zip
+#Total records: 120943045
+
+plants_data <- occ_download_get(
+  "0017038-241107131044228",
+  path = "00_raw_data"
+) %>% 
+  occ_download_import()
+
+```
+
+```{r, arthropods and lepdoptera}
+# Arthropod
+name_backbone("Dione vanillae")$orderKey  # 797 lepdoptera
+name_backbone("Pterostichus oblongopunctatus")$orderKey  # 1470 coleoptera
+
+occ_download(
+  pred_in("orderKey", c(797, 1470)),  # lepdoptera coleoptera
+  pred_in("basisOfRecord", c('PRESERVED_SPECIMEN',
+                             'MATERIAL_SAMPLE')),
+  format = "SIMPLE_CSV",
+  user=user,pwd=pwd,email=email
+)
+
+occ_download_wait("0017044-241107131044228")
+#Status: SUCCEEDED
+#DOI: 10.15468/dl.a8su3b
+#Format: SIMPLE_CSV
+#Download key: 0017044-241107131044228
+#Created: 2024-11-15T20:35:32.230+00:00
+#Modified: 2024-11-15T20:46:54.505+00:00
+#Download link: https://api.gbif.org/v1/occurrence/download/request/0017044-241107131044228.zip
+#Total records: 30467317
+
+artropds_data <- occ_download_get(
+  "0017044-241107131044228",
+  path = "00_raw_data"
+) %>% 
+  occ_download_import()
+```
+
+```{r, mollusca}
+# Mollusca
+name_backbone("Theba pisana")$phylumKey  # 52 
+
+occ_download(
+  pred_in("phylumKey", 52),  # mollusca
+  pred_in("basisOfRecord", c('PRESERVED_SPECIMEN',
+                             'MATERIAL_SAMPLE')),
+  format = "SIMPLE_CSV",
+  user=user,pwd=pwd,email=email
+)
+
+occ_download_wait("0017080-241107131044228")
+#Status: SUCCEEDED
+#DOI: 10.15468/dl.xkcu7j
+#Format: SIMPLE_CSV
+#Download key: 0017080-241107131044228
+#Created: 2024-11-15T21:20:53.010+00:00
+#Modified: 2024-11-15T21:31:42.579+00:00
+#Download link: https://api.gbif.org/v1/occurrence/download/request/0017080-241107131044228.zip
+#Total records: 11209659
+
+mollusca_data <- occ_download_get(
+  "0017080-241107131044228",
+  path = "00_raw_data"
+) %>% 
+  occ_download_import()
+```
+
+```{r, save raw data}
+#save(tetrapods_data,
+#    #plants_data,
+#    artropds_data,
+#    mollusca_data,
+#    file = file.path(
+#      "00_raw_data",
+#      "datasets_paradox.RData") 
+#)
+write_parquet(tetrapods_data, file.path("00_raw_data", "tetrapods_data.parquet"))
+```
+
+# Part 2. Clean raw data
+```{r, apply filters}
+# apply filter
+tetrapods_data <- read_parquet(
+  file.path("00_raw_data", "tetrapods_data.parquet"))
+
+#select_columns <- c(
+#  "kingdom", "phylum", "class", "order", 
+#  "family", "genus", "species",
+#  "countryCode", "locality", "stateProvince", "basisOfRecord", 
+#  "institutionCode", "collectionCode", "catalogNumber", "license", "rightsHolder",
+#  "individualCount", "decimalLatitude", "decimalLongitude", "day", 
+#  "month", "year", "taxonKey", "speciesKey") 
+
+start_time <- Sys.time()
+con <- dbConnect(duckdb::duckdb())
+duckdb_register(con, "tetrapods_data", tetrapods_data)
+query <- "
+  SELECT *
+  FROM tetrapods_data
+  WHERE (taxonRank = 'SPECIES' OR taxonRank = 'SUBSPECIES')
+    AND occurrenceStatus != 'ABSENT'
+    AND institutionCode != ''
+    AND catalogNumber != '' 
+    AND catalogNumber != 'NO DISPONIBLE'
+    AND countryCode != ''
+    AND occurrenceID != '' 
+"
+tetrapods_data_filter <- dbGetQuery(con, query)
+end_time <- Sys.time()
+dbDisconnect(con)
+print(paste("Tempo com duckdb:", end_time - start_time)) # ~5,39 min
+
+nrow(tetrapods_data_filter) # 18216107
+# institutionCode == "" - 1012297 
+# catalogNumber == "" & catalogNumber == "NO DISPONIBLE" - 483.574 & 102.922
+# countryCode == '' - 977.055 
+# occurenceID == "" - 1293817
+
+tetrapods_data_filter_dup <- tetrapods_data_filter %>%
+  distinct(occurrenceID, .keep_all = TRUE) %>%  # remove occurrenceID identicas
+  mutate(id_collect = paste(institutionCode, catalogNumber, sep = "_")) %>% # cria coluna colecao_catalognumber
+  group_by(speciesKey) %>%
+  mutate(is_duplicate = duplicated(id_collect) | duplicated(id_collect, fromLast = TRUE)) %>% # id_collect repetido
+  ungroup()
+
+nrow(tetrapods_data_filter_dup) # 18023548
+nrow(tetrapods_data_filter_dup)*100 / nrow(tetrapods_data) # representa ~75% dos dados baixados
+any(duplicated(tetrapods_data_filter_dup$occurrenceID)) # sem ocorrencia duplicada
+
+# sem id_collect repetido
+without_duplicates_df <- tetrapods_data_filter_dup %>%
+    filter(is_duplicate ==  FALSE)
+
+nrow(without_duplicates_df) # 18.837.089 registros 
+nrow(without_duplicates_df)*100 / nrow(tetrapods_data) # representa 72.5% dos dados baixados
+
+# Explorar duplicatas
+duplicates_df <- tetrapods_data_filter_dup %>%
+    filter(is_duplicate ==  TRUE) %>% # represeta 4% dos dados
+    group_by(id_collect) %>%
+    mutate(is_duplicate_date = duplicated(eventDate) | 
+      duplicated(eventDate, fromLast = TRUE)) %>% # id_collect repetido
+    ungroup()
+
+# chequei tres exemplos de colecao, e os que tem data diferente sao do mesmo bicho (id_collect), so que um dos registros esta sem data
+#date_different <- duplicates_df %>%
+#  filter(is_duplicate_date == FALSE) %>%
+#  filter(id_collect == "KU_27009")
+``` 
+
+```{r, save filter data}
+write_parquet(without_duplicates_df, file.path("00_raw_data", "tetrapods_without_duplicates.parquet"))
+```
+
+# Part 3. Obtain quantity of terrestrial tetrapods are deposited 
+```{r}
+without_duplicates_df <- read_parquet(
+  file.path("00_raw_data", "tetrapods_without_duplicates.parquet"))
+
+# Numero de espécimes coletados por país
+without_duplicates_df_num <- without_duplicates_df %>%
+  mutate(individualCount = as.numeric(individualCount)) %>%
+  mutate(individualCount = ifelse(is.na(individualCount), 1, individualCount)) %>% 
+  group_by(countryCode, class) %>% 
+  summarise(total_individuals = sum(individualCount, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = class, values_from = total_individuals, values_fill = 0) %>%
+  filter(!countryCode %in% c("XK", "ZZ")) %>%
+  mutate(CountryName = countrycode(countryCode, origin = "iso2c", destination = "country.name")) 
+
+dados_north_south <- left_join(data_country, without_duplicates_df_num, by= "CountryName")
+View(dados_north_south)
+
+# Numero de ocorrencias por pais 
+contagem_ocorrencias_por_pais <- without_duplicates_df %>%
+  group_by(countryCode, class) %>%
+  summarise(total = n(), .groups = "drop") 
+
+View(contagem_por_pais)
+```
+
+# Part 4. Join with Institutions around the world
+```{r}
+# check information about institution code
+data_institutions_filter <- data_institutions %>%
+  dplyr::select(code, name, country, type, active)
+
+lista_instituicoes <- data.frame(code = unique(tetrapods_data_filter$institutionCode))
+head(lista_instituicoes)
+
+teste_join <- left_join(lista_instituicoes, data_institutions_filter, by = "code")
+View(teste_join)
+
+```
