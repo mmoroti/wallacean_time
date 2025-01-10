@@ -4,7 +4,54 @@ library(tidyverse)
 library(rgbif)
 library(rnaturalearth)
 
-# MAMMALS ----
+# CHANGE GRID-CELLS TO POLYGONS---- 
+load(file.path(
+       "00_raw_data",
+       "tetrapodstraits_data.RData"))
+
+vert_assemblages <- data.table::fread(
+  file.path("Shapefiles", "TetrapodTraits_Community", "Tetrapod_360.csv"),
+  stringsAsFactors=T
+)
+
+grid_cells_sf <- sf::st_read(dsn = file.path(
+  "Shapefiles", "TetrapodTraits_Community"),
+    layer='gridcells_110km'
+)
+
+vert_assemblages_sf <- vert_assemblages %>%
+  inner_join(grid_cells_sf, by = c("Cell_Id110" = "Cl_I110"))
+
+poligonos_especies <- vert_assemblages_sf %>%
+  group_by(Scientific.Name) %>%     # Agrupa por espécie
+  summarise(geometry = st_union(geometry)) %>% # Une as células
+  st_as_sf() %>%
+  st_transform(crs = 4326)
+
+tetrapods_polygons_key <- species_list_tetrapods_filter %>%
+  select(verbatim_name, speciesKey) %>%
+  left_join(poligonos_especies, by = c('verbatim_name' = 'Scientific.Name')) %>%
+  st_as_sf() 
+
+save(tetrapods_polygons_key,
+  file = file.path(
+    "00_raw_data",
+    "tetrapods_polygons_key.RData"
+  )
+)
+
+## Baixar os dados do mapa mundial
+#mundo <- ne_countries(scale = "medium", returnclass = "sf")
+#
+## Plotar com o mapa de fundo
+#ggplot() +
+#  geom_sf(data = mundo, fill = "gray90", color = "white") +  # Mapa de fundo
+#  geom_sf(data = poligonos_especies, aes(fill = Scientific.Name), color = "black", alpha = 0.5) +  # Plotar os polígonos
+#  theme(legend.position = "none") +
+#  labs(title = "Polígonos de Espécies sobre a Grid",
+#       fill = "Espécies")
+
+# MAMMALS (IUCN) ----
 # load shapefile
 rm(list = ls())
 start_time <- Sys.time()
@@ -47,7 +94,7 @@ mammals_shape_key <- left_join(
 ) %>%
   filter(!(is.na(speciesKey))) # 33 spp
 
-# AMPHIBIANS ----
+# AMPHIBIANS (IUCN) ----
 rm(mammals_shape_filter, mammals_shape_data)
 amphibia_shape_data <- st_read(here::here(
   "Shapefiles",
@@ -88,7 +135,7 @@ amphibia_shape_key <- left_join(amphibia_shape_filter,
 
 # View(amphibia_shape_key %>%
 #       filter(is.na(speciesKey)) )
-# REPTILES ----
+# REPTILES (GARD) ----
 rm(amphibia_shape_filter, amphibia_shape_data)
 reptilia_shape_data <- st_read(here::here(
   "Shapefiles",
@@ -126,7 +173,7 @@ reptilia_shape_key <- left_join(reptilia_shape_data,
 ) %>%
   filter(!(is.na(speciesKey))) # 35 spp sem shapefile
 
-# BIRDS ----
+# BIRDS (BIRDLIFE) ----
 rm(reptilia_shape_filter, reptilia_shape_data)
 
 # st_layers("Shapefiles/BOTW_2023_1/BOTW.gdb")
@@ -170,32 +217,32 @@ birds_shape_key <- left_join(
   filter(!(is.na(speciesKey))) # checar missing
 
 # SAVE SHAPEFILES WITH SPECIESKEY ----
-mammals_shape <- mammals_shape_key %>%
- select(speciesKey, sci_name, geometry)
-amphibia_shape <- amphibia_shape_key %>% 
-  select(speciesKey, sci_name, geometry)
-reptilia_shape <- reptilia_shape_key %>% 
-  select(speciesKey, binomial, geometry) %>%
-  rename(sci_name = binomial)
-birds_shape <- birds_shape_key %>% 
-  select(speciesKey, sci_name, Shape) %>%
-  rename(geometry = Shape)
-
-tetrapod_shapefile <- rbind(
-  mammals_shape,
-  amphibia_shape,
-  reptilia_shape,
-  birds_shape
-)
-end_time <- Sys.time()
-print(end_time - start_time) # Time difference of 45 min
-
-save(tetrapod_shapefile,
-  file = file.path(
-    "00_raw_data",
-    "shapefiles_data.RData"
-  )
-)
+#mammals_shape <- mammals_shape_key %>%
+# select(speciesKey, sci_name, geometry)
+#amphibia_shape <- amphibia_shape_key %>% 
+#  select(speciesKey, sci_name, geometry)
+#reptilia_shape <- reptilia_shape_key %>% 
+#  select(speciesKey, binomial, geometry) %>%
+#  rename(sci_name = binomial)
+#birds_shape <- birds_shape_key %>% 
+#  select(speciesKey, sci_name, Shape) %>%
+#  rename(geometry = Shape)
+#
+#tetrapod_shapefile <- rbind(
+#  mammals_shape,
+#  amphibia_shape,
+#  reptilia_shape,
+#  birds_shape
+#)
+#end_time <- Sys.time()
+#print(end_time - start_time) # Time difference of 45 min
+#
+#save(tetrapod_shapefile,
+#  file = file.path(
+#    "00_raw_data",
+#    "shapefiles_data.RData"
+#  )
+#)
 # GEOGRAPHIC SHAPEFILES ----
 big_six <-  c("Brazil", "United States of America", "China", "Australia", "Russia", "Canada")
 

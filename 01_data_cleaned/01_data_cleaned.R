@@ -537,7 +537,7 @@ start_time <- Sys.time()
 # shapefile
 load(file = file.path(
   "00_raw_data",
-  "shapefiles_data.RData"))
+  "tetrapods_polygons_key.RData")) # From TetrapodTraits
 # occurences data
 load(file = file.path(
   "01_data_cleaned",
@@ -568,15 +568,19 @@ data_occurences_precleaned_duplicate <- data_occurences_precleaned[
 nrow(data_occurences_precleaned_duplicate)*100/nrow(data_occurences_precleaned)
 # View(data_occurences_precleaned_duplicate)
 length(unique(data_occurences_precleaned_duplicate$speciesKey)) # 7897 spp
+
 # deixar apenas as especies que tem poligonos
 data_wallacean_knownledge_sa <- data_occurences_precleaned_duplicate %>%
-  filter(speciesKey %in% tetrapod_shapefile$speciesKey)
+  filter(speciesKey %in% tetrapods_polygons_key$speciesKey)
 # deixar apenas os poligonos que tem dados de distribuicao
-data_tetrapods_sa <- tetrapod_shapefile %>% 
-  filter(speciesKey %in% data_occurences_precleaned_duplicate$speciesKey)
+data_tetrapods_sa <- tetrapods_polygons_key %>% 
+  filter(speciesKey %in% data_occurences_precleaned_duplicate$speciesKey) 
+
+# usando os poligonos do tetrapodtraits chegamos a 7893 spp
+# usando dados de poligonos de outras bases 6527 spp apenas
 # tem que ter o mesmo numero de especies (speciesKey)
-length(unique(data_wallacean_knownledge_sa$speciesKey)) # 6527 spp
-length(unique(data_tetrapods_sa$speciesKey)) # 6527 spp
+length(unique(data_wallacean_knownledge_sa$speciesKey)) 
+length(unique(data_tetrapods_sa$speciesKey)) 
 
 # run cc_iucn()
 # terra::vect(data_tetrapods_sa) se funcionar vai dar certo
@@ -584,7 +588,7 @@ data_tetrapods_sa_transf <- st_cast(data_tetrapods_sa,
  "MULTIPOLYGON")
 # Verificar se a conversão funcionou
 geometry_types <- st_geometry_type(data_tetrapods_sa_transf)
-table(geometry_types) 
+table(geometry_types)
 
 # check if list_occurences_clean is empty before run
 unique_species_keys <- unique(data_wallacean_knownledge_sa$speciesKey)
@@ -627,17 +631,21 @@ for (species_key in unique_species_keys) {
 # Verificar speciesKey que tiveram erros
 print("SpeciesKey com erro:")
 print(species_keys_with_errors)
-end_time <- Sys.time()
-print(end_time - start_time) # Time difference of 1h56min
+#end_time <- Sys.time()
+#print(end_time - start_time) # Time difference of 1h56min
 
 #data_tetrapods_sa_transf <- data_tetrapods_sa %>%
 #    filter(speciesKey %in% species_keys_with_errors)
 
-nrow(list_occurences_clean) # 269333 (com filtro temporal 263628)
-nrow(data_wallacean_knownledge_sa)-nrow(list_occurences_clean) # 111096 excluidos pelo poligono
-length(unique(list_occurences_clean$speciesKey)) # 5748 spp
-length(unique(data_wallacean_knownledge_sa$speciesKey)) # 6527 spp
+# 405.215 ocorrencias usando dados espaciais do  (7893 spp)
+# 269.333 ocorrencias usando poligonos de especialistas (5748 spp)
+# 263.628 ocorrencias com poligonos e filtro temporal
+nrow(list_occurences_clean) 
+nrow(data_wallacean_knownledge_sa)-nrow(list_occurences_clean) 
+length(unique(list_occurences_clean$speciesKey)) 
+length(unique(data_wallacean_knownledge_sa$speciesKey))
 
+# Quantas espécies para cada grupo?
 list_species <- list_occurences_clean %>%
  distinct(speciesKey, .keep_all=TRUE)
 table(list_species$class)
@@ -662,55 +670,72 @@ plot_clean <- ggplot() +
   theme_bw()
 
 # Save 
-save(list_occurences_clean,
-     species_keys_with_errors,
-     file = here(
-       "01_data_cleaned",
-       "data_occurences_clean.RData")
-)
+#save(list_occurences_clean,
+#     species_keys_with_errors,
+#     file = here(
+#       "01_data_cleaned",
+#       "data_occurences_clean.RData")
+#)
 
 # EXTRACTING GEOLOCATIONS ----
-load(file = file.path(
-       "00_raw_data",
-       "geographic_shape_data.RData")
-)
+#load(file = file.path(
+#       "00_raw_data",
+#       "geographic_shape_data.RData")
+#)
+#load(file = file.path(
+#       "01_data_cleaned",
+#       "data_occurences_clean.RData")
+#)
+# shapefile to crop adm unit
+south_america <- st_read(file.path(
+  "Shapefiles",
+  "GEOGRAPHIC_SHAPEFILE",
+  "south_america_br_states.shp"
+))
 
-load(file = file.path(
-       "01_data_cleaned",
-       "data_occurences_clean.RData")
-)
+# Verificar validade das geometrias
+sf_use_s2(FALSE)
+st_is_valid(data_tetrapods_sa) %>% table()
+st_is_valid(south_america) %>% table()
 
 # extracting geolocation per specie
 data_occurences <- st_as_sf(list_occurences_clean,
                    coords = c("decimalLongitude", "decimalLatitude"),
-                   crs = st_crs(geographic_shape_data))
+                   crs = st_crs(south_america))
 
-nrow(data_occurences) # 269333
-nrow(list_occurences_clean) # 269333
+# com os poligonos de especialistas tinhamos 269333
+# usando o tetrapodtraits aumentamos para 405215 occ
+nrow(data_occurences) 
+nrow(list_occurences_clean) 
 
 data_occurences <- data_occurences %>%
   mutate(ID = 1:nrow(data_occurences))
-
 any(duplicated(data_occurences$ID))
 
+# validaty of polygons 
+any(!st_is_valid(south_america))
+any(!st_is_valid(data_occurences))
+
+geographic_shape_data_adj <- south_america %>%
+  select(sigla_admu, geometry)
+
 data_occurences_geo <- st_join(data_occurences,
-  geographic_shape_data, 
-  join = st_intersects, 
+  geographic_shape_data_adj, 
+  join = st_intersects,
   left = TRUE) %>% 
-  filter(!is.na(name_en)) %>% # filtra NA's (buracos nos poligonos)
+  filter(!is.na(sigla_admu)) %>% # 'col' filtra NA's (buracos) nos poligonos
   group_by(ID) %>%
   filter(n() == 1) %>% # remove registros em polígonos sobrepostos
   ungroup()
 
 any(duplicated(data_occurences_geo$ID))
-# n registros duplicados e fora do poligono (oceano, areas em litigio, etc)
-nrow(data_occurences)-nrow(data_occurences_geo)
-
+# 62.956 occ registros fora do poligonos (oceano, areas em litigio, etc)
+nrow(data_occurences)-nrow(data_occurences_geo) 
 names(data_occurences_geo)
 
 data_occurences_geometry <- data_occurences_geo %>%
-  select(speciesKey, species, year, origin_of_data, adm0_a3, name_en) %>%
-  rename(codeAdmUnit = adm0_a3, adm_unit = name_en)
+  select(speciesKey, species, year, origin_of_data, sigla_admu, ID) #%>%
+  #rename(codeAdmUnit = adm0_a3, adm_unit = name_en)
 
 data_occurences_units <- data_occurences_geometry %>%
   st_drop_geometry()
@@ -720,33 +745,17 @@ data_occurences_units <- data_occurences_geometry %>%
 #  mapview(data_occurences_geo, 
 #  color = "red", cex = 2, layer.name = "Ocorrências", popup = popupTable(data_occurences_geo, zcol = "name_en"))
 
-# SPECIES LIST PER ADMINASTRIVE UNIT ---- 
-load(file = file.path(
-  "00_raw_data",
-  "shapefiles_data.RData"))
+# SPECIES LIST PER ADMINASTRIVE UNIT ----
+interseccao_sf <- st_intersection(data_tetrapods_sa, south_america)
 
-keys_with_occurences <- data_occurences_units %>%
-  distinct(speciesKey) %>%
-  pull(speciesKey)
+list_per_admunit <- interseccao_sf %>%
+  st_drop_geometry()
 
-tetrapod_shapefile_filter <- tetrapod_shapefile %>% 
-  filter(speciesKey %in% keys_with_occurences)
+list_per_admunit$adm_unit %>% table()
 
-# Corrigir geometrias nos shapefiles
-geographic_shape_data <- st_make_valid(geographic_shape_data)
-tetrapod_shapefile_filter <- st_make_valid(tetrapod_shapefile_filter)
-# Executar a interseção espacial para obter as sobreposições
-overlaps <- st_intersection(geographic_shape_data, tetrapod_shapefile_filter)
-
-# Contar quantas vezes cada estado se sobrepõe a um polígono de espécie
-richness_admunits_counts <- overlaps %>%
-  group_by(state_id) %>% # Ajuste para a coluna que identifica cada estado
-  summarise(overlap_count = n())
-View(richness_admunits_counts)
-
-save(data_occurences_geometry,
-     data_occurences_units,
-     richness_admunits_counts, 
+save(list_occurences_clean, # sem duplicatas e filtrados por poligonos
+     data_occurences_units, # com as unidades administrativas
+     list_per_admunit,      # lista de especies por und adm
      file = file.path(
        "01_data_cleaned",
        "data_occurences_geolocation.RData")
@@ -786,31 +795,36 @@ data_wallacean_nested <- left_join(
 ) %>% 
   mutate(count_events = NA) %>%
   relocate(event_table,count_events, .after = Family) %>%
-  arrange(Class, Order, Family)
+  arrange(Class, Order, scientificName)
 
 head(data_wallacean_nested)
 
 # check data
 table(data_wallacean_nested$Class)
+# com os poligonos de especialistas
 # Amphibia     Aves   Mammalia Reptilia
 #     797      2764      898     1281
+# com o tetrapodtraits
+# Amphibia     Aves Mammalia Reptilia
+#    1825     2829     1024     1367
 table(data_wallacean_nested$Order)
 anyDuplicated(data_wallacean_nested$speciesKey)
 
 # adicionar contagem de unidades administrativas diferentes
-for (i in 1:nrow(data_wallacean_nested)) {
-  data_wallacean_nested[i,"count_events"] <- nrow(
-    data_wallacean_nested$event_table[[i]])
-  
-  data_wallacean_nested$event_table[[i]] <- 
-    data_wallacean_nested$event_table[[i]][
-      order(data_wallacean_nested$event_table[[i]]$year), 
-    ]
-}
+#for (i in 1:nrow(data_wallacean_nested)) {
+#  data_wallacean_nested[i,"count_events"] <- nrow(
+#    data_wallacean_nested$event_table[[i]])
+#  
+#  data_wallacean_nested$event_table[[i]] <- 
+#    data_wallacean_nested$event_table[[i]][
+#      order(data_wallacean_nested$event_table[[i]]$year), 
+#    ]
+#}
 
 # unnest data
 data_wallacean_unnested <- data_wallacean_nested %>%
   unnest(cols = c(event_table))
+nrow(data_wallacean_unnested) # 342259 ocorrencias
 
 # Change data to discovery
 data_wallacean_unnested_modified <- data_wallacean_unnested %>%
@@ -820,23 +834,9 @@ data_wallacean_unnested_modified <- data_wallacean_unnested %>%
 View(data_wallacean_unnested_modified)
 
 save(data_wallacean_nested,
-    data_wallacean_unnested, 
-     file = here(
-       "01_data_cleaned",
-       "dataset_occurences.RData")
+    data_wallacean_unnested,
+    data_wallacean_unnested_modified, 
+    file = here(
+      "01_data_cleaned",
+      "dataset_occurences.RData")
 )
-
-# Explorar os dados
-ggplot(data_wallacean_nested, aes(x = log(RangeSize), y = log(count_events))) +
-  geom_point() +
-  geom_smooth(method = "lm", se = FALSE) +  # Adiciona uma linha de tendência
-  labs(x = "Comprimento do Corpo (mm)", y = "Número de Registros (count_events)", title = "Relação entre Comprimento do Corpo e Registros") +
-  theme_minimal()
-
-ggplot(data_wallacean_nested, aes(x = AssessedStatus, y = log(count_events))) +
-  geom_boxplot(fill = "lightblue", colour = "darkblue") +
-  theme_minimal() +
-  labs(title = "Comparação de quantidade de registros por categoria da IUCN",
-       x = "Categoria da IUCN",
-       y = "Quantidade de registros (event_counts)") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
