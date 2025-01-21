@@ -26,8 +26,9 @@ The data underwent a cleaning process to remove records with imprecise or missin
 3. Application of the `CoordinateCleaner` pipeline (Zizka et al., 2019) to eliminate records with coordinates at country and/or capital centroids, located in research institutions, at sea, with equal absolute longitude and latitude, at GBIF headquarters
 4. Exclusion of records with coordinate precision lower than 100 km or without precision data.
 5. Duplicated coordinates
+6. Only occurrence records within the respective polygons were retained.
 
-## How to Use the Data
+## How to Use the 
 ![](Figures/visual_workflow.png)
 
 ## License
