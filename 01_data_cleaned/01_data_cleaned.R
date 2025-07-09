@@ -100,11 +100,17 @@ package_vec <- c(
 # TODO adaptar para uso do ambiente virtual renv
 sapply(package_vec, install.load.package)
 
-# GBIF FILTER AND CLEAN ----
+# Set directory 
+local_directory <- file.path("E:",
+                             "datasets_centrais",
+                             "wallacean_time") 
+# FILTER AND CLEAN ----
+## GBIF ----
 # load data
-start_time <- Sys.time()
+rm(list = setdiff(ls(), "local_directory")); gc()
+
 load(file.path(
-  "00_raw_data",
+  local_directory,
   "tetrapodstraits_data.RData")
 )
 
@@ -116,7 +122,7 @@ load(file.path(
 
 # key of each occurence
 anyDuplicated(data_tetrapodstraits$gbifID) 
-nrow(data_tetrapodstraits) # 2513477 occurences species
+nrow(data_tetrapodstraits) # 2.501.450 occurences species
 table(data_tetrapodstraits$class)
 
 data_tetrapods_clean <- data_tetrapodstraits %>%
@@ -126,13 +132,15 @@ data_tetrapods_clean <- data_tetrapodstraits %>%
   mutate(eventDate = na_if(eventDate, "")) %>%
   mutate(class = if_else(class == "", "Squamata", class)) # TODO REVER quando usar dados globais
 
-nrow(data_tetrapods_clean) # 2.489.856 occurences species
+nrow(data_tetrapods_clean) # 2.478.512 occurences species
 table(data_tetrapods_clean$class)
 
 # how much data is na?
 data_tetrapods_clean %>%
   summarise(missing_lat = sum(is.na(decimalLatitude)),
             missing_long = sum(is.na(decimalLongitude)),
+            missing_day = sum(is.na(day)),
+            missing_month = sum(is.na(month)),
             missing_year = sum(is.na(year)),
             missing_date = sum(is.na(eventDate)))
 
@@ -149,7 +157,9 @@ data_tetrapods_filter <- data_tetrapods_clean %>%
 
 data_tetrapods_filter %>%
   summarise(missing_lat = sum(is.na(decimalLatitude)),
-            missing_long = sum(is.na(decimalLongitude)), 
+            missing_long = sum(is.na(decimalLongitude)), # 112.301
+            missing_day = sum(is.na(day)), # 62.065 NA's
+            missing_month = sum(is.na(month)), # 62.065 NA's
             missing_year = sum(is.na(year))) # without missing data =)
             #missing_date = sum(is.na(eventDate))) 
 
@@ -207,28 +217,29 @@ data_tetrapods_filtered <- data_tetrapods_filter_spatialpoints %>%
   filter(coordinateUncertaintyInMeters / 1000 <= 100 | is.na(coordinateUncertaintyInMeters)) %>%
   filter(year >1899)
 
-#end_time <- Sys.time()
-#print(end_time - start_time) # Time difference of 28 mins
-
-# BIOTIME FILTER AND CLEAN ----
+## BioTIME 2.0v ----
 #start_time <- Sys.time()
 load(file.path(
-  "00_raw_data",
+  local_directory,
   "biotime_data.RData")
 ) 
 
 data_biotime_clean <- biotime_data_key_precleaned %>%
-  select("speciesKey", "class", "order", "family", "GENUS_SPECIES", 
-         "LATITUDE", "LONGITUDE", "YEAR", "STUDY_ID") %>%
+  select("speciesKey", "class", "order", "family", "valid_name", 
+         "LATITUDE", "LONGITUDE", "YEAR", "MONTH", "DAY") %>%
   rename(decimalLatitude = LATITUDE, 
          decimalLongitude = LONGITUDE,
-         species = GENUS_SPECIES,
+         species = valid_name,
+         day = DAY,
+         month = MONTH,
          year = YEAR) %>%
   mutate(origin_of_data = "biotime")
 
 data_biotime_clean %>% 
   summarise(missing_lat = sum(is.na(decimalLatitude)),
             missing_long = sum(is.na(decimalLongitude)), 
+            missing_day = sum(is.na(day)),
+            missing_month = sum(is.na(month)),
             missing_year = sum(is.na(year))) # without missing data
 
 flags <- clean_coordinates(x = data_biotime_clean,
@@ -244,43 +255,30 @@ data_biotime_filtered <- data_biotime_clean[
   flags$.summary,
 ]
 
-#The flagged records
-# dat_fl <- data_teste[!flags$.summary,]
-# Remove records that are temporal outliers
-#flags_temporal <- cf_age(x = data_biotime_filter_spatialpoints,
-#                         lon = "decimalLongitude",
-#                         lat = "decimalLatitude",
-#                         taxon = "species",
-#                         min_age = "year",
-#                         max_age = "year",
-#                         value = "flagged")
-#
-#data_biotime_filtered <- data_biotime_filter_spatialpoints[
-#  flags_temporal,
-#] 
 min(data_biotime_filtered$year)
 max(data_biotime_filtered$year)
 
-#end_time <- Sys.time()
-#print(end_time - start_time)
-
-# SPLINK FILTER AND CLEAN ----
-#start_time <- Sys.time()
+## speciesLink ----
 load(file.path(
-  "00_raw_data",
+  local_directory,
   "splinks_data.RData")
-) 
+)
 
 # names(splink_data_key_precleaned)
 data_splink_clean <- splink_data_key_precleaned %>%
-  select("speciesKey", "scientificname",
+  select("speciesKey", "scientificname","monthcollected","daycollected",
          "latitude", "longitude", "yearcollected", "coordinateprecision") %>%
   rename(decimalLatitude = latitude, 
          decimalLongitude = longitude,
          species = scientificname,
+         day = daycollected,
+         month = monthcollected,
          year = yearcollected) %>%
   mutate(origin_of_data = "splink") %>%
-  mutate(year = na_if(year, "")) %>%
+  mutate(
+    day = na_if(day, ""),
+    month = na_if(month, ""),
+    year = na_if(year, "")) %>%
   mutate(coordinateprecision = na_if(coordinateprecision, "")) %>% 
   mutate(year = as.integer(as.character(year))) %>%
   filter(!is.na(year))
@@ -288,6 +286,8 @@ data_splink_clean <- splink_data_key_precleaned %>%
 data_splink_clean %>%
   summarise(missing_lat = sum(is.na(decimalLatitude)),
             missing_long = sum(is.na(decimalLongitude)),
+            missing_day = sum(is.na(day)),
+            missing_month = sum(is.na(month)),
             missing_year = sum(is.na(year)))
 
 # invalidity coordinates
@@ -333,16 +333,17 @@ data_splink_filter_spatialpoints <- data_splink_cleaned[
 # filter coordinates uncertain > 100km
 # filter years from 1900
 data_splink_filtered <- data_splink_filter_spatialpoints %>%
+  mutate(coordinateprecision = as.numeric(coordinateprecision)) %>%
   filter(coordinateprecision / 1000 <= 100 | is.na(coordinateprecision)) %>%
   filter(year > 1899 & year < 2025)
 
-nrow(data_splink_filtered) # 294088
+nrow(data_splink_filter_spatialpoints)-nrow(data_splink_filtered)
 
 end_time <- Sys.time()
 print(end_time - start_time) # 7min57s
 # por todas as bases: Time difference of 39.19346 mins
 
-# CHECK DATASETS GBIF, BIOTIME AND SPECIESLINK ----
+# CHECK DATASETS ----
 dados_perdidos <- read.csv2("Figures/cleaned_data.csv") # atualizar manualmente
 totais_bases <- c(GBIF = nrow(data_tetrapods_clean),
                   BioTime = nrow(data_biotime_clean),
@@ -493,14 +494,17 @@ load(file.path(
   "01_data_cleaned",
   "datasets_filtered.RData")
 )
-
+# TODO da para usar para baixar o registro de occ para mais especies com essas 
+# chaves, e buscar + poligonos se necessarios. 
 chaves_perdidas_biotime <- setdiff(
   data_biotime_filtered$speciesKey,
   data_tetrapods_filtered$speciesKey
 ) 
 
 data_biotime_filtered_sa <- data_biotime_filtered %>% 
-  filter(!(speciesKey %in% chaves_perdidas_biotime)) 
+  filter(!(speciesKey %in% chaves_perdidas_biotime)) %>%
+  mutate(day = as.integer(day),
+         month = as.integer(month))
 
 chaves_perdidas_splink <- setdiff(
   data_splink_filtered$speciesKey,
@@ -508,7 +512,9 @@ chaves_perdidas_splink <- setdiff(
 ) 
 
 data_splink_filtered_sa <- data_splink_filtered %>% 
-  filter(!(speciesKey %in% chaves_perdidas_splink))
+  filter(!(speciesKey %in% chaves_perdidas_splink)) %>%
+  mutate(day = as.integer(day),
+         month = as.integer(month))
 
 glimpse(data_splink_filtered_sa)
 glimpse(data_biotime_filtered_sa)
@@ -519,25 +525,28 @@ data_occurences_precleaned <- bind_rows(
   data_splink_filtered_sa)
 
 nested_cols <- c("speciesKey", "class", "order", "family", "species",
-  "gbifID", "year","decimalLatitude", "decimalLongitude", "origin_of_data")
+  "gbifID", "day", "month", "year","decimalLatitude", "decimalLongitude", "origin_of_data")
 
 data_occurences_precleaned <- data_occurences_precleaned %>% 
   select(all_of(nested_cols))
 
-save(data_occurences_precleaned,  # dados limpos
+
+biotime_species <- unique(data_occurences_precleaned$speciesKey[data_occurences_precleaned$origin_of_data == "biotime"])
+splink_species <- unique(data_occurences_precleaned$speciesKey[data_occurences_precleaned$origin_of_data == "splink"])
+gbif_species <- unique(data_occurences_precleaned$speciesKey[data_occurences_precleaned$origin_of_data == "gbif"])
+# spp em biotime que não estão no GBIF
+setdiff(biotime_species, gbif_species)
+# splink que não estão no GBIF
+setdiff(splink_species, gbif_species)
+
+save(data_occurences_precleaned,  # dados limpos e integrados
      file = file.path(
        "01_data_cleaned",
        "data_occurences_filtered.RData"))
-# quantidade de registros de ocorrencia por origem dos dados
-table(data_occurences_precleaned$origin_of_data)
 
-# REMOVE DUPLICATES AND FILTER POINTS BY RANGE POLYGONS ----
+# REMOVE DUPLICATES ----
 rm(list=ls()); gc() # clean local enviroment
 start_time <- Sys.time()
-# shapefile
-load(file = file.path(
-  "00_raw_data",
-  "tetrapods_polygons_key.RData")) # From TetrapodTraits
 # occurences data
 load(file = file.path(
   "01_data_cleaned",
@@ -553,6 +562,16 @@ load(file = file.path(
 #             size = 0.5) +
 #  theme_bw()
 
+data_occurences_precleaned <- data_occurences_precleaned %>%
+  mutate(
+    # duas casas decimais = 1.11 km 
+    decimalLatitude = round(decimalLatitude, 2), 
+    decimalLongitude = round(decimalLongitude, 2),
+    month = ifelse(month > 12 | month < 1, NA, month),
+    day = ifelse(day > 31 | day < 1, NA, day)          
+  ) %>%
+  arrange(speciesKey, year, month, day) 
+
 # Remove duplicates
 duplicated_flags <- cc_dupl(
   data_occurences_precleaned,
@@ -567,7 +586,13 @@ data_occurences_precleaned_duplicate <- data_occurences_precleaned[
 
 nrow(data_occurences_precleaned_duplicate)*100/nrow(data_occurences_precleaned)
 # View(data_occurences_precleaned_duplicate)
-length(unique(data_occurences_precleaned_duplicate$speciesKey)) # 7897 spp
+length(unique(data_occurences_precleaned_duplicate$speciesKey)) # 7691 spp
+
+# FILTER POINTS BY RANGE POLYGONS ----
+# shapefile
+load(file = file.path(
+  "00_raw_data",
+  "tetrapods_polygons_key.RData")) # From TetrapodTraits
 
 # deixar apenas as especies que tem poligonos
 data_wallacean_knownledge_sa <- data_occurences_precleaned_duplicate %>%
@@ -580,7 +605,7 @@ data_tetrapods_sa <- tetrapods_polygons_key %>%
 # usando dados de poligonos de outras bases 6527 spp apenas
 # tem que ter o mesmo numero de especies (speciesKey)
 length(unique(data_wallacean_knownledge_sa$speciesKey)) 
-length(unique(data_tetrapods_sa$speciesKey)) 
+length(unique(data_tetrapods_sa$speciesKey)) # perdendo 3 spp sem poligono
 
 # run cc_iucn()
 # terra::vect(data_tetrapods_sa) se funcionar vai dar certo
@@ -645,6 +670,7 @@ nrow(data_wallacean_knownledge_sa)-nrow(list_occurences_clean)
 length(unique(list_occurences_clean$speciesKey)) 
 length(unique(data_wallacean_knownledge_sa$speciesKey))
 
+View(data_wallacean_knownledge_sa)
 # Quantas espécies para cada grupo?
 list_species <- list_occurences_clean %>%
  distinct(speciesKey, .keep_all=TRUE)
@@ -669,23 +695,7 @@ plot_clean <- ggplot() +
              size = 0.5) +
   theme_bw()
 
-# Save 
-#save(list_occurences_clean,
-#     species_keys_with_errors,
-#     file = here(
-#       "01_data_cleaned",
-#       "data_occurences_clean.RData")
-#)
-
 # EXTRACTING GEOLOCATIONS ----
-#load(file = file.path(
-#       "00_raw_data",
-#       "geographic_shape_data.RData")
-#)
-#load(file = file.path(
-#       "01_data_cleaned",
-#       "data_occurences_clean.RData")
-#)
 # shapefile to crop adm unit
 south_america <- st_read(file.path(
   "Shapefiles",
@@ -734,7 +744,7 @@ nrow(data_occurences)-nrow(data_occurences_geo)
 names(data_occurences_geo)
 
 data_occurences_geometry <- data_occurences_geo %>%
-  select(speciesKey, species, year, origin_of_data, sigla_admu, ID) #%>%
+  select(speciesKey, species,day,month, year, origin_of_data, sigla_admu, ID) #%>%
   #rename(codeAdmUnit = adm0_a3, adm_unit = name_en)
 
 data_occurences_units <- data_occurences_geometry %>%
@@ -761,6 +771,8 @@ save(list_occurences_clean, # sem duplicatas e filtrados por poligonos
        "data_occurences_geolocation.RData")
 )
 
+data_occurences_units %>% filter(speciesKey == "2421936")
+data_occurences_units %>% filter(speciesKey == "9290528")
 # NESTED DATAFRAME WITH BIOLOGICAL TRAITS ----
 rm(list=ls()); gc() # clean local enviroment
 
@@ -768,6 +780,7 @@ load(file = file.path(
        "01_data_cleaned",
        "data_occurences_geolocation.RData")
 )
+
 load(file.path(
   "00_raw_data",
   "trait_data.RData")
@@ -777,7 +790,7 @@ tetrapods_key_species <- trait_data %>%
   select("speciesKey","scientificName","Class", "Order","Family", 
   "YearOfDescription","BodyLength_mm","ImputedLength","BodyMass_g",
   "ImputedMass","Diu","Noc","Nocturnality", "Fos", "Ter", "Aqu", "Arb", "Aer",
-  "ImputedHabitat","MajorHabitatSum","ImputedMajorHabitat","RangeSize",
+  "ImputedHabitat","Verticality","MajorHabitatSum","ImputedMajorHabitat","RangeSize",
    "HumanDensity", "AssessedStatus") %>%
   distinct(speciesKey, .keep_all = TRUE) # 117 speciesKey duplicated
 anyDuplicated(tetrapods_key_species$speciesKey) # ok
@@ -796,8 +809,6 @@ data_wallacean_nested <- left_join(
   mutate(count_events = NA) %>%
   relocate(event_table,count_events, .after = Family) %>%
   arrange(Class, Order, scientificName)
-
-head(data_wallacean_nested)
 
 # check data
 table(data_wallacean_nested$Class)
@@ -826,16 +837,8 @@ data_wallacean_unnested <- data_wallacean_nested %>%
   unnest(cols = c(event_table))
 nrow(data_wallacean_unnested) # 342259 ocorrencias
 
-# Change data to discovery
-data_wallacean_unnested_modified <- data_wallacean_unnested %>%
-  mutate(year_modified = if_else(year < YearOfDescription, YearOfDescription, year)) %>%
-  relocate(year, YearOfDescription, year_modified, .after = species)
-
-View(data_wallacean_unnested_modified)
-
 save(data_wallacean_nested,
     data_wallacean_unnested,
-    data_wallacean_unnested_modified, 
     file = here(
       "01_data_cleaned",
       "dataset_occurences.RData")
