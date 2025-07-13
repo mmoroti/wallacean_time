@@ -19,6 +19,8 @@ load(file = file.path(
        "data_occurences_geolocation.RData")
 )
 
+unique(list_per_admunit$sigla_admu)
+
 # Gerando lista de quantas und administrativas cada especie pode ocupar
 sp_count <- list_per_admunit %>% 
   group_by(speciesKey) %>%
@@ -26,6 +28,7 @@ sp_count <- list_per_admunit %>%
   distinct(speciesKey, .keep_all = TRUE) %>%
   select(speciesKey, ua_total)
 
+any(is.na(data_wallacean_unnested$year))
 # Change data to discovery
 data_wallacean_unnested_modified <- data_wallacean_unnested %>%
   # especie so pode ser encontrada depois de ja ter sido descrita
@@ -38,21 +41,20 @@ data_wallacean_unnested_modified <- data_wallacean_unnested %>%
     day = if_else(is.na(day), 1L, as.integer(day)),
     
     # cria uma data completa
-    date = make_date(year_modified, month, day),
+    date = make_datetime(year_modified, month, day),
     date = date + days(1) # TODO CHECAR SPP QUE SOH TEM ANO NO PRIMEIRO REGISTRO
-  ) %>%
-  # TODO CHECAR
-  # removendo datas repetidas para specieskey,datas e admu repetidas
-  arrange(speciesKey, date) %>%
-  filter(!duplicated(paste(speciesKey, date, sigla_admu))) 
+  ) 
+
+any(is.na(data_wallacean_unnested_modified$year_modified))
+any(is.na(data_wallacean_unnested_modified$date))
 
 # Join socieconomic data with occurences
 data_wallacean <- data_wallacean_unnested_modified %>%
   left_join(sp_count, by = "speciesKey") %>% # adm. unit count
   left_join(dados_socieconomic_merge, by = c("sigla_admu", "year")) %>% #socioeconomic data
   select(speciesKey, scientificName, Class, sigla_admu, date, 
-  BodyLength_mm, Nocturnality, Verticality, ua_total, YearOfDescription,
-  'pop_density(person/km2)','pib_dollar_current') %>% # id, time, cov., adm. unit count
+  BodyLength_mm, BodyMass_g, Nocturnality, Verticality, ua_total, YearOfDescription,
+  'pop_density(person/km2)','pib_dollar_current', RangeSize) %>% # id, time, cov., adm. unit count
   rename('pop_density' = 'pop_density(person/km2)') 
 
 #df_eventos <- data_wallacean %>%
@@ -75,8 +77,18 @@ data_wallacean <- data_wallacean_unnested_modified %>%
 #         t.start, t.stop, event, WallaceCompletude) #%>%
 # #filter(speciesKey %in% c("2424006", "2428622", "2422148"))
 
+# TODO adicionar um dia a mais para cada data repetida em cada especie
+dados_ajustados <- data_wallacean %>%
+  group_by(speciesKey) %>%  # Agrupa por espécie
+  arrange(date) %>%         # Ordena por data (opcional, mas ajuda na visualização)
+  mutate(
+    # Adiciona dias sequenciais (0, 1, 2...) para cada data repetida
+    date = date + as.difftime(seq_len(n()) - 1, units = "days")
+  ) %>%
+  ungroup()  # Remove o agrupamento
+
 # Create time to event table 
-df_wallacean_time <- data_wallacean %>%
+df_wallacean_time <- dados_ajustados %>%
   filter(ua_total > 2) %>% # pelo menos duas unidades administrativas
   group_by(speciesKey) %>%
   arrange(date, .by_group = TRUE) %>%
@@ -91,17 +103,18 @@ df_wallacean_time <- data_wallacean %>%
   # especie, a data de inicio corresponde a descricao da especie - ou seja - 
   # inicia a possibilidade de geolocacao
     t.start.date = if_else(is.na(t.start.date), make_date(ano_descricao, 1,1), t.start.date),
-    t.stop.date = if_else(is.na(t.stop.date), make_date(2026, 1,1), t.stop.date)) %>%
-  # cria o t.start e o t.stop em dias
+    t.stop.date = if_else(is.na(t.stop.date), make_date(2026, 1,1), t.stop.date),
+  # event
+    event = if_else(!duplicated(sigla_admu), 1L, 0L),
+    ua_acumulada = cumsum(!duplicated(sigla_admu)),
+  # se 1L em event, a wallacecompletude eh junto do ultimo evento
+  # se 0L em event, a wallacecompletude eh depois do ultimo evento
+    WallaceCompletude = if_else(event == 1L & ua_acumulada == ua_total, 1L, 0L)) %>%
+  # cria o t.start e o t.stop em dias e transforma em anos
   mutate(
     duracao_evento = as.numeric(difftime(t.stop.date, t.start.date, units = "days")),
     t.start = cumsum(lag(duracao_evento, default = 0))/365.25,
-    t.stop  = t.start + duracao_evento/365.25,
-    event = if_else(!duplicated(sigla_admu), 1L, 0L),
-    ua_acumulada = cumsum(!duplicated(sigla_admu)),
-    # se 1L em event, a wallacecompletude eh junto do ultimo evento
-    # se 0L em event, a wallacecompletude eh depois do ultimo evento
-    WallaceCompletude = if_else(event == 0L & ua_acumulada == ua_total, 1L, 0L) 
+    t.stop  = t.start + duracao_evento/365.25
   ) %>%
   # remove todos eventos apos completude 
   mutate(
@@ -110,18 +123,19 @@ df_wallacean_time <- data_wallacean %>%
   ) %>%
   filter(linha <= pos_completude) %>%
   ungroup() %>%
-  select(speciesKey, Class, scientificName, 
+  select(speciesKey, Class, scientificName, date,
          t.start.date, t.stop.date, t.start,t.stop, event, WallaceCompletude,
-         Nocturnality, Verticality, BodyLength_mm) 
+         Nocturnality, Verticality, BodyLength_mm, BodyMass_g, RangeSize)
 
 # TODO precisa checar isso!
+# TODO Precisa pensar em validacoes para atender o modelo de evento
 df_wallacean_time %>%
-  filter(t.start == t.stop & event == 1) %>%
-  View()
+  filter(t.start >= t.stop) %>% View()
 
 # um bom exemplo para checar problemas
-# 2433011 
-
+# 2433011
+# 2423581
+# 2472164
 save(df_wallacean_time,
     file = file.path(
       "02_data_analysis",

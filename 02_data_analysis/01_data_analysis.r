@@ -14,16 +14,48 @@ load(file = file.path(
 
 # separando por classe
 df_amphibia <- df_wallacean_time %>%
-  filter(Class == "Amphibia")
+  filter(Class == "Amphibia") %>%
+  mutate(BodyLength_mm = scale(log(BodyLength_mm)),
+         Verticality = scale(Verticality^2),
+         Nocturnality = scale(Nocturnality^2),
+         RangeSize = scale(log(RangeSize)))
+
+table(df_amphibia$event) # 3055 eventos
+table(df_amphibia$WallaceCompletude) # 43 100% 
+length(unique(df_amphibia$speciesKey)) # 753 spp
 
 df_reptilia <- df_wallacean_time %>%
-  filter(Class == "Reptilia")
+  filter(Class == "Reptilia") %>%
+  mutate(BodyLength_mm = scale(log(BodyLength_mm)),
+         Verticality = scale(Verticality^2),
+         Nocturnality = scale(Nocturnality^2),
+         RangeSize = scale(log(RangeSize)))
+
+table(df_reptilia$event) # 3741 eventos
+table(df_reptilia$WallaceCompletude) # 13 100% 
+length(unique(df_reptilia$speciesKey)) # 754 spp
 
 df_aves <- df_wallacean_time %>%
-  filter(Class == "Aves")
+  filter(Class == "Aves") %>%
+  mutate(BodyMass_g = scale(log(BodyMass_g)),
+         Verticality = scale(Verticality^2),
+         Nocturnality = scale(Nocturnality^2),
+         RangeSize = scale(log(RangeSize)))
+
+table(df_aves$event) # 14560 eventos
+table(df_aves$WallaceCompletude) # 200 100%
+length(unique(df_aves$speciesKey)) # 2185 spp
 
 df_mammals <- df_wallacean_time %>%
-  filter(Class == "Mammalia")
+  filter(Class == "Mammalia") %>%
+  mutate(BodyMass_g = scale(log(BodyMass_g)),
+         Verticality = scale(Verticality^2),
+         Nocturnality = scale(Nocturnality^2),
+         RangeSize = scale(log(RangeSize)))
+
+table(df_mammals$event) # 3903 eventos
+table(df_mammals$WallaceCompletude) # 27 spp 100%
+length(unique(df_mammals$speciesKey)) # 701 spp
 
 # timereg package ----
 # Aalen models ----
@@ -32,7 +64,8 @@ fit.amphibia.surv <- aalen(
   formula      = Surv(t.start, t.stop, event) ~
     const(Verticality) +
     const(Nocturnality) +
-    const(log(BodyLength_mm)) +
+    const(BodyLength_mm) +
+    const(RangeSize) +
     cluster(speciesKey),
   #id           = "speciesKey",
   data         = df_amphibia,
@@ -42,12 +75,14 @@ fit.amphibia.surv <- aalen(
   start.time   = 0,       # opcional, default = 0
   max.time     = NULL     # default = máximo observado
 )
+summary(fit.amphibia.surv)
 
 fit.amphibia.death <- aalen(
   formula      = Surv(t.start, t.stop, WallaceCompletude) ~
     const(Verticality) +
     const(Nocturnality) +
     const(log(BodyLength_mm)) +
+    const(RangeSize) +
     cluster(speciesKey),
   data         = df_amphibia,
   robust       = 1,       # variância robusta
@@ -56,7 +91,7 @@ fit.amphibia.death <- aalen(
   start.time   = 0,       # opcional, default = 0
   max.time     = NULL     # default = máximo observado
 )
-
+summary(fit.amphibia.death)
 fit.amphibia <- recurrent.marginal.mean(fit.amphibia.surv, fit.amphibia.death)
 
 ## Reptilia ----
@@ -64,7 +99,8 @@ fit.reptilia.surv <- aalen(
   formula      = Surv(t.start, t.stop, event) ~
     const(Verticality) +
     const(Nocturnality) +
-    const(log(BodyLength_mm)) +
+    const(BodyLength_mm) +
+    const(RangeSize) +
     cluster(speciesKey),
   #id           = "speciesKey",
   data         = df_reptilia,
@@ -74,12 +110,14 @@ fit.reptilia.surv <- aalen(
   start.time   = 0,       # opcional, default = 0
   max.time     = NULL     # default = máximo observado
 )
+summary(fit.reptilia.surv)
 
 fit.reptilia.death <- aalen(
   formula      = Surv(t.start, t.stop, WallaceCompletude) ~
     const(Verticality) +
     const(Nocturnality) +
-    const(log(BodyLength_mm)) +
+    const(BodyLength_mm) +
+    const(RangeSize) +
     cluster(speciesKey),
   data         = df_reptilia,
   robust       = 1,       # variância robusta
@@ -88,6 +126,7 @@ fit.reptilia.death <- aalen(
   start.time   = 0,       # opcional, default = 0
   max.time     = NULL     # default = máximo observado
 )
+summary(fit.reptilia.death)
 fit.reptilia <- recurrent.marginal.mean(fit.reptilia.surv, fit.reptilia.death)
 
 ## Aves ----
@@ -95,7 +134,8 @@ fit.aves.surv <- aalen(
   formula      = Surv(t.start, t.stop, event) ~
     const(Verticality) +
     const(Nocturnality) +
-    const(log(BodyLength_mm)) +
+    const(BodyMass_g) +
+    const(RangeSize) +
     cluster(speciesKey),
   #id           = "speciesKey",
   data         = df_aves,
@@ -105,12 +145,13 @@ fit.aves.surv <- aalen(
   start.time   = 0,       # opcional, default = 0
   max.time     = NULL     # default = máximo observado
 )
-
+summary(fit.aves.surv)
 fit.aves.death <- aalen(
   formula      = Surv(t.start, t.stop, WallaceCompletude) ~
     const(Verticality) +
     const(Nocturnality) +
-    const(log(BodyLength_mm)) +
+    const(BodyMass_g) +
+    const(RangeSize) +
     cluster(speciesKey),
   data         = df_aves,
   robust       = 1,       # variância robusta
@@ -119,6 +160,7 @@ fit.aves.death <- aalen(
   start.time   = 0,       # opcional, default = 0
   max.time     = NULL     # default = máximo observado
 )
+summary(fit.aves.death)
 fit.aves <- recurrent.marginal.mean(fit.aves.surv, fit.aves.death)
 
 ## Mammals ----
@@ -126,22 +168,24 @@ fit.mammalia.surv <- aalen(
   formula      = Surv(t.start, t.stop, event) ~
     const(Verticality) +
     const(Nocturnality) +
-    const(log(BodyLength_mm)) +
+    const(BodyMass_g) +
+    const(RangeSize) +
     cluster(speciesKey),
-  #id           = "speciesKey",
-  data         = df_mammals,
-  robust       = 1,       # variância robusta
-  n.sim        = 1000,     # número de simulações para CI
-  resample.iid = 1,       # para funções de residuais/CI i.i.d.
-  start.time   = 0,       # opcional, default = 0
-  max.time     = NULL     # default = máximo observado
+    data         = df_mammals,
+    robust       = 1,       # variância robusta
+    n.sim        = 1000,     # número de simulações para CI
+    resample.iid = 1,       # para funções de residuais/CI i.i.d.
+    start.time   = 0,       # opcional, default = 0
+    max.time     = NULL     # default = máximo observado
 )
+summary(fit.mammalia.surv)
 
 fit.mammalia.death <- aalen(
   formula      = Surv(t.start, t.stop, WallaceCompletude) ~
     const(Verticality) +
     const(Nocturnality) +
-    const(log(BodyLength_mm)) +
+    const(BodyMass_g) +
+    const(RangeSize) +
     cluster(speciesKey),
   data         = df_mammals,
   robust       = 1,       # variância robusta
@@ -150,7 +194,8 @@ fit.mammalia.death <- aalen(
   start.time   = 0,       # opcional, default = 0
   max.time     = NULL     # default = máximo observado
 )
-fit.mammalia <- recurrent.marginal.mean(fit.mammalia.surv, fit.mammalia.death)
+fit.mammalia <- recurrent.marginal.mean(fit.mammalia.surv,
+                                        fit.mammalia.death)
 
 ## Plot ----
 par(mfrow = c(2, 2))
