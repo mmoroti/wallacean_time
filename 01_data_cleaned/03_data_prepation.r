@@ -77,12 +77,16 @@ data_wallacean <- data_wallacean_unnested_modified %>%
 #         t.start, t.stop, event, WallaceCompletude) #%>%
 # #filter(speciesKey %in% c("2424006", "2428622", "2422148"))
 
-# TODO adicionar um dia a mais para cada data repetida em cada especie
+# adicionar um dia a mais para cada data repetida em cada especie que tem datas
+# repetidas para evitar o sobrepor datas de evento
 dados_ajustados <- data_wallacean %>%
   group_by(speciesKey) %>%  # Agrupa por espécie
   arrange(date) %>%         # Ordena por data (opcional, mas ajuda na visualização)
   mutate(
     # Adiciona dias sequenciais (0, 1, 2...) para cada data repetida
+    # TODO uma premissa chatinha porque algo pode ter vindo antes,
+    # como a escala da analise é em anos, acho que acabara ficando diluido
+    # mudar a escala em dias!
     date = date + as.difftime(seq_len(n()) - 1, units = "days")
   ) %>%
   ungroup()  # Remove o agrupamento
@@ -109,13 +113,18 @@ df_wallacean_time <- dados_ajustados %>%
     ua_acumulada = cumsum(!duplicated(sigla_admu)),
   # se 1L em event, a wallacecompletude eh junto do ultimo evento
   # se 0L em event, a wallacecompletude eh depois do ultimo evento
-    WallaceCompletude = if_else(event == 1L & ua_acumulada == ua_total, 1L, 0L)) %>%
+    WallaceCompletude = if_else(event == 1L & ua_acumulada == ua_total, 1L, 0L),
+    Wallace75 = if_else(event == 1L & ua_acumulada >= ua_total * 0.75, 1L, 0L),
+    Wallace50 = if_else(event == 1L & ua_acumulada >= ua_total * 0.5, 1L, 0L)) %>%
   # cria o t.start e o t.stop em dias e transforma em anos
   mutate(
     duracao_evento = as.numeric(difftime(t.stop.date, t.start.date, units = "days")),
     t.start = cumsum(lag(duracao_evento, default = 0))/365.25,
     t.stop  = t.start + duracao_evento/365.25
-  ) %>%
+  ) 
+
+# Criando cenários
+df_wallacean_100 <- df_wallacean_time %>%
   # remove todos eventos apos completude 
   mutate(
     linha = row_number(),
@@ -127,6 +136,30 @@ df_wallacean_time <- dados_ajustados %>%
          t.start.date, t.stop.date, t.start,t.stop, event, WallaceCompletude,
          Nocturnality, Verticality, BodyLength_mm, BodyMass_g, RangeSize)
 
+df_wallacean_75 <- df_wallacean_time %>%
+  # remove todos eventos apos completude 
+  mutate(
+    linha = row_number(),
+    pos_completude = if (any(Wallace75 == 1)) min(linha[Wallace75 == 1]) else Inf
+  ) %>%
+  filter(linha <= pos_completude) %>%
+  ungroup() %>%
+  select(speciesKey, Class, scientificName, date,
+         t.start.date, t.stop.date, t.start,t.stop, event, Wallace75,
+         Nocturnality, Verticality, BodyLength_mm, BodyMass_g, RangeSize)
+
+df_wallacean_50 <- df_wallacean_time %>%
+  # remove todos eventos apos completude 
+  mutate(
+    linha = row_number(),
+    pos_completude = if (any(Wallace50 == 1)) min(linha[Wallace50 == 1]) else Inf
+  ) %>%
+  filter(linha <= pos_completude) %>%
+  ungroup() %>%
+  select(speciesKey, Class, scientificName, date,
+         t.start.date, t.stop.date, t.start,t.stop, event, Wallace50,
+         Nocturnality, Verticality, BodyLength_mm, BodyMass_g, RangeSize)
+
 # TODO precisa checar isso!
 # TODO Precisa pensar em validacoes para atender o modelo de evento
 df_wallacean_time %>%
@@ -136,8 +169,10 @@ df_wallacean_time %>%
 # 2433011
 # 2423581
 # 2472164
-save(df_wallacean_time,
+save(df_wallacean_100,
+     df_wallacean_75,
+     df_wallacean_50,
     file = file.path(
       "02_data_analysis",
-      "data_wallacean_time.RData")
+      "data_wallacean_time_edit.RData")
 )
