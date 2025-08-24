@@ -1,5 +1,6 @@
 library(sf)
 library(tidyverse)
+library(stringi)
 
 # preencher os anos intermediarios com base na variacao entre decadas
 fill_population_data <- function(df) {
@@ -49,118 +50,110 @@ fill_population_data <- function(df) {
   return(df_filled)
 }
 
-south_america <- st_read(file.path(
-  "Shapefiles",
-  "GEOGRAPHIC_SHAPEFILE",
-  "south_america_br_states.shp"
-)) %>%
-  mutate(sigla_admu = case_when(
-    sigla_admu == "URU" ~ "URY",
-    sigla_admu == "PAR" ~ "PRY",
-    TRUE ~ sigla_admu
-  ))
+# explorar dados socieconomicos
+# https://www.nature.com/articles/s41597-023-02323-8
+load(file.path("00_raw_data",
+               "geographic_shape_data.RData"))
 
-adm_unit_list <- south_america %>%
-  select(adm_unit, sigla_admu) %>%
+data_dose <- read.csv2("00_raw_data/raw_data/DOSE_V2.11.csv", sep = ',') %>%
+  select(country, GID_0, region, GID_1, year, pop, grp_pc_usd_2015) 
+
+# Conta a frequência de cada adm0_a3
+counts <- geographic_shape_data %>%
+  count(adm0_a3)
+
+# Dataset 1: apenas os adm0_a3 que aparecem uma vez
+shp_country <- geographic_shape_data %>%
+  filter(adm0_a3 %in% counts$adm0_a3[counts$n == 1]) %>%
+  st_transform(crs = 6933) %>%   # reprojeta para Equal Area
+  mutate(area_km2 = round(as.numeric(st_area(geometry)) / 10^6),2)  # converte m² → km²
+
+country_economic <- data_dose %>%
+  select(GID_0, pop, grp_pc_usd_2015) %>%
+  group_by(GID_0) %>%
+  mutate(
+    pop = as.numeric(pop),
+    grp_pc_usd_2015 = as.numeric(grp_pc_usd_2015)
+  ) %>%
+  slice_tail(n = 10) %>%
+  summarise(
+    pop = mean(pop, na.rm = TRUE),
+    grp_pc_usd_2015 = mean(grp_pc_usd_2015, na.rm = TRUE)
+  ) %>%
+  ungroup() %>%
+  mutate(across(everything(), ~replace(., is.nan(.), NA))) 
+
+#  summarise(
+#    mean_pop = mean(as.numeric(pop), na.rm = TRUE),
+#    mean_grp = mean(as.numeric(grp_pc_usd_2015), na.rm = TRUE)
+#  ) %>%
+#  mutate(across(everything(), ~replace(., is.nan(.), NA))) 
+
+socieconomic_country <- left_join(shp_country,
+                                  country_economic,
+                                  by = c("adm0_a3" = "GID_0")) %>%
+  st_drop_geometry()
+visdat::vis_miss(socieconomic_country)
+# Dataset 2: adm0_a3 que aparecem duas ou mais vezes
+shp_adm_unit <- geographic_shape_data %>%
+  filter(adm0_a3 %in% counts$adm0_a3[counts$n >= 2]) %>%
+  mutate(
+    name_en = stri_trans_general(tolower(name_en), "Latin-ASCII"))
+adm_unit <- unique(shp_adm_unit$adm0_a3)
+
+region_economic <- data_dose %>%
+  filter(GID_0 %in% adm_unit) %>%
+  select(region, pop, grp_pc_usd_2015) %>%
+  mutate(
+    region = stri_trans_general(tolower(region), "Latin-ASCII"),
+    pop = as.numeric(pop),
+    grp_pc_usd_2015 = as.numeric(grp_pc_usd_2015)
+  ) %>%
+  group_by(region) %>%
+  slice_tail(n = 10) %>%
+  summarise(
+    pop = mean(pop, na.rm = TRUE),
+    grp_pc_usd_2015 = mean(grp_pc_usd_2015, na.rm = TRUE)
+  ) %>%
+  ungroup() %>%
+  mutate(across(everything(), ~replace(., is.nan(.), NA)))
+
+
+socieconomic_region <- left_join(shp_adm_unit,
+                                 region_economic,
+                                 by = c("name_en" = "region")) %>%
+  st_transform(crs = 6933) %>%   # reprojeta para Equal Area
+  mutate(area_km2 = round(as.numeric(st_area(geometry)) / 10^6),2) %>%  # converte m² → km²
   st_drop_geometry()
 
-# unidades administrativas nao encontradas
-setdiff(adm_unit_list$sigla_admu,
-   data_socieconomic$iso3c)
+# Obtain centroid each adm unit
+centroid_undadm <- geographic_shape_data %>% 
+  mutate(geometry = st_centroid(geometry)) %>%  # substitui geometria pelo centróide
+  mutate(
+    longitude = st_coordinates(geometry)[,1],
+    latitude  = st_coordinates(geometry)[,2]
+  ) %>%
+  mutate(
+    name_en = stri_trans_general(tolower(name_en), "Latin-ASCII")) %>%
+  st_drop_geometry() %>%
+  select(-adm0_a3) %>%
+  distinct(name_en, .keep_all = TRUE)
 
-# Adicionando dados dos estados do Brasil IBGE
-ibge_state_codes <- data.frame(
-  tcode = c(12, 27, 16, 13, 29, 23, 53, 32, 52,
-             21, 51, 50, 31, 15, 25, 41, 26, 22,
-              24, 43, 33, 11, 14, 42, 35, 28, 17),
-  state = c("AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES",
-              "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI",
-              "RN", "RS", "RJ", "RO", "RR", "SC", "SP", "SE", "TO")
-)
+visdat::vis_miss(centroid_undadm)
 
-pib_estadual <- ipeadata("PIBPMCE") %>%
-  filter(uname == "States") %>%
-  mutate(year = year(date)) %>%
-  select(tcode, value, year) %>%
-  left_join(ibge_state_codes, by = "tcode") %>%
-  arrange(year, state)
+socieconomic_data_raw <- bind_rows(socieconomic_region,
+                               socieconomic_country) %>%
+  mutate(
+    name_en = stri_trans_general(tolower(name_en), "Latin-ASCII"))
 
-# Os dados do World Bank geralmente estão em dólares americanos (USD). 
-# Para garantir comparabilidade, será necessário converter os valores de PIB
-#  estadual (em reais) para dólares. Isso pode ser feito utilizando a taxa
-#  de câmbio nominal anual média (R$ / USD) correspondente a cada ano.
-# taxa de câmbio comercial - venda - média anual para cada ano
-taxa_cambio <- ipeadata("BM_ERV") %>%
-  mutate(year = year(date)) %>%
-  select(year, value) %>%
-  rename("taxa_cambio" = "value")
+socieconomic_data <- left_join(socieconomic_data_raw,
+          centroid_undadm,
+          by = "name_en") 
 
-pib_estadual_dollar <- pib_estadual %>%
-  left_join(taxa_cambio, by = "year") %>%
-  mutate(pib_dollar_current = value/taxa_cambio) %>%
-  select(state, year, pib_dollar_current) %>%
-  rename(iso3c = "state")
+visdat::vis_miss(socieconomic_data)
 
-population_brazil <- brazil_population %>%
-  mutate(across(`1872`:`1991`, ~ as.numeric(gsub(",", ".", .)))) %>%
-  pivot_longer(cols = -UF, names_to = "Year", values_to = "pop_density(person/km2)") %>%
-  mutate(Year = as.numeric(Year))
-
-# Para preencher os dados de densidade populacional entre décadas,
-# foi adotada uma abordagem que distribui proporcionalmente a variação
-# observada entre os anos de início e fim de cada década, considerando
-# o aumento ou declínio da população. A diferença de densidade 
-# populacional entre os anos conhecidos foi calculada e dividida 
-# igualmente entre os anos intermediários, refletindo as tendências 
-# de crescimento ou diminuição populacional ao longo do tempo. 
-# Essa metodologia permite capturar as variações populacionais de forma
-# contínua, assumindo uma tendência linear entre as décadas.
-# Aplicando a função para preencher os dados
-population_brazil_filled <- fill_population_data(population_brazil) %>%
-  filter(Year >= 1900)
-
-# State Brazil
-uf_table <- tibble::tibble(
-  UF = c("Acre", "Alagoas", "Amapa", "Amazonas", "Bahia", "Ceara", 
-             "Distrito Federal", "Espirito Santo", "Goias", "Maranhao", 
-             "Mato Grosso", "Mato Grosso do Sul", "Minas Gerais", "Para", 
-             "Paraiba", "Parana", "Pernambuco", "Piaui", "Rio de Janeiro", 
-             "Rio Grande do Norte", "Rio Grande do Sul", "Rondonia", 
-             "Roraima", "Santa Catarina", "Sao Paulo", "Sergipe", "Tocantins"),
-  iso3c = c("AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", 
-            "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", 
-            "RS", "RO", "RR", "SC", "SP", "SE", "TO")
-)
-
-# Converte para siglas usando dplyr
-population_brazil_filled_admunit <- left_join(
-  population_brazil_filled, 
-  uf_table, by = "UF"
-) %>%
-  ungroup() %>%
-  select(-UF) %>%
-  rename(year = Year) %>%
-  remove_missing()
-
-# join pop_density and pib_dollar_current
-brazil_data <- full_join(population_brazil_filled_admunit,
-  pib_estadual_dollar,
-  by = c("iso3c", "year"))
-
-# Agora você pode fazer o merge com o dataset socieconômico
-dados_socieconomic_merge <- bind_rows(
-  data_socieconomic,
-  brazil_data) %>%
-  select("iso3c","year", "pop_density(person/km2)", "pib_dollar_current") %>%
-  rename(sigla_admu = "iso3c")
-
-# unidades administrativas nao encontradas
-setdiff(adm_unit_list$sigla_admu,
-   dados_socieconomic_merge$sigla_admu) 
-
-# Save in 01_data_cleaned
 save(
-  dados_socieconomic_merge,
+  socieconomic_data,
   file = file.path(
     "01_data_cleaned",
     "data_socieconomic_cleaned.RData")

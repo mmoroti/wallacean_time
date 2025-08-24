@@ -71,21 +71,26 @@ occ_download(
   pred_in("basisOfRecord", c('PRESERVED_SPECIMEN',
                              'OCCURRENCE',
                              'MATERIAL_SAMPLE')),
-                             #'HUMAN_OBSERVATION')),
-  pred_in("country", c('BR','AR','BO', 
-                    'CL', 'CO', 'EC',
-                    'GY', 'GF', 'PY',
-                    'PE', 'SR', 'UY',
-                    'VE')),
   format = "SIMPLE_CSV",
   user=user,pwd=pwd,email=email
 )
+
+#pred_in("country", c('BR','AR','BO', 
+#                  'CL', 'CO', 'EC',
+#                  'GY', 'GF', 'PY',
+#                  'PE', 'SR', 'UY',
+#                  'VE')),
 
 # 11-09-2024
 # occ_download_wait('0011974-240906103802322') 
 # 03-07-2025
 occ_download_wait('0093818-250525065834625')
 data_tetrapodstraits <- occ_download_get('0093818-250525065834625',
+                                         path = local_directory) %>%
+  occ_download_import()
+# 06-08-2025 GLOBAL
+occ_download_wait('0021280-250802193616735')
+data_tetrapodstraits <- occ_download_get('0021280-250802193616735',
                                          path = local_directory) %>%
   occ_download_import()
 

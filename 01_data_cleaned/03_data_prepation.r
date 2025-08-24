@@ -1,5 +1,10 @@
 library(tidyverse)
 
+# TODO:
+# Separar por grupos
+# Montar a completude por pais - lista de spp poligonos/o que existe no gbif*100
+# incluir dados socieconomicos
+
 rm(list=ls()); gc() # clean local enviroment
 # socieconomic data
 load(
@@ -19,16 +24,106 @@ load(file = file.path(
        "data_occurences_geolocation.RData")
 )
 
-unique(list_per_admunit$sigla_admu)
-
 # Gerando lista de quantas und administrativas cada especie pode ocupar
 sp_count <- list_per_admunit %>% 
   group_by(speciesKey) %>%
   mutate(ua_total = n()) %>%
   distinct(speciesKey, .keep_all = TRUE) %>%
   select(speciesKey, ua_total)
-
 any(is.na(data_wallacean_unnested$year))
+
+# Gerar uma lista de quantos registros sao esperados pelos poligonos
+# nas unidades administrativas pelo numero de ocorrencias disponiveis na base
+# Global
+data_key <- data_wallacean_unnested %>%
+  distinct(speciesKey, .keep_all = TRUE) %>%
+  select(Class, Order, speciesKey)
+
+list_species <- left_join(list_per_admunit,
+          data_key, 
+          by = "speciesKey")
+# Amphibia
+rich_admunit_expected_amphibia <- list_species %>%
+  filter(Class == "Amphibia") %>%
+  select(name_en, speciesKey) %>%
+  group_by(name_en) %>%
+  summarise(polygons_richness = n_distinct(speciesKey))
+
+rich_admunit_observed_amphibia <- data_wallacean_unnested %>%
+  filter(Class == "Amphibia") %>%
+  select(name_en, speciesKey) %>%
+  group_by(name_en) %>%
+  summarise(observed_richness = n_distinct(speciesKey))
+
+richness_completude_amphibia <- left_join(
+  rich_admunit_expected_amphibia,
+  rich_admunit_observed_amphibia,
+  by = "name_en"
+)
+# Squamata
+rich_admunit_expected_reptilia <- list_species %>%
+  filter(Class == "Reptilia") %>%
+  select(name_en, speciesKey) %>%
+  group_by(name_en) %>%
+  summarise(polygons_richness = n_distinct(speciesKey))
+
+rich_admunit_observed_reptilia <- data_wallacean_unnested %>%
+  filter(Class == "Reptilia") %>%
+  select(name_en, speciesKey) %>%
+  group_by(name_en) %>%
+  summarise(observed_richness = n_distinct(speciesKey))
+
+richness_completude_reptilia <- left_join(
+  rich_admunit_expected_reptilia,
+  rich_admunit_observed_reptilia,
+  by = "name_en"
+)
+# Squamata
+rich_admunit_expected_aves <- list_species %>%
+  filter(Class == "Aves") %>%
+  select(name_en, speciesKey) %>%
+  group_by(name_en) %>%
+  summarise(polygons_richness = n_distinct(speciesKey))
+
+rich_admunit_observed_aves <- data_wallacean_unnested %>%
+  filter(Class == "Aves") %>%
+  select(name_en, speciesKey) %>%
+  group_by(name_en) %>%
+  summarise(observed_richness = n_distinct(speciesKey))
+
+richness_completude_aves <- left_join(
+  rich_admunit_expected_aves,
+  rich_admunit_observed_aves,
+  by = "name_en"
+)
+# Mammals
+rich_admunit_expected_mammalia <- list_species %>%
+  filter(Class == "Mammalia") %>%
+  select(name_en, speciesKey) %>%
+  group_by(name_en) %>%
+  summarise(polygons_richness = n_distinct(speciesKey))
+
+rich_admunit_observed_mammalia <- data_wallacean_unnested %>%
+  filter(Class == "Mammalia") %>%
+  select(name_en, speciesKey) %>%
+  group_by(name_en) %>%
+  summarise(observed_richness = n_distinct(speciesKey))
+
+richness_completude_mammalia <- left_join(
+  rich_admunit_expected_mammalia,
+  rich_admunit_observed_mammalia,
+  by = "name_en"
+)
+
+save(
+  richness_completude_amphibia,
+  richness_completude_reptilia,
+  richness_completude_aves,
+  richness_completude_mammalia,
+  richness_completude,
+  file = "02_data_analysis/richness_completude.RData"
+)
+
 # Change data to discovery
 data_wallacean_unnested_modified <- data_wallacean_unnested %>%
   # especie so pode ser encontrada depois de ja ter sido descrita
@@ -44,56 +139,53 @@ data_wallacean_unnested_modified <- data_wallacean_unnested %>%
     date = make_datetime(year_modified, month, day),
     date = date + days(1) # TODO CHECAR SPP QUE SOH TEM ANO NO PRIMEIRO REGISTRO
   ) 
-
+View(data_wallacean_unnested_modified)
 any(is.na(data_wallacean_unnested_modified$year_modified))
 any(is.na(data_wallacean_unnested_modified$date))
 
 # Join socieconomic data with occurences
 data_wallacean <- data_wallacean_unnested_modified %>%
   left_join(sp_count, by = "speciesKey") %>% # adm. unit count
-  left_join(dados_socieconomic_merge, by = c("sigla_admu", "year")) %>% #socioeconomic data
-  select(speciesKey, scientificName, Class, sigla_admu, date, 
+  #left_join(dados_socieconomic_merge, by = c("sigla_admu", "year")) %>% #socioeconomic data
+  select(speciesKey, scientificName, Class, Order, Family, name_en, date, 
   BodyLength_mm, BodyMass_g, Nocturnality, Verticality, ua_total, YearOfDescription,
-  'pop_density(person/km2)','pib_dollar_current', RangeSize) %>% # id, time, cov., adm. unit count
-  rename('pop_density' = 'pop_density(person/km2)') 
+  RangeSize)# %>% # id, time, cov., adm. unit count
+  #'pop_density(person/km2)','pib_dollar_current', 
+  #rename('pop_density' = 'pop_density(person/km2)') 
 
-#df_eventos <- data_wallacean %>%
-#  filter(ua_total > 2) %>% # spp esperadas em + de 2 unid. adm.
-#  group_by(speciesKey) %>%
-#  mutate(
-#    year_relative = year_modified - min(year_modified),
-#    t.start = as.numeric(year_relative),
-#    t.stop  = lead(t.start),
-#    t.stop = ifelse(is.na(t.stop), 2025 - min(year_modified), t.stop),
-#    event   = ifelse(!duplicated(sigla_admu), 1, 0), 
-#    ua_acumulada = cumsum(!duplicated(sigla_admu)),
-#    WallaceCompletude = ifelse(event == 1 & ua_acumulada == ua_total, 1, 0),
-    #Wallace50 = ifelse(event == 1 & ua_acumulada => ua_total/2, 1, 0),
-#    event = as.integer(event),
-#    WallaceCompletude = as.integer(WallaceCompletude)
-#  ) %>%
-#  ungroup() %>%
-#  select(speciesKey, scientificName, Diu, Noc, BodyLength_mm,
-#         t.start, t.stop, event, WallaceCompletude) #%>%
-# #filter(speciesKey %in% c("2424006", "2428622", "2422148"))
-
-# adicionar um dia a mais para cada data repetida em cada especie que tem datas
-# repetidas para evitar o sobrepor datas de evento
 dados_ajustados <- data_wallacean %>%
-  group_by(speciesKey) %>%  # Agrupa por espécie
-  arrange(date) %>%         # Ordena por data (opcional, mas ajuda na visualização)
+  group_by(speciesKey) %>%
+  mutate(date = as.Date(date)) %>%
+  arrange(date, .by_group = TRUE) %>%
+  distinct(name_en, date, .keep_all = TRUE) %>%
+  # Adiciona dias sequenciais (0, 1, 2...) para cada data repetida
+  # TODO uma premissa chatinha porque algo pode ter vindo antes,
+  # como a escala da analise é em anos, acho que acabara ficando diluido
+  # mudar a escala em dias!
   mutate(
-    # Adiciona dias sequenciais (0, 1, 2...) para cada data repetida
-    # TODO uma premissa chatinha porque algo pode ter vindo antes,
-    # como a escala da analise é em anos, acho que acabara ficando diluido
-    # mudar a escala em dias!
-    date = date + as.difftime(seq_len(n()) - 1, units = "days")
+    date_corrigida = {
+      datas <- date
+      if (length(datas) > 1) {
+        for (i in 2:length(datas)) {
+          if (datas[i] <= datas[i - 1]) {
+            datas[i] <- datas[i - 1] + days(1)
+          }
+        }
+      }
+      datas
+    }
   ) %>%
-  ungroup()  # Remove o agrupamento
+  mutate(date = as.Date(date_corrigida)) %>%
+  select(-date_corrigida) %>%
+  ungroup()
+
+#teste <- dados_ajustados %>%
+#  filter(speciesKey == "2433011") 
+#any(duplicated(teste$date))
 
 # Create time to event table 
 df_wallacean_time <- dados_ajustados %>%
-  filter(ua_total > 2) %>% # pelo menos duas unidades administrativas
+  filter(ua_total > 2) %>% # pelo menos tres unidades administrativas
   group_by(speciesKey) %>%
   arrange(date, .by_group = TRUE) %>%
   mutate(
@@ -109,8 +201,8 @@ df_wallacean_time <- dados_ajustados %>%
     t.start.date = if_else(is.na(t.start.date), make_date(ano_descricao, 1,1), t.start.date),
     t.stop.date = if_else(is.na(t.stop.date), make_date(2026, 1,1), t.stop.date),
   # event
-    event = if_else(!duplicated(sigla_admu), 1L, 0L),
-    ua_acumulada = cumsum(!duplicated(sigla_admu)),
+    event = if_else(!duplicated(name_en), 1L, 0L),
+    ua_acumulada = cumsum(!duplicated(name_en)),
   # se 1L em event, a wallacecompletude eh junto do ultimo evento
   # se 0L em event, a wallacecompletude eh depois do ultimo evento
     WallaceCompletude = if_else(event == 1L & ua_acumulada == ua_total, 1L, 0L),
@@ -132,7 +224,7 @@ df_wallacean_100 <- df_wallacean_time %>%
   ) %>%
   filter(linha <= pos_completude) %>%
   ungroup() %>%
-  select(speciesKey, Class, scientificName, date,
+  select(speciesKey, Class, Order, Family, scientificName, date,
          t.start.date, t.stop.date, t.start,t.stop, event, WallaceCompletude,
          Nocturnality, Verticality, BodyLength_mm, BodyMass_g, RangeSize)
 
@@ -144,7 +236,7 @@ df_wallacean_75 <- df_wallacean_time %>%
   ) %>%
   filter(linha <= pos_completude) %>%
   ungroup() %>%
-  select(speciesKey, Class, scientificName, date,
+  select(speciesKey, Class, Order, Family, scientificName, date,
          t.start.date, t.stop.date, t.start,t.stop, event, Wallace75,
          Nocturnality, Verticality, BodyLength_mm, BodyMass_g, RangeSize)
 
@@ -156,7 +248,7 @@ df_wallacean_50 <- df_wallacean_time %>%
   ) %>%
   filter(linha <= pos_completude) %>%
   ungroup() %>%
-  select(speciesKey, Class, scientificName, date,
+  select(speciesKey, Class, Order, Family, scientificName, date,
          t.start.date, t.stop.date, t.start,t.stop, event, Wallace50,
          Nocturnality, Verticality, BodyLength_mm, BodyMass_g, RangeSize)
 
@@ -165,7 +257,7 @@ df_wallacean_50 <- df_wallacean_time %>%
 df_wallacean_time %>%
   filter(t.start >= t.stop) %>% View()
 
-# um bom exemplo para checar problemas
+# bons exemplos para checar problemas
 # 2433011
 # 2423581
 # 2472164
@@ -174,5 +266,5 @@ save(df_wallacean_100,
      df_wallacean_50,
     file = file.path(
       "02_data_analysis",
-      "data_wallacean_time_edit.RData")
+      "data_wallacean_time_global.RData")
 )

@@ -50,9 +50,9 @@ summary_aalen <- function(fit, Class, Type) {
            SE = V3,
            'Robust SE' = V4,
            z = V5,
-           'P-val' = V6,
-           'lower2.5%' = V7,
-           'upper97.5%' = V8) %>%
+           'P-val' = V6) %>%
+           #'lower2.5%' = V7
+           #'upper97.5%' = V8
     filter(term != 'Coef.') %>%
     mutate(Class = Class,
            Type = Type)
@@ -173,90 +173,184 @@ plot_completeness_boxplot <- function(df,
 }
 
 # Load data ----
+#load(file = file.path(
+#  "02_data_analysis",
+#  "data_wallacean_time_edit.RData")
+#)
 load(file = file.path(
   "02_data_analysis",
-  "data_wallacean_time_edit.RData")
+  "data_wallacean_time_global.RData")
 )
+# Transform variables 
+df_wallacean_100 <- df_wallacean_100 %>%
+  mutate(BodyLength_mm = scale(log(BodyLength_mm)),
+         BodyMass_g = scale(log(BodyMass_g)),
+         Verticality = scale(Verticality^2),
+         Nocturnality = scale(Nocturnality^2),
+         RangeSize = scale(log(RangeSize)))
+
+df_wallacean_75 <- df_wallacean_75 %>%
+  mutate(BodyLength_mm = scale(log(BodyLength_mm)),
+         BodyMass_g = scale(log(BodyMass_g)),
+         Verticality = scale(Verticality^2),
+         Nocturnality = scale(Nocturnality^2),
+         RangeSize = scale(log(RangeSize)))
+
+df_wallacean_50 <- df_wallacean_50 %>%
+  mutate(BodyLength_mm = scale(log(BodyLength_mm)),
+         BodyMass_g = scale(log(BodyMass_g)),
+         Verticality = scale(Verticality^2),
+         Nocturnality = scale(Nocturnality^2),
+         RangeSize = scale(log(RangeSize)))
+
+df_wallacean_100 %>%
+  filter(Class == "Reptilia") %>%
+  pull(Order) %>%
+  table()
 
 ## Amphibia ----
 df_amphibia_100 <- df_wallacean_100 %>%
-  filter(Class == "Amphibia") %>%
-  mutate(BodyLength_mm = scale(log(BodyLength_mm)),
-         Verticality = scale(Verticality^2),
-         Nocturnality = scale(Nocturnality^2),
-         RangeSize = scale(log(RangeSize)))
-
+  filter(Class == "Amphibia") 
 df_amphibia_75 <- df_wallacean_75 %>%
-  filter(Class == "Amphibia") %>%
-  mutate(BodyLength_mm = scale(log(BodyLength_mm)),
-         Verticality = scale(Verticality^2),
-         Nocturnality = scale(Nocturnality^2),
-         RangeSize = scale(log(RangeSize)))
-
+  filter(Class == "Amphibia") 
 df_amphibia_50 <- df_wallacean_50 %>%
-  filter(Class == "Amphibia") %>%
-  mutate(BodyLength_mm = scale(log(BodyLength_mm)),
-         Verticality = scale(Verticality^2),
-         Nocturnality = scale(Nocturnality^2),
-         RangeSize = scale(log(RangeSize)))
+  filter(Class == "Amphibia")
 
-table(df_amphibia_100$WallaceCompletude) # 46 100% 
-table(df_amphibia_75$Wallace75) # 135 75%
-table(df_amphibia_50$Wallace50) # 474 50%
-length(unique(df_amphibia$speciesKey)) # 753 spp
+amphibia_100 <- table(df_amphibia_100$WallaceCompletude)[2]*100/length(unique(df_amphibia_100$speciesKey))
+amphibia_75 <- table(df_amphibia_75$Wallace75)[2]*100/length(unique(df_amphibia_75$speciesKey))
+amphibia_50 <- table(df_amphibia_50$Wallace50)[2]*100/length(unique(df_amphibia_50$speciesKey))
+
+### Anura ----
+df_anura_100 <- df_wallacean_100 %>%
+  filter(Order == "Anura") 
+df_anura_75 <- df_wallacean_75 %>%
+  filter(Order == "Anura") 
+df_anura_50 <- df_wallacean_50 %>%
+  filter(Order == "Anura")
+
+anura_100 <- table(df_anura_100$WallaceCompletude)[2]*100/length(unique(df_anura_100$speciesKey))
+anura_75 <- table(df_anura_75$Wallace75)[2]*100/length(unique(df_anura_75$speciesKey))
+anura_50 <- table(df_anura_50$Wallace50)[2]*100/length(unique(df_anura_50$speciesKey))
+
+### Caudata ----
+df_caudata_100 <- df_wallacean_100 %>%
+  filter(Order == "Caudata") 
+df_caudata_75 <- df_wallacean_75 %>%
+  filter(Order == "Caudata") 
+df_caudata_50 <- df_wallacean_50 %>%
+  filter(Order == "Caudata")
+
+caudata_100 <- table(df_caudata_100$WallaceCompletude)[2]*100/length(unique(df_caudata_100$speciesKey))
+caudata_75 <- table(df_caudata_75$Wallace75)[2]*100/length(unique(df_caudata_75$speciesKey))
+caudata_50 <- table(df_caudata_50$Wallace50)[2]*100/length(unique(df_caudata_50$speciesKey))
+
+### Gymnophiona ----
+df_gymno_100 <- df_wallacean_100 %>%
+  filter(Order == "Gymnophiona") 
+df_gymno_75 <- df_wallacean_75 %>%
+  filter(Order == "Gymnophiona") 
+df_gymno_50 <- df_wallacean_50 %>%
+  filter(Order == "Gymnophiona")
+
+gymno_100 <- table(df_gymno_100$WallaceCompletude)[2]*100/length(unique(df_gymno_100$speciesKey))
+gymno_75 <- table(df_gymno_75$Wallace75)[2]*100/length(unique(df_gymno_75$speciesKey))
+gymno_50 <- table(df_gymno_50$Wallace50)[2]*100/length(unique(df_gymno_50$speciesKey))
+
+# exploratory plots
+dados_amphibia <- tribble(
+  ~Grupo,     ~`100%`,                ~`75%`,                 ~`50%`,
+  "Gymnophiona \n(37 spp.)", round(0, 2),    round(gymno_75, 2),      round(gymno_50, 2),
+  "Caudata \n(230 spp.)", round(caudata_100, 2),    round(caudata_75, 2),      round(caudata_50, 2),
+  "Anura \n(1795 spp.)",   round(anura_100, 2),    round(anura_75, 2),      round(anura_50, 2),
+  "Amphibia \n(2062 spp.)",   round(amphibia_100, 2),     round(amphibia_75, 2),       round(amphibia_50, 2)
+) %>%
+  pivot_longer(cols = c(`100%`, `75%`, `50%`),
+               names_to = "Cenário",
+               values_to = "Completude") %>%
+  mutate(
+    Cenário = factor(Cenário, levels = c("50%", "75%", "100%")),
+    Grupo = factor(Grupo, levels = c("Gymnophiona \n(37 spp.)",
+                                     "Caudata \n(230 spp.)",
+                                     "Anura \n(1795 spp.)",
+                                     "Amphibia \n(2062 spp.)")),
+    Label = paste0(Completude, "%")
+  )
 
 ## Reptilia ----
 df_reptilia_100 <- df_wallacean_100 %>%
-  filter(Class == "Reptilia") %>%
-  mutate(BodyLength_mm = scale(log(BodyLength_mm)),
-         Verticality = scale(Verticality^2),
-         Nocturnality = scale(Nocturnality^2),
-         RangeSize = scale(log(RangeSize)))
-
+  filter(Class == "Reptilia") 
 df_reptilia_75 <- df_wallacean_75 %>%
-  filter(Class == "Reptilia") %>%
-  mutate(BodyLength_mm = scale(log(BodyLength_mm)),
-         Verticality = scale(Verticality^2),
-         Nocturnality = scale(Nocturnality^2),
-         RangeSize = scale(log(RangeSize)))
-
+  filter(Class == "Reptilia") 
 df_reptilia_50 <- df_wallacean_50 %>%
-  filter(Class == "Reptilia") %>%
-  mutate(BodyLength_mm = scale(log(BodyLength_mm)),
-         Verticality = scale(Verticality^2),
-         Nocturnality = scale(Nocturnality^2),
-         RangeSize = scale(log(RangeSize)))
+  filter(Class == "Reptilia")
 
-table(df_reptilia_100$event) # 3741 eventos
-table(df_reptilia_100$WallaceCompletude) # 14 100% 
+rep_100 <- table(df_reptilia_100$WallaceCompletude)[2]*100/length(unique(df_reptilia_100$speciesKey))
+rep_75 <- table(df_reptilia_75$Wallace75)[2]*100/length(unique(df_reptilia_75$speciesKey))
+rep_50 <- table(df_reptilia_50$Wallace50)[2]*100/length(unique(df_reptilia_50$speciesKey))
 
-table(df_reptilia_75$event) # 3725 eventos
-table(df_reptilia_75$Wallace75) # 59 chegam 75% 
-table(df_reptilia_50$Wallace50) # 315 chegam a 50%
+### Crocodylia ----
+df_croco_100 <- df_wallacean_100 %>%
+  filter(Order == "Crocodylia") 
+df_croco_75 <- df_wallacean_75 %>%
+  filter(Order == "Crocodylia") 
+df_croco_50 <- df_wallacean_50 %>%
+  filter(Order == "Crocodylia")
 
-length(unique(df_reptilia_75$speciesKey)) # 754 spp
+croc_100 <- table(df_croco_100$WallaceCompletude)[2]*100/length(unique(df_croco_100$speciesKey))
+croc_75 <- table(df_croco_75$Wallace75)[2]*100/length(unique(df_croco_75$speciesKey))
+croc_50 <- table(df_croco_50$Wallace50)[2]*100/length(unique(df_croco_50$speciesKey))
+
+### Testudines ----
+df_testudines_100 <- df_wallacean_100 %>%
+  filter(Order == "Testudines") 
+df_testudines_75 <- df_wallacean_75 %>%
+  filter(Order == "Testudines") 
+df_testudines_50 <- df_wallacean_50 %>%
+  filter(Order == "Testudines")
+
+test_100 <- table(df_testudines_100$WallaceCompletude)[2]*100/length(unique(df_testudines_100$speciesKey))
+test_75 <- table(df_testudines_75$Wallace75)[2]*100/length(unique(df_testudines_75$speciesKey))
+test_50 <- table(df_testudines_50$Wallace50)[2]*100/length(unique(df_testudines_50$speciesKey))
+
+### Squamata ----
+df_squamata_100 <- df_wallacean_100 %>%
+  filter(Order == "Squamata") 
+df_squamata_75 <- df_wallacean_75 %>%
+  filter(Order == "Squamata") 
+df_squamata_50 <- df_wallacean_50 %>%
+  filter(Order == "Squamata")
+
+squa_100 <- table(df_squamata_100$WallaceCompletude)[2]*100/length(unique(df_squamata_100$speciesKey))
+squa_75 <- table(df_squamata_75$Wallace75)[2]*100/length(unique(df_squamata_75$speciesKey))
+squa_50 <- table(df_squamata_50$Wallace50)[2]*100/length(unique(df_squamata_50$speciesKey))
+
+# join exploratory data 
+dados_reptilia <- tribble(
+  ~Grupo,     ~`100%`,                ~`75%`,                 ~`50%`,
+  "Testudines \n(191 spp.)", round(test_100, 2),    round(test_75, 2),      round(test_50, 2),
+  "Crocodylia \n(20 spp.)", round(croc_100, 2),    round(croc_75, 2),      round(croc_50, 2),
+  "Squamata \n(3198 spp.)",   round(squa_100, 2),    round(squa_75, 2),      round(squa_50, 2),
+  "Reptilia \n(3409 spp.)",   round(rep_100, 2),     round(rep_75, 2),       round(rep_50, 2)
+) %>%
+  pivot_longer(cols = c(`100%`, `75%`, `50%`),
+               names_to = "Cenário",
+               values_to = "Completude") %>%
+  mutate(
+    Cenário = factor(Cenário, levels = c("50%", "75%", "100%")),
+    Grupo = factor(Grupo, levels = c("Crocodylia \n(20 spp.)",
+                                     "Testudines \n(191 spp.)",
+                                     "Squamata \n(3198 spp.)",
+                                     "Reptilia \n(3409 spp.)")),
+    Label = paste0(Completude, "%")
+  )
 
 ## Aves ----
 df_aves_100 <- df_wallacean_100 %>%
-  filter(Class == "Aves") %>%
-  mutate(BodyMass_g = scale(log(BodyMass_g)),
-         Verticality = scale(Verticality^2),
-         Nocturnality = scale(Nocturnality^2),
-         RangeSize = scale(log(RangeSize)))
-
+  filter(Class == "Aves") 
 df_aves_75 <- df_wallacean_75 %>%
-  filter(Class == "Aves") %>%
-  mutate(BodyMass_g = scale(log(BodyMass_g)),
-         Verticality = scale(Verticality^2),
-         Nocturnality = scale(Nocturnality^2),
-         RangeSize = scale(log(RangeSize)))
-
+  filter(Class == "Aves") 
 df_aves_50 <- df_wallacean_50 %>%
-  filter(Class == "Aves") %>%
-  mutate(BodyMass_g = scale(log(BodyMass_g)),
-         Verticality = scale(Verticality^2),
-         Nocturnality = scale(Nocturnality^2),
-         RangeSize = scale(log(RangeSize)))
+  filter(Class == "Aves") 
 
 table(df_aves_100$event) # 14560 eventos
 table(df_aves_100$WallaceCompletude) # 202 100%
@@ -270,45 +364,45 @@ table(df_aves_50$event) # 12250 eventos
 table(df_aves_50$Wallace50) # 1510 50%
 length(unique(df_aves_50$speciesKey)) # 2185 spp
 
+aves_100 <- table(df_aves_100$WallaceCompletude)[2]*100/length(unique(df_aves_100$speciesKey))
+aves_75 <- table(df_aves_75$Wallace75)[2]*100/length(unique(df_aves_75$speciesKey))
+aves_50 <- table(df_aves_50$Wallace50)[2]*100/length(unique(df_aves_50$speciesKey))
+
 ## Mammals ----
 df_mammals_100 <- df_wallacean_100 %>%
-  filter(Class == "Mammalia") %>%
-  mutate(BodyMass_g = scale(log(BodyMass_g)),
-         Verticality = scale(Verticality^2),
-         Nocturnality = scale(Nocturnality^2),
-         RangeSize = scale(log(RangeSize)))
+  filter(Class == "Mammalia") 
 
 df_mammals_75 <- df_wallacean_75 %>%
-  filter(Class == "Mammalia") %>%
-  mutate(BodyMass_g = scale(log(BodyMass_g)),
-         Verticality = scale(Verticality^2),
-         Nocturnality = scale(Nocturnality^2),
-         RangeSize = scale(log(RangeSize)))
+  filter(Class == "Mammalia") 
 
 df_mammals_50 <- df_wallacean_50 %>%
-  filter(Class == "Mammalia") %>%
-  mutate(BodyMass_g = scale(log(BodyMass_g)),
-         Verticality = scale(Verticality^2),
-         Nocturnality = scale(Nocturnality^2),
-         RangeSize = scale(log(RangeSize)))
+  filter(Class == "Mammalia") 
 
-table(df_mammals_100$event) # 3903 eventos
-table(df_mammals_100$WallaceCompletude) # 27 100%
-length(unique(df_mammals_100$speciesKey)) # 701 spp
+mammals_100 <- table(df_mammals_100$WallaceCompletude)[2]*100/length(unique(df_mammals_100$speciesKey))
+mammals_75 <- table(df_mammals_75$Wallace75)[2]*100/length(unique(df_mammals_75$speciesKey))
+mammals_50 <- table(df_mammals_50$Wallace50)[2]*100/length(unique(df_mammals_50$speciesKey))
 
-table(df_mammals_75$event) # 3875 eventos
-table(df_mammals_75$Wallace75) # 48 75 %
-length(unique(df_mammals_75$speciesKey)) # 701 spp
-
-table(df_mammals_50$event) # 3553 eventos
-table(df_mammals_50$Wallace50) # 311 50%
-length(unique(df_mammals_50$speciesKey)) # 2185 spp
+# exploratory plots
+dados_endotermicos <- tribble(
+  ~Grupo,     ~`100%`,                ~`75%`,                 ~`50%`,
+  "Aves \n(6208 spp.)", round(aves_100, 2),    round(aves_75, 2),      round(aves_50, 2),
+  "Mammals \n(2986 spp.)", round(mammals_100, 2),    round(mammals_75, 2),      round(mammals_50, 2),
+) %>%
+  pivot_longer(cols = c(`100%`, `75%`, `50%`),
+               names_to = "Cenário",
+               values_to = "Completude") %>%
+  mutate(
+    Cenário = factor(Cenário, levels = c("50%", "75%", "100%")),
+    Grupo = factor(Grupo, levels = c("Mammals \n(2986 spp.)",
+                                     "Aves \n(6208 spp.)")),
+    Label = paste0(Completude, "%")
+  )
 
 # Aalen model (timereg package) ----
 # Recurrent event models with terminal event
+start_time <- Sys.time()
 ## Amphibia ----
-#start_time <- Sys.time()
-# 100 %
+# 100%
 fit.amphibia.surv <- aalen(
   formula      = Surv(t.start, t.stop, event) ~
     const(Verticality) +
@@ -324,11 +418,6 @@ fit.amphibia.surv <- aalen(
   start.time   = 0,       # opcional, default = 0
   max.time     = NULL     # default = máximo observado
 )
-
-amp.surv.100 <- summary_aalen(fit.amphibia.surv,
-              Class = "Amphibia",
-              Type = "surv.100")
-
 fit.amphibia.death <- aalen(
   formula      = Surv(t.start, t.stop, WallaceCompletude) ~
     const(Verticality) +
@@ -343,16 +432,18 @@ fit.amphibia.death <- aalen(
   start.time   = 0,       # opcional, default = 0
   max.time     = NULL     # default = máximo observado
 )
+summary(fit.amphibia.surv)
+summary(fit.aves.surv)
+
+amp.surv.100 <- summary_aalen(fit.amphibia.surv,
+                             Class = "Amphibia",
+                             Type = "surv.100")[1:3,]
 amp.death.100 <- summary_aalen(fit.amphibia.death,
                               Class = "Amphibia",
-                              Type = "death.100")
-
-bind_rows(amp.surv.100,
-          amp.death.100)
+                              Type = "death.100")[1:3,]
 
 fit.amphibia <- recurrent.marginal.mean(fit.amphibia.surv, 
                                         fit.amphibia.death)
-
 # 75%
 fit.amphibia.surv.75 <- aalen(
   formula      = Surv(t.start, t.stop, event) ~
@@ -369,7 +460,6 @@ fit.amphibia.surv.75 <- aalen(
   start.time   = 0,       # opcional, default = 0
   max.time     = NULL     # default = máximo observado
 )
-
 fit.amphibia.death.75 <- aalen(
   formula      = Surv(t.start, t.stop, Wallace75) ~
     const(Verticality) +
@@ -387,14 +477,12 @@ fit.amphibia.death.75 <- aalen(
 
 amp.surv.75 <- summary_aalen(fit.amphibia.surv.75,
                              Class = "Amphibia",
-                             Type = "surv.75")
-
+                             Type = "surv.75")[1:3,]
 amp.death.75 <- summary_aalen(fit.amphibia.death.75,
                               Class = "Amphibia",
-                              Type = "death.75")
-
+                              Type = "death.75")[1:3,]
 fit.amphibia.75 <- recurrent.marginal.mean(fit.amphibia.surv.75, 
-                                        fit.amphibia.death.75)
+                                           fit.amphibia.death.75)
 
 # 50%
 fit.amphibia.surv.50 <- aalen(
@@ -432,11 +520,11 @@ summary(fit.amphibia.death.50)
 
 amp.surv.50 <- summary_aalen(fit.amphibia.surv.50,
                              Class = "Amphibia",
-                             Type = "surv.50")
+                             Type = "surv.50")[1:3,]
 
 amp.death.50 <- summary_aalen(fit.amphibia.death.50,
                               Class = "Amphibia",
-                              Type = "death.50")
+                              Type = "death.50")[1:3,]
 
 fit.amphibia.50 <- recurrent.marginal.mean(fit.amphibia.surv.50, 
                                            fit.amphibia.death.50)
@@ -448,6 +536,427 @@ amphibia_model <- bind_rows(
   amp.death.100,
   amp.death.75,
   amp.death.50)
+
+### Anura ----
+fit.anura.surv <- aalen(
+  formula      = Surv(t.start, t.stop, event) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  #id           = "speciesKey",
+  data         = df_anura_100,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+fit.anura.death <- aalen(
+  formula      = Surv(t.start, t.stop, WallaceCompletude) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  data         = df_anura_100,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+
+anura.surv.100 <- summary_aalen(fit.anura.surv,
+                                Class = "Anura",
+                                Type = "surv.100")
+anura.death.100 <- summary_aalen(fit.anura.death,
+                                 Class = "Anura",
+                                 Type = "death.100")
+fit.anura <- recurrent.marginal.mean(fit.anura.surv, 
+                                     fit.anura.death)
+
+# 75%
+fit.anura.surv.75 <- aalen(
+  formula      = Surv(t.start, t.stop, event) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  #id           = "speciesKey",
+  data         = df_anura_75,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+fit.anura.death.75 <- aalen(
+  formula      = Surv(t.start, t.stop, Wallace75) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  data         = df_anura_75,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+
+anura.surv.75 <- summary_aalen(fit.anura.surv.75,
+                                Class = "Anura",
+                                Type = "surv.75")
+anura.death.75 <- summary_aalen(fit.anura.death.75,
+                                 Class = "Anura",
+                                 Type = "death.75")
+fit.anura.75 <- recurrent.marginal.mean(fit.anura.surv.75, 
+                                     fit.anura.death.75)
+# 50%
+fit.anura.surv.50 <- aalen(
+  formula      = Surv(t.start, t.stop, event) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  #id           = "speciesKey",
+  data         = df_anura_50,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+fit.anura.death.50 <- aalen(
+  formula      = Surv(t.start, t.stop, Wallace50) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  data         = df_anura_50,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+
+anura.surv.50 <- summary_aalen(fit.anura.surv.50,
+                               Class = "Anura",
+                               Type = "surv.50")
+anura.death.50 <- summary_aalen(fit.anura.death.50,
+                                Class = "Anura",
+                                Type = "death.50")
+fit.anura.50 <- recurrent.marginal.mean(fit.anura.surv.50, 
+                                        fit.anura.death.50)
+
+anura_model <- bind_rows(
+  anura.surv.100,
+  anura.surv.75,
+  anura.surv.50,
+  anura.death.100,
+  anura.death.75,
+  anura.death.50)
+
+### Caudata ----
+# 100%
+fit.caudata.surv <- aalen(
+  formula      = Surv(t.start, t.stop, event) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  #id           = "speciesKey",
+  data         = df_caudata_100,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+fit.caudata.death <- aalen(
+  formula      = Surv(t.start, t.stop, WallaceCompletude) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  data         = df_caudata_100,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+caudata.surv.100 <- summary_aalen(fit.caudata.surv,
+                                  Class = "Caudata",
+                                  Type = "surv.100")
+caudata.death.100 <- summary_aalen(fit.caudata.death,
+                                   Class = "Caudata",
+                                   Type = "death.100")
+fit.caudata <- recurrent.marginal.mean(fit.caudata.surv, 
+                                       fit.caudata.death)
+
+# 75%
+fit.caudata.surv.75 <- aalen(
+  formula      = Surv(t.start, t.stop, event) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  #id           = "speciesKey",
+  data         = df_caudata_75,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+fit.caudata.death.75 <- aalen(
+  formula      = Surv(t.start, t.stop, Wallace75) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  data         = df_caudata_75,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+caudata.surv.75 <- summary_aalen(fit.caudata.surv.75,
+                                  Class = "Caudata",
+                                  Type = "surv.75")
+caudata.death.75 <- summary_aalen(fit.caudata.death.75,
+                                   Class = "Caudata",
+                                   Type = "death.75")
+fit.caudata.75 <- recurrent.marginal.mean(fit.caudata.surv.75, 
+                                       fit.caudata.death.75)
+
+# 50%
+fit.caudata.surv.50 <- aalen(
+  formula      = Surv(t.start, t.stop, event) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  #id           = "speciesKey",
+  data         = df_caudata_50,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+fit.caudata.death.50 <- aalen(
+  formula      = Surv(t.start, t.stop, Wallace50) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  data         = df_caudata_50,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+caudata.surv.50 <- summary_aalen(fit.caudata.surv.50,
+                                 Class = "Caudata",
+                                 Type = "surv.50")
+caudata.death.50 <- summary_aalen(fit.caudata.death.50,
+                                  Class = "Caudata",
+                                  Type = "death.50")
+fit.caudata.50 <- recurrent.marginal.mean(fit.caudata.surv.50, 
+                                          fit.caudata.death.50)
+
+caudata_model <- bind_rows(
+  caudata.surv.100,
+  caudata.surv.75,
+  caudata.surv.50,
+  caudata.death.100,
+  caudata.death.75,
+  caudata.death.50)
+
+### Gymnophiona ----
+fit.gymno.surv <- aalen(
+  formula      = Surv(t.start, t.stop, event) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  #id           = "speciesKey",
+  data         = df_gymno_100,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+fit.gymno.death <- aalen(
+  formula      = Surv(t.start, t.stop, WallaceCompletude) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  data         = df_gymno_100,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+
+gymno.surv.100 <- summary_aalen(fit.gymno.surv,
+                                Class = "Gymnophiona",
+                                Type = "surv.100")
+gymno.death.100 <- summary_aalen(fit.gymno.death,
+                               Class = "Gymnophiona",
+                               Type = "death.100")
+fit.gymno <- recurrent.marginal.mean(fit.gymno.surv, 
+                                       fit.gymno.death)
+
+# 75%
+fit.gymno.surv.75 <- aalen(
+  formula      = Surv(t.start, t.stop, event) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  #id           = "speciesKey",
+  data         = df_gymno_75,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+fit.gymno.death.75 <- aalen(
+  formula      = Surv(t.start, t.stop, Wallace75) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  data         = df_gymno_75,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+gymno.surv.75 <- summary_aalen(fit.gymno.surv.75,
+                                 Class = "Gymnophiona",
+                                 Type = "surv.75")
+gymno.death.75 <- summary_aalen(fit.gymno.death.75,
+                                  Class = "Gymnophiona",
+                                  Type = "death.75")
+fit.gymno.75 <- recurrent.marginal.mean(fit.gymno.surv.75, 
+                                          fit.gymno.death.75)
+# 50%
+fit.gymno.surv.50 <- aalen(
+  formula      = Surv(t.start, t.stop, event) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  #id           = "speciesKey",
+  data         = df_gymno_50,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+fit.gymno.death.50 <- aalen(
+  formula      = Surv(t.start, t.stop, Wallace50) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  data         = df_gymno_50,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+gymno.surv.50 <- summary_aalen(fit.gymno.surv.50,
+                                 Class = "Gymnophiona",
+                                 Type = "surv.50")
+gymno.death.50 <- summary_aalen(fit.gymno.death.50,
+                                  Class = "Gymnophiona",
+                                  Type = "death.50")
+fit.gymno.50 <- recurrent.marginal.mean(fit.gymno.surv.50, 
+                                          fit.gymno.death.50)
+
+gymno_model <- bind_rows(
+  gymno.surv.100,
+  gymno.surv.75,
+  gymno.surv.50,
+  gymno.death.100,
+  gymno.death.75,
+  gymno.death.50)
+
+save(
+  fit.amphibia,
+  fit.amphibia.75,
+  fit.amphibia.50,
+  fit.amphibia.surv,
+     fit.amphibia.death,
+     fit.amphibia.surv.75,
+     fit.amphibia.death.75,
+     fit.amphibia.surv.50,
+     fit.amphibia.death.50,
+  fit.anura,
+  fit.anura.75,
+  fit.anura.50,   
+  fit.anura.surv,
+     fit.anura.death,
+     fit.anura.surv.75,
+     fit.anura.death.75,
+     fit.anura.surv.50,
+     fit.anura.death.50,
+  fit.caudata,
+  fit.caudata.75,
+  fit.caudata.50,   
+  fit.caudata.surv,
+     fit.caudata.death,
+     fit.caudata.surv.75,
+     fit.caudata.death.75,
+     fit.caudata.surv.50,
+     fit.caudata.death.50,
+  fit.gymno,
+  fit.gymno.75,
+  fit.gymno.50,   
+  fit.gymno.surv,
+     fit.gymno.death,
+     fit.gymno.surv.75,
+     fit.gymno.death.75,
+     fit.gymno.surv.50,
+     fit.gymno.death.50,
+     amphibia_model,
+     anura_model,
+     caudata_model,
+     gymno_model,
+     file = "02_data_analysis/results/amphibians_models.RData")
 
 ## Reptilia ----
 # 100%
@@ -486,11 +995,11 @@ summary(fit.reptilia.death)
 
 rep.surv.100 <- summary_aalen(fit.reptilia.surv,
                              Class = "Reptilia",
-                             Type = "surv.100")
+                             Type = "surv.100")[1:3,]
 
 rep.death.100 <- summary_aalen(fit.reptilia.death,
                               Class = "Reptilia",
-                              Type = "death.100")
+                              Type = "death.100")[1:3,]
 
 fit.reptilia <- recurrent.marginal.mean(fit.reptilia.surv,
                                            fit.reptilia.death)
@@ -530,12 +1039,12 @@ fit.reptilia.death.75 <- aalen(
 summary(fit.reptilia.death.75)
 
 rep.surv.75 <- summary_aalen(fit.reptilia.surv.75,
-                              Class = "Reptilia",
-                              Type = "surv.75")
+                             Class = "Reptilia",
+                             Type = "surv.75")[1:3,]
 
 rep.death.75 <- summary_aalen(fit.reptilia.death.75,
-                               Class = "Reptilia",
-                               Type = "death.75")
+                              Class = "Reptilia",
+                              Type = "death.75")[1:3,]
 
 fit.reptilia.75 <- recurrent.marginal.mean(fit.reptilia.surv.75,
                                            fit.reptilia.death.75)
@@ -577,13 +1086,16 @@ summary(fit.reptilia.death.50)
 fit.reptilia.50 <- recurrent.marginal.mean(fit.reptilia.surv.50,
                                            fit.reptilia.death.50)
 
+with(fit.reptilia, plot(times, mu, type = "s", main = "Reptilia"))
+with(fit.reptilia, lines(times, mu + 1.96 * se.mu, type = "s", lty = 2))
+with(fit.reptilia, lines(times, mu - 1.96 * se.mu, type = "s", lty = 2))
+
 rep.surv.50 <- summary_aalen(fit.reptilia.surv.50,
                              Class = "Reptilia",
-                             Type = "surv.50")
-
+                             Type = "surv.50")[1:3,]
 rep.death.50 <- summary_aalen(fit.reptilia.death.50,
                               Class = "Reptilia",
-                              Type = "death.50")
+                              Type = "death.50")[1:3,]
 
 reptilia_model <- bind_rows(
   rep.surv.100,
@@ -592,6 +1104,480 @@ reptilia_model <- bind_rows(
   rep.death.100,
   rep.death.75,
   rep.death.50)
+
+### Crocodilia ----
+fit.crocodylia.surv <- aalen(
+  formula      = Surv(t.start, t.stop, event) ~
+    #const(Verticality) +
+    #const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  #id           = "speciesKey",
+  data         = df_croco_100,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+summary(fit.crocodylia.surv)
+
+fit.crocodylia.death <- aalen(
+  formula      = Surv(t.start, t.stop, WallaceCompletude) ~
+    #const(Verticality) +
+    #const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  data         = df_croco_100,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+summary(fit.crocodylia.death)
+
+crocodylia.surv.100 <- summary_aalen(fit.crocodylia.surv,
+                              Class = "Crocodylia",
+                              Type = "surv.100")
+crocodylia.death.100 <- summary_aalen(fit.crocodylia.death,
+                               Class = "Crocodylia",
+                               Type = "death.100")
+
+fit.crocodylia <- recurrent.marginal.mean(fit.crocodylia.surv,
+                                          fit.crocodylia.death)
+
+with(fit.crocodylia, plot(times, mu, type = "s", main = "Crocodylia"))
+with(fit.crocodylia, lines(times, mu + 1.96 * se.mu, type = "s", lty = 2))
+with(fit.crocodylia, lines(times, mu - 1.96 * se.mu, type = "s", lty = 2))
+
+# 75%
+df_croco_75 <- df_wallacean_75 %>%
+  filter(Order == "Crocodylia") 
+
+fit.crocodylia.surv.75 <- aalen(
+  formula      = Surv(t.start, t.stop, event) ~
+    #const(Verticality) +
+    #const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  #id           = "speciesKey",
+  data         = df_croco_75,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+summary(fit.crocodylia.surv.75)
+
+fit.crocodylia.death.75 <- aalen(
+  formula      = Surv(t.start, t.stop, Wallace75) ~
+    #const(Verticality) +
+    #const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  data         = df_croco_75,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+summary(fit.crocodylia.death.75)
+
+crocodylia.surv.75 <- summary_aalen(fit.crocodylia.surv.75,
+                             Class = "Crocodylia",
+                             Type = "surv.75")
+
+crocodylia.death.75 <- summary_aalen(fit.crocodylia.death.75,
+                              Class = "Crocodylia",
+                              Type = "death.75")
+
+fit.crocodylia.75 <- recurrent.marginal.mean(fit.crocodylia.surv.75,
+                                           fit.crocodylia.death.75)
+
+# 50%
+df_croco_50 <- df_wallacean_50 %>%
+  filter(Order == "Crocodylia")
+
+fit.crocodylia.surv.50 <- aalen(
+  formula      = Surv(t.start, t.stop, event) ~
+    #const(Verticality) +
+    #const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  #id           = "speciesKey",
+  data         = df_croco_50,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+summary(fit.crocodylia.surv.50)
+
+fit.crocodylia.death.50 <- aalen(
+  formula      = Surv(t.start, t.stop, Wallace50) ~
+    #const(Verticality) +
+    #const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  data         = df_croco_50,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+summary(fit.crocodylia.death.50)
+
+fit.crocodylia.50 <- recurrent.marginal.mean(fit.crocodylia.surv.50,
+                                           fit.crocodylia.death.50)
+
+crocodylia.surv.50 <- summary_aalen(fit.crocodylia.surv.50,
+                             Class = "crocodylia",
+                             Type = "surv.50")
+
+crocodylia.death.50 <- summary_aalen(fit.crocodylia.death.50,
+                              Class = "crocodylia",
+                              Type = "death.50")
+
+crocodylia_model <- bind_rows(
+  crocodylia.surv.100,
+  crocodylia.surv.75,
+  crocodylia.surv.50,
+  crocodylia.death.100,
+  crocodylia.death.75,
+  crocodylia.death.50)
+
+### Testudines ----
+fit.testudines.surv <- aalen(
+  formula      = Surv(t.start, t.stop, event) ~
+    #const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  #id           = "speciesKey",
+  data         = df_testudines_100,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+summary(fit.testudines.surv)
+
+fit.testudines.death <- aalen(
+  formula      = Surv(t.start, t.stop, WallaceCompletude) ~
+    #const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  data         = df_testudines_100,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+summary(fit.testudines.death)
+
+testudines.surv.100 <- summary_aalen(fit.testudines.surv,
+                                     Class = "Testudines",
+                                     Type = "surv.100")
+testudines.death.100 <- summary_aalen(fit.testudines.death,
+                                      Class = "Testudines",
+                                      Type = "death.100")
+
+fit.testudines <- recurrent.marginal.mean(fit.testudines.surv,
+                                          fit.testudines.death)
+# 75%
+fit.testudines.surv.75 <- aalen(
+  formula      = Surv(t.start, t.stop, event) ~
+    #const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  #id           = "speciesKey",
+  data         = df_testudines_75,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+summary(fit.testudines.surv.75)
+
+fit.testudines.death.75 <- aalen(
+  formula      = Surv(t.start, t.stop, Wallace75) ~
+    #const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  data         = df_testudines_75,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+summary(fit.testudines.death.75)
+
+testudines.surv.75 <- summary_aalen(fit.testudines.surv.75,
+                                     Class = "Testudines",
+                                     Type = "surv.75")
+testudines.death.75 <- summary_aalen(fit.testudines.death.75,
+                                      Class = "Testudines",
+                                      Type = "death.75")
+
+fit.testudines.75 <- recurrent.marginal.mean(fit.testudines.surv.75,
+                                          fit.testudines.death.75)
+
+# 50%
+fit.testudines.surv.50 <- aalen(
+  formula      = Surv(t.start, t.stop, event) ~
+    #const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  #id           = "speciesKey",
+  data         = df_testudines_50,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+summary(fit.testudines.surv.50)
+
+fit.testudines.death.50 <- aalen(
+  formula      = Surv(t.start, t.stop, Wallace50) ~
+    #const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  data         = df_testudines_50,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+summary(fit.testudines.death.50)
+
+testudines.surv.50 <- summary_aalen(fit.testudines.surv.50,
+                                    Class = "Testudines",
+                                    Type = "surv.50")
+testudines.death.50 <- summary_aalen(fit.testudines.death.50,
+                                     Class = "Testudines",
+                                     Type = "death.50")
+
+fit.testudines.50 <- recurrent.marginal.mean(fit.testudines.surv.50,
+                                             fit.testudines.death.50)
+testudines_model <- bind_rows(
+  testudines.surv.100,
+  testudines.surv.75,
+  testudines.surv.50,
+  testudines.death.100,
+  testudines.death.75,
+  testudines.death.50)
+
+### Squamata ----
+# 100%
+fit.squamata.surv <- aalen(
+  formula      = Surv(t.start, t.stop, event) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  #id           = "speciesKey",
+  data         = df_squamata_100,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+summary(fit.squamata.surv)
+
+fit.squamata.death <- aalen(
+  formula      = Surv(t.start, t.stop, WallaceCompletude) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  data         = df_squamata_100,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+summary(fit.squamata.death)
+
+squamata.surv.100 <- summary_aalen(fit.squamata.surv,
+                                     Class = "squamata",
+                                     Type = "surv.100")
+squamata.death.100 <- summary_aalen(fit.squamata.death,
+                                      Class = "squamata",
+                                      Type = "death.100")
+
+fit.squamata <- recurrent.marginal.mean(fit.squamata.surv,
+                                          fit.squamata.death)
+
+# 75%
+fit.squamata.surv.75 <- aalen(
+  formula      = Surv(t.start, t.stop, event) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  #id           = "speciesKey",
+  data         = df_squamata_75,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+summary(fit.squamata.surv.75)
+
+fit.squamata.death.75 <- aalen(
+  formula      = Surv(t.start, t.stop, Wallace75) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  data         = df_squamata_75,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+summary(fit.squamata.death.75)
+
+squamata.surv.75 <- summary_aalen(fit.squamata.surv.75,
+                                   Class = "squamata",
+                                   Type = "surv.75")
+squamata.death.75 <- summary_aalen(fit.squamata.death.75,
+                                    Class = "squamata",
+                                    Type = "death.75")
+
+fit.squamata.75 <- recurrent.marginal.mean(fit.squamata.surv.75,
+                                        fit.squamata.death.75)
+
+# 50%
+fit.squamata.surv.50 <- aalen(
+  formula      = Surv(t.start, t.stop, event) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  #id           = "speciesKey",
+  data         = df_squamata_50,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+summary(fit.squamata.surv.50)
+
+fit.squamata.death.50 <- aalen(
+  formula      = Surv(t.start, t.stop, Wallace50) ~
+    const(Verticality) +
+    const(Nocturnality) +
+    const(BodyLength_mm) +
+    #const(RangeSize) +
+    cluster(speciesKey),
+  data         = df_squamata_50,
+  robust       = 1,       # variância robusta
+  n.sim        = 1000,     # número de simulações para CI
+  resample.iid = 1,       # para funções de residuais/CI i.i.d.
+  start.time   = 0,       # opcional, default = 0
+  max.time     = NULL     # default = máximo observado
+)
+summary(fit.squamata.death.50)
+
+squamata.surv.50 <- summary_aalen(fit.squamata.surv.50,
+                                  Class = "squamata",
+                                  Type = "surv.50")
+squamata.death.50 <- summary_aalen(fit.squamata.death.50,
+                                   Class = "squamata",
+                                   Type = "death.50")
+
+fit.squamata.50 <- recurrent.marginal.mean(fit.squamata.surv.50,
+                                           fit.squamata.death.50)
+
+squamata_model <- bind_rows(
+  squamata.surv.100,
+  squamata.surv.75,
+  squamata.surv.50,
+  squamata.death.100,
+  squamata.death.75,
+  squamata.death.50)
+
+save(
+  fit.reptilia,
+  fit.reptilia.75,
+  fit.reptilia.50,
+  fit.reptilia.surv,
+     fit.reptilia.death,
+     fit.reptilia.surv.75,
+     fit.reptilia.death.75,
+     fit.reptilia.surv.50,
+     fit.reptilia.death.50,
+     fit.crocodylia,
+     fit.crocodylia.75,
+     fit.crocodylia.50,
+     fit.crocodylia.surv,
+     fit.crocodylia.death,
+     fit.crocodylia.surv.75,
+     fit.crocodylia.death.75,
+     fit.crocodylia.surv.50,
+     fit.crocodylia.death.50,
+     fit.testudines,
+     fit.testudines.75,
+     fit.testudines.50,
+     fit.testudines.surv,
+     fit.testudines.death,
+     fit.testudines.surv.75,
+     fit.testudines.death.75,
+     fit.testudines.surv.50,
+     fit.testudines.death.50,
+     fit.squamata,
+     fit.squamata.75,
+     fit.squamata.50,
+     fit.squamata.surv,
+     fit.squamata.death,
+     fit.squamata.surv.75,
+     fit.squamata.death.75,
+     fit.squamata.surv.50,
+     fit.squamata.death.50,
+     reptilia_model,
+     crocodylia_model,
+     testudines_model,
+     squamata_model,
+     file = "02_data_analysis/results/reptiles_models.RData")
 
 ## Aves ----
 fit.aves.surv <- aalen(
@@ -610,6 +1596,7 @@ fit.aves.surv <- aalen(
   max.time     = NULL     # default = máximo observado
 )
 summary(fit.aves.surv)
+
 fit.aves.death <- aalen(
   formula      = Surv(t.start, t.stop, WallaceCompletude) ~
     const(Verticality) +
@@ -730,7 +1717,20 @@ aves_model <- bind_rows(
   aves.death.75,
   aves.death.50)
 
-fit.aves.50 <- recurrent.marginal.mean(fit.aves.surv.50, fit.aves.death.50)
+fit.aves.50 <- recurrent.marginal.mean(fit.aves.surv.50,
+                                       fit.aves.death.50)
+
+save(fit.aves.surv,
+     fit.aves.surv.75,
+     fit.aves.surv.50,
+     fit.aves.death,
+     fit.aves.death.75,
+     fit.aves.death.50,
+     aves_model,
+     fit.aves,
+     fit.aves.75,
+     fit.aves.50,
+     file = "02_data_analysis/results/aves_models.RData")
 
 ## Mammals ----
 fit.mammalia.surv <- aalen(
@@ -768,11 +1768,9 @@ summary(fit.mammalia.death)
 mammalia.surv.100 <- summary_aalen(fit.mammalia.surv,
                               Class = "Mammalia",
                               Type = "surv.100")
-
 mammalia.death.100 <- summary_aalen(fit.mammalia.death,
                               Class = "Mammalia",
                               Type = "death.100")
-
 fit.mammalia <- recurrent.marginal.mean(fit.mammalia.surv,
                                         fit.mammalia.death)
 
@@ -812,11 +1810,9 @@ summary(fit.mammalia.death.75)
 mammalia.surv.75 <- summary_aalen(fit.mammalia.surv.75,
                                    Class = "Mammalia",
                                    Type = "surv.75")
-
 mammalia.death.75 <- summary_aalen(fit.mammalia.death.75,
                                     Class = "Mammalia",
                                     Type = "death.75")
-
 fit.mammalia.75 <- recurrent.marginal.mean(fit.mammalia.surv.75,
                                         fit.mammalia.death.75)
 
@@ -871,6 +1867,19 @@ mammals_model <- bind_rows(
 
 fit.mammalia.50 <- recurrent.marginal.mean(fit.mammalia.surv.50,
                                            fit.mammalia.death.50)
+
+save(fit.mammalia.surv,
+     fit.mammalia.surv.75,
+     fit.mammalia.surv.50,
+     fit.mammalia.death,
+     fit.mammalia.death.75,
+     fit.mammalia.death.50,
+     fit.mammalia,
+     fit.mammalia.75,
+     fit.mammalia.50,
+     mammals_model,
+     file = "02_data_analysis/results/mammals_models.RData")
+
 end_time <- Sys.time()
 print(end_time - start_time)
 # Results plots ----
@@ -893,6 +1902,55 @@ with(fit.mammalia, lines(times, mu - 1.96 * se.mu, type = "s", lty = 2))
 dev.off()  
 
 ## Completeness scenarios ----
+# Heatmap
+ggplot(dados_amphibia, aes(x = Cenário, y = Grupo, fill = Completude)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Label), color = "black") +
+  scale_fill_gradient(low = "white", high = "#4FCFF5") +
+  scale_x_discrete(position = "top") +  # Move eixo X para cima
+  labs(title = "",
+       x = "", y = "") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 14, face = "bold"),   # Labels maiores
+    axis.title.x = element_text(size = 16, face = "bold"),  # Título maior
+    axis.text.y = element_text(size = 14)                   # Labels do eixo Y maiores
+  )
+
+ggplot(dados_reptilia, aes(x = Cenário, y = Grupo, fill = Completude)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Label), color = "black") +
+  scale_fill_gradient(low = "white", high = "#A8896A") +
+  scale_x_discrete(position = "top") +  # Move eixo X para cima
+  labs(title = "",
+       x = "", y = "") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 14, face = "bold"),   # Labels maiores
+    axis.title.x = element_text(size = 16, face = "bold"),  # Título maior
+    axis.text.y = element_text(size = 14)                   # Labels do eixo Y maiores
+  )
+
+ggplot(dados_endotermicos, aes(x = Cenário, y = Grupo, fill = Completude)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Label), color = "black") +
+  scale_fill_gradient(low = "white", high = "#F76D52") +
+  scale_x_discrete(position = "top") +  # Move eixo X para cima
+  labs(title = "",
+       x = "", y = "") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 14, face = "bold"),   # Labels maiores
+    axis.title.x = element_text(size = 16, face = "bold"),  # Título maior
+    axis.text.y = element_text(size = 14)                   # Labels do eixo Y maiores
+  )
+
+### Class ----
+load("02_data_analysis/results/amphibians_models.RData")
+load("02_data_analysis/results/reptiles_models.RData")
+load("02_data_analysis/results/aves_models.RData")
+load("02_data_analysis/results/mammals_models.RData")
+
 fits.50 <- list(
   Amphibia = fit.amphibia.50,
   Reptilia = fit.reptilia.50,
@@ -942,6 +2000,64 @@ plot_cumulative_events(fits,
                        ylab = "") 
 dev.off()
 
+### Order ----
+fits_order <- list(
+  Anura = fit.anura,
+  Caudata     = fit.caudata,
+  Gymnophiona = fit.gymno,
+  Crocodylia = fit.crocodylia,
+  Testudines = fit.testudines,
+  Squamata = fit.squamata
+)
+
+fits_order75 <- list(
+  Anura = fit.anura.75,
+  Caudata     = fit.caudata.75,
+  Gymnophiona = fit.gymno.75,
+  Crocodylia = fit.crocodylia.75,
+  Testudines = fit.testudines.75,
+  Squamata = fit.squamata.75
+)
+
+fits_order50 <- list(
+  Anura = fit.anura.50,
+  Caudata     = fit.caudata.50,
+  Gymnophiona = fit.gymno.50,
+  Crocodylia = fit.crocodylia.50,
+  Testudines = fit.testudines.50,
+  Squamata = fit.squamata.50
+)
+
+cores <- c("#3D63EB",
+           "#37A1EB",
+           "#362393",
+           "#EBB131",
+           "#EB9434",
+           "#EA632E")
+
+par(mfrow = c(3, 1))
+plot_cumulative_events(fits_order50,
+                       cores = cores,
+                       legend = TRUE,
+                       title =  "50% Completeness",
+                       xlab = "",
+                       ylab = "") 
+
+plot_cumulative_events(fits_order75,
+                       cores = cores,
+                       legend = FALSE,
+                       title =  "75% Completeness",
+                       xlab = "",
+                       ylab = "Cumulative number of events μ(t)") 
+
+plot_cumulative_events(fits_order,
+                       cores = cores,
+                       legend = FALSE,
+                       title =  "100% Completeness",
+                       xlab = "Time (Years)",
+                       ylab = "")
+dev.off()
+
 ## Time-to-completeness ----
 temp.100 <- df_wallacean_100 %>%
   group_by(speciesKey, scientificName, Class) %>%
@@ -965,20 +2081,20 @@ temp.50 <- df_wallacean_50 %>%
 # 50%
 letras <- data.frame(
   Class = c("Reptilia", "Mammalia", "Amphibia", "Aves"),
-  letra = c("a", "b", "c", "c")
+  letra = c("a", "a", "b", "b")
 )
 plot.50 <- plot_completeness_boxplot(temp.50, title_plot = "50% completeness",
-                                     eixo_y = "") +
+                                     eixo_y = "Time-to-completeness (Years)") +
   geom_text(data = letras, aes(x = Class, y = 125, label = letra), 
             inherit.aes = FALSE, size = 5, fontface = "bold") 
 
 # 75%
 letras <- data.frame(
   Class = c("Reptilia", "Mammalia", "Amphibia", "Aves"),
-  letra = c("a", "ab", "ab", "b")
+  letra = c("a", "a", "a", "a")
 )
 plot.75 <- plot_completeness_boxplot(temp.75,
-                                     eixo_y = "Time-to-completeness (Years)",
+                                     eixo_y = "",
                                      title_plot = "75% completeness") +
   geom_text(data = letras, aes(x = Class, y = 125, label = letra), 
             inherit.aes = FALSE, size = 5, fontface = "bold")
@@ -995,17 +2111,35 @@ plot.100 <- plot_completeness_boxplot(temp.100,
             inherit.aes = FALSE, size = 5, fontface = "bold")
 
 plot <- cowplot::plot_grid(plot.50, plot.75, plot.100,
-                   ncol = 1, nrow = 3)
+                   ncol = 3, nrow = 1);plot
 
 ## Coefficient plot ----
-aalen_models <- bind_rows(
-  amphibia_model,
-  reptilia_model,
-  aves_model,
-  mammals_model
-)
+coef_df <- mammals_model %>%
+  mutate(
+    `Robust SE` = as.numeric(`Robust SE`),  # converte para numérico
+    coef = as.numeric(coef),                 # garante que coef também é numérico
+    lower = coef - 1.96 * `Robust SE`,
+    upper = coef + 1.96 * `Robust SE`
+  ) %>%
+  filter(!Type %in% c("surv.100", "surv.75", "surv.50")) %>%
+  mutate(Type = factor(Type, levels = c("death.100", "death.75", "death.50"))) # ordem desejada
 
-head(aalen_models)
+ggplot(coef_df, aes(x = term, y = coef, color = Type)) +
+  geom_point(position = position_dodge(width = 0.6), size = 3) +
+  geom_errorbar(
+    aes(ymin = lower, ymax = upper),
+    width = 0.2,
+    linewidth = 1.2,  # aumenta a espessura da linha
+    position = position_dodge(width = 0.6)
+  ) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  coord_flip() +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Mamíferos",
+    x = "",
+    y = ""
+  )
 
 ## Derivada ---- 
 d_mu <- diff(fit.amphibia$mu) / diff(fit.amphibia$times)
@@ -1024,6 +2158,7 @@ plot(t_deriv, log(d_mu), type = "l", col = "gray",
 lines(t_deriv, predict(smoothed), col = "blue", lwd = 2)
 
 # Cox-Aalen models ----
+# Recurrent event models with statical and variable predictors
 ## Amphibia ----
 amphibia.model.surv <- cox.aalen(Surv(t.start,t.stop,event) ~ 1+ 
                                    prop(Verticality) +
@@ -1032,8 +2167,9 @@ amphibia.model.surv <- cox.aalen(Surv(t.start,t.stop,event) ~ 1+
                                    cluster(speciesKey),
                                  robust = 1,
                                  data= df_amphibia,
-                                 resample.iid=1, max.clust=NULL,max.timepoint.sim=NULL)
-
+                                 resample.iid=1,
+                                 max.clust=NULL,
+                                 max.timepoint.sim=NULL)
 summary(amphibia.model.surv)
 
 amphibia.model.death <- cox.aalen(Surv(t.start,t.stop,event) ~ 1 +
@@ -1043,7 +2179,9 @@ amphibia.model.death <- cox.aalen(Surv(t.start,t.stop,event) ~ 1 +
                                     cluster(speciesKey),
                                   data= df_amphibia,
                                   robust = 1,
-                                  resample.iid=1, max.clust=NULL, max.timepoint.sim=NULL)
+                                  resample.iid=1,
+                                  max.clust=NULL, 
+                                  max.timepoint.sim=NULL)
 
 amphibia.model <- recurrent.marginal.coxmean(
   amphibia.model.surv,

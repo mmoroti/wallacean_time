@@ -122,7 +122,9 @@ load(file.path(
 
 # key of each occurence
 anyDuplicated(data_tetrapodstraits$gbifID) 
-nrow(data_tetrapodstraits) # 2.501.450 occurences species
+nrow(data_tetrapodstraits) 
+# 24.441.908 occurences species Global
+# 2.501.450 occurences species America do Sul
 table(data_tetrapodstraits$class)
 
 data_tetrapods_clean <- data_tetrapodstraits %>%
@@ -130,9 +132,13 @@ data_tetrapods_clean <- data_tetrapodstraits %>%
   filter(occurrenceStatus != "ABSENT") %>%
   mutate(origin_of_data = "gbif") %>%
   mutate(eventDate = na_if(eventDate, "")) %>%
-  mutate(class = if_else(class == "", "Squamata", class)) # TODO REVER quando usar dados globais
+  # U. ricardinii aparece sem classificacao de classe
+  mutate(class = if_else(class == "", "Squamata", class))
 
-nrow(data_tetrapods_clean) # 2.478.512 occurences species
+nrow(data_tetrapods_clean) 
+# 2.478.512 occurences species America do Sul
+# 24.263.774
+
 table(data_tetrapods_clean$class)
 
 # how much data is na?
@@ -143,6 +149,8 @@ data_tetrapods_clean %>%
             missing_month = sum(is.na(month)),
             missing_year = sum(is.na(year)),
             missing_date = sum(is.na(eventDate)))
+# 8.916.385 sem coordenada
+# 3.568.206 sem ano 
 
 # exists a difference between "year" and "event date" of 7280 occurences
 # these differences is associate a occurences between imprecise dates
@@ -163,7 +171,9 @@ data_tetrapods_filter %>%
             missing_year = sum(is.na(year))) # without missing data =)
             #missing_date = sum(is.na(eventDate))) 
 
-nrow(data_tetrapods_filter) # 1153622 total occurences 
+nrow(data_tetrapods_filter) 
+# 1.153.622 total occurences america do sul
+# 14.108.708 global
 table(data_tetrapods_filter$class) # occurences per classes 
 
 # coordsclean
@@ -178,10 +188,11 @@ flags <- clean_coordinates(x = data_tetrapods_filter,
                            lat = "decimalLatitude",
                            countries = "countryCode",
                            species = "species",
-                           tests = c("capitals", "centroids", "equal",
-                            "gbif","institutions","seas","zeros", "countries")) 
-                            # Flagged 58867 of 1153622 records, EQ = 0.05.
+                           tests = c("equal","gbif",
+                                     "institutions",
+                                     "seas","zeros"))
 
+#Flagged 674578 of 14108708 records, EQ = 0.05.
 #Exclude problematic records
 data_tetrapods_filter_spatialpoints <- data_tetrapods_filter[
   flags$.summary,
@@ -246,9 +257,10 @@ flags <- clean_coordinates(x = data_biotime_clean,
                            lon = "decimalLongitude",
                            lat = "decimalLatitude",
                            species = "species",
-                           tests = c("capitals", "centroids", "equal",
-                          "gbif","institutions","seas", "zeros")) 
-                          # Flagged 397771 of 1982430 records, EQ = 0.2.
+                           tests = c("equal","gbif",
+                                     "institutions",
+                                     "seas","zeros"))
+# Flagged 1068661 of 3506963 records, EQ = 0.3.
 
 #Exclude problematic records
 data_biotime_filtered <- data_biotime_clean[
@@ -306,9 +318,10 @@ flags <- clean_coordinates(x = data_splink_cleaned,
                            lon = "decimalLongitude",
                            lat = "decimalLatitude",
                            species = "species",
-                           tests = c("capitals", "centroids", "equal",
-                            "gbif","institutions","seas","zeros")) # EQ = 0.39.
-
+                           tests = c("equal","gbif",
+                                     "institutions",
+                                     "seas","zeros")) 
+# Flagged 225776 of 597492 records, EQ = 0.38.
 #Exclude problematic records
 data_splink_filter_spatialpoints <- data_splink_cleaned[
   flags$.summary,
@@ -530,7 +543,6 @@ nested_cols <- c("speciesKey", "class", "order", "family", "species",
 data_occurences_precleaned <- data_occurences_precleaned %>% 
   select(all_of(nested_cols))
 
-
 biotime_species <- unique(data_occurences_precleaned$speciesKey[data_occurences_precleaned$origin_of_data == "biotime"])
 splink_species <- unique(data_occurences_precleaned$speciesKey[data_occurences_precleaned$origin_of_data == "splink"])
 gbif_species <- unique(data_occurences_precleaned$speciesKey[data_occurences_precleaned$origin_of_data == "gbif"])
@@ -579,14 +591,16 @@ duplicated_flags <- cc_dupl(
   lat = "decimalLatitude",
   species = "speciesKey",
   value = "flagged"
-) # TODO checar se estamos mantendo o ano mais antigo
+) # TODO conferir ordenacao se ta certinho, mas ja havia feito isso
 
 data_occurences_precleaned_duplicate <- data_occurences_precleaned[
   duplicated_flags == TRUE, ]
 
 nrow(data_occurences_precleaned_duplicate)*100/nrow(data_occurences_precleaned)
 # View(data_occurences_precleaned_duplicate)
-length(unique(data_occurences_precleaned_duplicate$speciesKey)) # 7691 spp
+length(unique(data_occurences_precleaned_duplicate$speciesKey)) 
+# 7691 south america spp
+# 25928 global scale spp
 
 # FILTER POINTS BY RANGE POLYGONS ----
 # shapefile
@@ -703,15 +717,18 @@ south_america <- st_read(file.path(
   "south_america_br_states.shp"
 ))
 
+load(file.path("00_raw_data",
+       "geographic_shape_data.RData"))
+
 # Verificar validade das geometrias
 sf_use_s2(FALSE)
 st_is_valid(data_tetrapods_sa) %>% table()
-st_is_valid(south_america) %>% table()
+st_is_valid(geographic_shape_data) %>% table()
 
 # extracting geolocation per specie
 data_occurences <- st_as_sf(list_occurences_clean,
                    coords = c("decimalLongitude", "decimalLatitude"),
-                   crs = st_crs(south_america))
+                   crs = st_crs(geographic_shape_data))
 
 # com os poligonos de especialistas tinhamos 269333
 # usando o tetrapodtraits aumentamos para 405215 occ
@@ -723,28 +740,28 @@ data_occurences <- data_occurences %>%
 any(duplicated(data_occurences$ID))
 
 # validaty of polygons 
-any(!st_is_valid(south_america))
+any(!st_is_valid(geographic_shape_data))
 any(!st_is_valid(data_occurences))
 
-geographic_shape_data_adj <- south_america %>%
-  select(sigla_admu, geometry)
+geographic_shape_data_adj <- geographic_shape_data %>%
+  select(name_en, geometry)
 
 data_occurences_geo <- st_join(data_occurences,
   geographic_shape_data_adj, 
   join = st_intersects,
   left = TRUE) %>% 
-  filter(!is.na(sigla_admu)) %>% # 'col' filtra NA's (buracos) nos poligonos
+  filter(!is.na(name_en)) %>% # 'col' filtra NA's (buracos) nos poligonos
   group_by(ID) %>%
   filter(n() == 1) %>% # remove registros em polígonos sobrepostos
   ungroup()
 
 any(duplicated(data_occurences_geo$ID))
 # 62.956 occ registros fora do poligonos (oceano, areas em litigio, etc)
-nrow(data_occurences)-nrow(data_occurences_geo) 
+nrow(data_occurences)-nrow(data_occurences_geo) # 21821 occ removidas 
 names(data_occurences_geo)
 
 data_occurences_geometry <- data_occurences_geo %>%
-  select(speciesKey, species,day,month, year, origin_of_data, sigla_admu, ID) #%>%
+  select(speciesKey, species,day,month, year, origin_of_data, name_en, ID) #%>%
   #rename(codeAdmUnit = adm0_a3, adm_unit = name_en)
 
 data_occurences_units <- data_occurences_geometry %>%
@@ -756,12 +773,13 @@ data_occurences_units <- data_occurences_geometry %>%
 #  color = "red", cex = 2, layer.name = "Ocorrências", popup = popupTable(data_occurences_geo, zcol = "name_en"))
 
 # SPECIES LIST PER ADMINASTRIVE UNIT ----
-interseccao_sf <- st_intersection(data_tetrapods_sa, south_america)
+interseccao_sf <- st_intersection(data_tetrapods_sa, geographic_shape_data)
 
+View(geographic_shape_data)
 list_per_admunit <- interseccao_sf %>%
   st_drop_geometry()
 
-list_per_admunit$adm_unit %>% table()
+list_per_admunit$name_en %>% table()
 
 save(list_occurences_clean, # sem duplicatas e filtrados por poligonos
      data_occurences_units, # com as unidades administrativas
@@ -771,8 +789,6 @@ save(list_occurences_clean, # sem duplicatas e filtrados por poligonos
        "data_occurences_geolocation.RData")
 )
 
-data_occurences_units %>% filter(speciesKey == "2421936")
-data_occurences_units %>% filter(speciesKey == "9290528")
 # NESTED DATAFRAME WITH BIOLOGICAL TRAITS ----
 rm(list=ls()); gc() # clean local enviroment
 
@@ -810,6 +826,7 @@ data_wallacean_nested <- left_join(
   relocate(event_table,count_events, .after = Family) %>%
   arrange(Class, Order, scientificName)
 
+View(data_wallacean_nested)
 # check data
 table(data_wallacean_nested$Class)
 # com os poligonos de especialistas
@@ -818,6 +835,10 @@ table(data_wallacean_nested$Class)
 # com o tetrapodtraits
 # Amphibia     Aves Mammalia Reptilia
 #    1825     2829     1024     1367
+# para o mundo
+#Amphibia  Aves   Mammalia Reptilia 
+# 4942     8250     4459     7050 
+
 table(data_wallacean_nested$Order)
 anyDuplicated(data_wallacean_nested$speciesKey)
 
@@ -835,7 +856,9 @@ anyDuplicated(data_wallacean_nested$speciesKey)
 # unnest data
 data_wallacean_unnested <- data_wallacean_nested %>%
   unnest(cols = c(event_table))
-nrow(data_wallacean_unnested) # 342259 ocorrencias
+nrow(data_wallacean_unnested) 
+# 342.259  occ south america
+# 3.144.303 occ global
 
 save(data_wallacean_nested,
     data_wallacean_unnested,
