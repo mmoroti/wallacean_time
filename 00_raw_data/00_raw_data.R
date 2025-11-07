@@ -11,25 +11,23 @@ install.load.package <- function(x) {
 package_vec <- c(
   "rgbif",
   "tidyverse",
-  #"here",
-  "data.table",
-  "auk"
+  "data.table"
 )
-
-## set your directory in this block
-local_directory <- file.path("E:",
-                             "datasets_centrais",
-                             "wallacean_time") 
 
 ## executing install & load for each package
 sapply(package_vec, install.load.package)
+
+## set your directory in this block
+local_directory <- file.path("F:",
+                             "datasets_centrais",
+                             "wallacean_time") 
 
 # CREDENTIALS RGBIF ----
 user <- "mmoroti" # your gbif.org username 
 pwd <- readline() # your gbif.org password
 email <- "mmoroti@gmail.com" # your email 
 
-# DATA FROM RGBIF USING TETRAPODTRAITS AS BACKBONE ----
+# DATA FROM GBIF USING TETRAPODTRAITS AS BACKBONE ----
 TetraData <- data.table::fread("00_raw_data/TetrapodTraits_1.0.0.csv")
 
 # if you don't need to rerun backbone, use this
@@ -75,22 +73,20 @@ occ_download(
   user=user,pwd=pwd,email=email
 )
 
-#pred_in("country", c('BR','AR','BO', 
-#                  'CL', 'CO', 'EC',
-#                  'GY', 'GF', 'PY',
-#                  'PE', 'SR', 'UY',
-#                  'VE')),
-
-# 11-09-2024
-# occ_download_wait('0011974-240906103802322') 
 # 03-07-2025
-occ_download_wait('0093818-250525065834625')
-data_tetrapodstraits <- occ_download_get('0093818-250525065834625',
-                                         path = local_directory) %>%
-  occ_download_import()
+#occ_download_wait('0093818-250525065834625')
+#data_tetrapodstraits <- occ_download_get('0093818-250525065834625',
+#                                         path = local_directory) %>%
+#  occ_download_import()
 # 06-08-2025 GLOBAL
-occ_download_wait('0021280-250802193616735')
-data_tetrapodstraits <- occ_download_get('0021280-250802193616735',
+#occ_download_wait('0021280-250802193616735')
+#data_tetrapodstraits <- occ_download_get('0021280-250802193616735',
+#                                         path = local_directory) %>%
+#  occ_download_import()
+
+# 05-11-2025 GLOBAL
+occ_download_wait('0017652-251025141854904')
+data_tetrapodstraits <- occ_download_get('0017652-251025141854904',
                                          path = local_directory) %>%
   occ_download_import()
 
@@ -110,12 +106,66 @@ trait_data <- left_join(
   TetraData,
   by = c(verbatim_name = "Scientific.Name"))
 
-View(trait_data)
 save(trait_data,
      file = file.path(
       "00_raw_data",
       "trait_data.RData")
 ) # 33158 spp, sem correspondencia nos dados para 123 spp
+
+# DATA FROM GBIF HUMAN OBSERVATION ----
+table(species_list_tetrapods$class)
+
+# Non-birds 
+species_list_nonbirds_key <- species_list_tetrapods %>%
+  dplyr::filter(!is.na(speciesKey)) %>%
+  filter(!matchType == "NONE" & !matchType == "HIGHERRANK") %>%
+  filter(confidence >= 95) %>%
+  filter(class != "Aves") %>%
+  pull(speciesKey)
+
+occ_download(
+  pred_in("taxonKey", species_list_nonbirds_key),
+  pred_in("basisOfRecord", "HUMAN_OBSERVATION"),
+  format = "SIMPLE_CSV",
+  user=user,pwd=pwd,email=email
+)
+
+occ_download_wait('0017881-251025141854904')
+data_nonbirds <- occ_download_get('0017881-251025141854904',
+                                         path = local_directory) %>%
+  occ_download_import()
+
+save(data_nonbirds,
+     file = file.path(
+       local_directory,
+       "nonbirds_humanobservation_data.RData")
+)
+
+# Aves 
+species_list_birds_key <- species_list_tetrapods %>%
+  dplyr::filter(!is.na(speciesKey)) %>%
+  filter(!matchType == "NONE" & !matchType == "HIGHERRANK") %>%
+  filter(confidence >= 95) %>%
+  filter(class == "Aves") %>%
+  pull(speciesKey)
+
+occ_download(
+  pred_in("taxonKey", species_list_birds_key),
+  pred_in("basisOfRecord", "HUMAN_OBSERVATION"),
+  format = "SIMPLE_CSV",
+  user=user,pwd=pwd,email=email
+)
+
+occ_download_wait('0018107-251025141854904')
+data_birds <- occ_download_get('0018107-251025141854904',
+                                  path = local_directory) %>%
+  occ_download_import()
+
+save(data_birds,
+     file = file.path(
+       local_directory,
+       "birds_humanobservation_data.RData")
+)
 
 # DATASET BioTIME (needs unzip and external HD) -----
 rm(list = setdiff(ls(), "local_directory")); gc()
@@ -406,106 +456,3 @@ save(species_list_splink, # backbone splink
 #difference in records between the two dataframes only \\
 #be {(nrow(data_tetrapods_rgbif) - nrow(data_tetrapodstraits)) - nrow(blank_rgbif)} "
 #)
-
-# DATASET eBird ----
-# chave api eBird esvjc7vmlh9m
-# 1. Cleaning
-# species
-#raw_data_ebird <- file.path(
-#    "E:",
-#    "Documentos_waio",
-#    "pos_doc",
-#    "eBird",
-#    "ebd_relDec-2024",
-#    "ebd_relDec-2024.txt"
-#)
-#
-#clean_data_ebird <- file.path(
-#    "E:",
-#    "Documentos_waio",
-#    "pos_doc",
-#    "eBird",
-#    "ebd_relDec-2024",
-#    "ebd_relDec-2024_clean.txt"
-#)
-#auk_clean(raw_data_ebird, f_out = clean_data_ebird, remove_text = TRUE)
-#
-## sampling
-#raw_data_ebird_sampling <- file.path(
-#    "E:",
-#    "Documentos_waio",
-#    "pos_doc",
-#    "eBird",
-#    "ebd_sampling_relNov-2024",
-#    "ebd_sampling_relNov-2024.txt"
-#)
-#
-#clean_data_ebird_sampling <- file.path(
-#    "E:",
-#    "Documentos_waio",
-#    "pos_doc",
-#    "eBird",
-#    "ebd_sampling_relNov-2024",
-#    "ebd_sampling_relNov-2024_clean.txt"
-#)
-#auk_clean(raw_data_ebird_sampling, f_out = clean_data_ebird_sampling, remove_text = TRUE)
-#
-## 2. Filtering
-## define the paths to ebd and sampling event files
-#f_in_ebd <- file.path(clean_data_ebird)
-#f_in_sampling <- file.path(clean_data_ebird_sampling)
-#
-## select columns
-#select_data_ebird_sampling <- file.path(
-#    "E:",
-#    "Documentos_waio",
-#    "pos_doc",
-#    "eBird",
-#    "ebd_selected_relNov-2024.txt"
-#)
-#
-#cols <- c("scientific name", "latitude", "longitude",
-#          "group identifier", "sampling event identifier",
-#          "observation count", "observation date", "observer_id")
-#
-#ebd <- auk_ebd(file = f_in_ebd,
-# file_sampling = f_in_sampling)
-#
-#auk_select(ebd,
-# select = cols,
-# file = select_data_ebird_sampling, overwrite = TRUE)
-#
-## 3. Importing
-#ebd <- read_ebd(select_data_ebird_sampling)
-#glimpse(ebd)
-#
-## 4. Pre-processing
-## 5. Zero-filling
-#
-#
-#ebd_filters <- auk_ebd(ebd) %>%
-#  auk_country(c('BR','AR','BO', 
-#                    'CL', 'CO', 'EC',
-#                    'GY', 'GF', 'PY',
-#                    'PE', 'SR', 'UY',
-#                    'VE')) %>%
-#  auk_complete()
-#
-#f_out_ebd <- file.path(
-#    "E:",
-#    "Documentos_waio",
-#    "pos_doc",
-#    "eBird",
-#    "ebd_south_america.txt")
-#
-#f_out_sampling <- file.path(
-#    "E:",
-#    "Documentos_waio",
-#    "pos_doc",
-#    "eBird",
-#    "ebd_south_america_sampling.txt")
-#
-#ebd_filtered <- auk_filter(
-#  ebd_filters,
-#  file = f_out_ebd,
-#  file_sampling = f_out_sampling)#
