@@ -101,31 +101,33 @@ package_vec <- c(
 sapply(package_vec, install.load.package)
 
 # Set directory 
-local_directory <- file.path("E:",
+local_directory <- file.path("F:",
                              "datasets_centrais",
                              "wallacean_time") 
 # FILTER AND CLEAN ----
 ## GBIF ----
 # load data
-rm(list = setdiff(ls(), "local_directory")); gc()
-
+rm(list = setdiff(ls(), c("local_directory",
+                          "validar_dados",
+                          "comparative_plot"))); gc()
 load(file.path(
   local_directory,
   "tetrapodstraits_data.RData")
 )
 
-# conferir as chaves dos dados baixados
-# conferir % das colunas var. resp e preditoras
-#head(data_tetrapodstraits)
-#table(data_tetrapodstraits$occurrenceStatus) # remover ausencias
-#table(data_tetrapodstraits$taxonRank)
-
 # key of each occurence
 anyDuplicated(data_tetrapodstraits$gbifID) 
 nrow(data_tetrapodstraits) 
-# 24.441.908 occurences species Global
-# 2.501.450 occurences species America do Sul
+# 24.591.154 occurences species Global
 table(data_tetrapodstraits$class)
+
+# Amphibia 4745415                         
+# Aves 7533355                                     
+# Crocodylia 17970
+# Mammalia 8218550
+# Sphenodontia 420
+# Squamata 3810639
+# Testudines 26480
 
 data_tetrapods_clean <- data_tetrapodstraits %>%
   filter(taxonRank == "SPECIES" | taxonRank == "SUBSPECIES") %>%
@@ -135,11 +137,7 @@ data_tetrapods_clean <- data_tetrapodstraits %>%
   # U. ricardinii aparece sem classificacao de classe
   mutate(class = if_else(class == "", "Squamata", class))
 
-nrow(data_tetrapods_clean) 
-# 2.478.512 occurences species America do Sul
-# 24.263.774
-
-table(data_tetrapods_clean$class)
+nrow(data_tetrapods_clean) # 24.402.844
 
 # how much data is na?
 data_tetrapods_clean %>%
@@ -149,10 +147,12 @@ data_tetrapods_clean %>%
             missing_month = sum(is.na(month)),
             missing_year = sum(is.na(year)),
             missing_date = sum(is.na(eventDate)))
-# 8.916.385 sem coordenada
-# 3.568.206 sem ano 
+# 9.001.840 sem coordenada
+# 3.626.524 sem ano 
+# 6.563.455 sem mes
+# 7.408.408 sem dia
 
-# exists a difference between "year" and "event date" of 7280 occurences
+# exists a difference between "year" and "event date" 
 # these differences is associate a occurences between imprecise dates
 # check documentation https://encurtador.com.br/XmP8P
 #View(data_tetrapods_clean %>%
@@ -164,16 +164,15 @@ data_tetrapods_filter <- data_tetrapods_clean %>%
   select(-eventDate)
 
 data_tetrapods_filter %>%
-  summarise(missing_lat = sum(is.na(decimalLatitude)),
-            missing_long = sum(is.na(decimalLongitude)), # 112.301
-            missing_day = sum(is.na(day)), # 62.065 NA's
-            missing_month = sum(is.na(month)), # 62.065 NA's
+  summarise(missing_lat = sum(is.na(decimalLatitude)), # without missing data =)
+            missing_long = sum(is.na(decimalLongitude)), 
+            missing_day = sum(is.na(day)), # 2.776.369 NA's
+            missing_month = sum(is.na(month)), # 2.257.939 NA's
             missing_year = sum(is.na(year))) # without missing data =)
-            #missing_date = sum(is.na(eventDate))) 
+#missing_date = sum(is.na(eventDate))) 
 
 nrow(data_tetrapods_filter) 
-# 1.153.622 total occurences america do sul
-# 14.108.708 global
+# 14.141.511 total occurences global
 table(data_tetrapods_filter$class) # occurences per classes 
 
 # coordsclean
@@ -181,7 +180,8 @@ table(data_tetrapods_filter$class) # occurences per classes
 data_tetrapods_filter$countryCode <-  countrycode(
   data_tetrapods_filter$countryCode,
   origin =  'iso2c',
-  destination = 'iso3c')
+  destination = 'iso3c',
+  custom_match = c("XK" = "XKX"))
 
 flags <- clean_coordinates(x = data_tetrapods_filter,
                            lon = "decimalLongitude",
@@ -192,44 +192,118 @@ flags <- clean_coordinates(x = data_tetrapods_filter,
                                      "institutions",
                                      "seas","zeros"))
 
-#Flagged 674578 of 14108708 records, EQ = 0.05.
+# Flagged 678.415 of 14141511 records, EQ = 0.05.
 #Exclude problematic records
 data_tetrapods_filter_spatialpoints <- data_tetrapods_filter[
   flags$.summary,
-  ]
-
-#The flagged records
-# dat_fl <- data_teste[!flags$.summary,]
-
-# Remove records that are temporal outliers
-#flags_temporal <- cf_age(x = data_tetrapods_filter_spatialpoints,
-#                lon = "decimalLongitude",
-#                lat = "decimalLatitude",
-#                taxon = "species", 
-#                min_age = "year",
-#                max_age = "year",
-#                value = "flagged")
-#
-#data_tetrapods_filter_spatial_temp <- data_tetrapods_filter_spatialpoints[
-#  flags_temporal,
-#  ]
-
-# Remove records with low coordinate precision
-#data_tetrapods_filter_spatial_temp %>% 
-#  mutate(Uncertainty = coordinateUncertaintyInMeters / 1000) %>% 
-#  ggplot(aes(x = Uncertainty)) + 
-#  geom_histogram() +
-#  xlab("Coordinate uncertainty in meters") +
-#  theme_bw()
+] # 13.463.096 occ
 
 # filter coordinates uncertain > 100km
 # filter years from 1900
 data_tetrapods_filtered <- data_tetrapods_filter_spatialpoints %>%
   filter(coordinateUncertaintyInMeters / 1000 <= 100 | is.na(coordinateUncertaintyInMeters)) %>%
   filter(year >1899)
+nrow(data_tetrapods_filtered) # 13.053.975 
+
+## Human observation ----
+rm(list = setdiff(ls(), c("local_directory",
+                          "validar_dados",
+                          "comparative_plot",
+                          "data_tetrapods_filtered"))); gc()
+
+load(file.path(
+  local_directory,
+  "nonbirds_humanobservation_data.RData")
+)
+
+# key of each occurence
+anyDuplicated(data_nonbirds$gbifID) 
+nrow(data_nonbirds) 
+# 38.702.092 occurences species Global
+table(data_nonbirds$class)
+
+data_nonbirds_clean <- data_nonbirds %>%
+  filter(taxonRank == "SPECIES" | taxonRank == "SUBSPECIES") %>%
+  filter(occurrenceStatus != "ABSENT") %>%
+  mutate(origin_of_data = "gbif") %>%
+  mutate(eventDate = na_if(eventDate, "")) 
+
+nrow(data_nonbirds_clean) 
+# 38.317.234 occurences 
+
+table(data_nonbirds_clean)
+
+# how much data is na?
+data_nonbirds_clean %>%
+  summarise(missing_lat = sum(is.na(decimalLatitude)),
+            missing_long = sum(is.na(decimalLongitude)),
+            missing_day = sum(is.na(day)),
+            missing_month = sum(is.na(month)),
+            missing_year = sum(is.na(year)),
+            missing_date = sum(is.na(eventDate)))
+# 344.879 sem coordenada
+# 1.415.954 sem ano 
+# 3.887.627 sem mes
+# 4.598.425 sem dia
+
+# exists a difference between "year" and "event date" of 7280 occurences
+# these differences is associate a occurences between imprecise dates
+# check documentation https://encurtador.com.br/XmP8P
+#View(data_tetrapods_clean %>%
+#       filter(!is.na(eventDate) & is.na(year)))
+data_nonbirds_filter <- data_nonbirds_clean %>%
+  drop_na(decimalLatitude,
+          decimalLongitude,
+          year) #%>%
+#select(-eventDate)
+
+data_nonbirds_filter %>%
+  summarise(missing_lat = sum(is.na(decimalLatitude)), # without missing data =)
+            missing_long = sum(is.na(decimalLongitude)), 
+            missing_day = sum(is.na(day)), # 3.080.541 NA's
+            missing_month = sum(is.na(month)), # 2.374.207 NA's
+            missing_year = sum(is.na(year))) # without missing data =)
+
+nrow(data_nonbirds_filter) 
+# 36.590.997 total occurences global
+table(data_nonbirds_filter$class) # occurences per classes 
+
+# coordsclean
+# convert country code from ISO2c to ISO3c
+data_nonbirds_filter$countryCode <-  countrycode(
+  data_nonbirds_filter$countryCode,
+  origin =  'iso2c',
+  destination = 'iso3c',
+  custom_match = c("XK" = "XKX"))
+
+flags <- clean_coordinates(x = data_nonbirds_filter,
+                           lon = "decimalLongitude",
+                           lat = "decimalLatitude",
+                           countries = "countryCode",
+                           species = "species",
+                           tests = c("equal","gbif",
+                                     "institutions",
+                                     "seas","zeros"))
+
+# Flagged 1381710 of 36590997 records, EQ = 0.04.
+#Exclude problematic records
+data_nonbirds_filter_spatialpoints <- data_nonbirds_filter[
+  flags$.summary,
+]
+nrow(data_nonbirds_filter_spatialpoints) # 35.209.287
+
+# filter coordinates uncertain > 100km
+# filter years from 1900
+data_nonbirds_filtered <- data_nonbirds_filter_spatialpoints %>%
+  filter(coordinateUncertaintyInMeters / 1000 <= 100 | is.na(coordinateUncertaintyInMeters)) %>%
+  filter(year >1899)
 
 ## BioTIME 2.0v ----
-#start_time <- Sys.time()
+rm(list = setdiff(ls(), c("local_directory",
+                          "validar_dados",
+                          "comparative_plot",
+                          "data_tetrapods_filtered",
+                          "data_nonbirds_filtered"))); gc()
 load(file.path(
   local_directory,
   "biotime_data.RData")
@@ -267,10 +341,13 @@ data_biotime_filtered <- data_biotime_clean[
   flags$.summary,
 ]
 
-min(data_biotime_filtered$year)
-max(data_biotime_filtered$year)
-
 ## speciesLink ----
+rm(list = setdiff(ls(), c("local_directory",
+                          "validar_dados",
+                          "comparative_plot",
+                          "data_tetrapods_filtered",
+                          "data_nonbirds_filtered",
+                          "data_biotime_filtered"))); gc()
 load(file.path(
   local_directory,
   "splinks_data.RData")
@@ -303,14 +380,16 @@ data_splink_clean %>%
             missing_year = sum(is.na(year)))
 
 # invalidity coordinates
-vetor <- c(19875, 20466, 20880, 21001, 28842, 30252, 33789, 34402, 34404, 34407, 
-            34409, 34411, 34413, 34415, 34417, 34418, 34474, 34493, 34495, 34497, 
-            34499, 34533, 34534, 50880, 169018, 170384, 170499, 171015, 171016, 
-            211761, 211782, 211828, 317952, 344767, 410361, 411544, 411809, 411936, 
-            412107, 412108, 413889, 414494, 422455, 424351, 424529, 424546, 426406, 
-            426407, 428892, 429413, 429755, 429868, 430062, 445619, 445625, 445711, 
-            445712, 445713, 445714, 445715, 445716, 445717, 445718, 445719, 445720, 
-            445721, 445722, 445723, 445724, 445725, 445726, 583577)
+vetor <- c(83832, 83833, 83834, 83910, 84687, 84811, 84812, 85370,
+           85383, 86113, 86546, 86787, 86939, 87015, 88115, 88116,
+           88117, 88434, 89098, 89099, 89602, 89603, 89604, 89646, 
+           92475, 94556, 94558, 94578, 94814, 97172, 97174, 98430,
+           99250, 106342, 106343, 196840, 196928, 197185, 197186,
+           197391, 197392, 199691, 200737, 200750, 200862, 201022,
+           201023, 201024, 201025, 201026, 201027, 201481, 214513,
+           215247, 215661, 216281, 216314, 216316, 218010, 218024,
+           218026, 218028, 236713, 236721, 236722, 239871, 240597, 
+           240892, 269242, 331990, 556538, 556759)
 
 data_splink_cleaned <-  data_splink_clean[-vetor, ]
 
@@ -321,40 +400,18 @@ flags <- clean_coordinates(x = data_splink_cleaned,
                            tests = c("equal","gbif",
                                      "institutions",
                                      "seas","zeros")) 
-# Flagged 225776 of 597492 records, EQ = 0.38.
+# Flagged 244567 of 646315 records, EQ = 0.38.
 #Exclude problematic records
 data_splink_filter_spatialpoints <- data_splink_cleaned[
   flags$.summary,
 ]
-
-#The flagged records
-# dat_fl <- data_teste[!flags$.summary,]
-
-## Remove records that are temporal outliers
-#flags_temporal <- cf_age(x = data_splink_filter_spatialpoints,
-#                         lon = "decimalLongitude",
-#                         lat = "decimalLatitude",
-#                         taxon = "species",
-#                         min_age = "year",
-#                         max_age = "year",
-#                         value = "flagged") # Flagged 16743 records
-#
-#data_splink_filter_spatial_temp <- data_splink_filter_spatialpoints[
-#  flags_temporal,
-#]
 
 # filter coordinates uncertain > 100km
 # filter years from 1900
 data_splink_filtered <- data_splink_filter_spatialpoints %>%
   mutate(coordinateprecision = as.numeric(coordinateprecision)) %>%
   filter(coordinateprecision / 1000 <= 100 | is.na(coordinateprecision)) %>%
-  filter(year > 1899 & year < 2025)
-
-nrow(data_splink_filter_spatialpoints)-nrow(data_splink_filtered)
-
-end_time <- Sys.time()
-print(end_time - start_time) # 7min57s
-# por todas as bases: Time difference of 39.19346 mins
+  filter(year > 1899 & year < 2026)
 
 # CHECK DATASETS ----
 dados_perdidos <- read.csv2("Figures/cleaned_data.csv") # atualizar manualmente

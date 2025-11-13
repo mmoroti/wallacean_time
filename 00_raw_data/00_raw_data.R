@@ -235,33 +235,31 @@ rm(list = setdiff(ls(), "local_directory")); gc()
 
 # raw data splinks
 splink_data_raw <- data.table::fread(file.path(
-  "00_raw_data", 
-  "raw_data",
-  "speciesLink-20240909151829-0009656",
-  "20240909151829-0009656.txt"),
+  local_directory,
+  "speciesLink-20251105141357-0019321",
+  "20251105141357-0019321.txt"),
   stringsAsFactors=T)
 
-names(splink_data_raw)
+nrow(splink_data_raw) # 19.049.411
 
 table(splink_data_raw$basisofrecord)
 table(splink_data_raw$kingdom)
 table(splink_data_raw$taxonclass)
 
 splink_data <- splink_data_raw %>%
-  filter(basisofrecord == "PreservedSpecimen" | 
-           basisofrecord == "Occurrence") %>%
-  filter(kingdom %in% c("Animalia", "Animalia; Animalia", "Annimalia"))
+  filter(kingdom %in% c("Animalia", "Animalia; Animalia", "Annimalia",
+                        "Animalia; Animalia", "Chelonia"))
 
 table(splink_data$basisofrecord)
 table(splink_data$kingdom)
-table(splink_data$taxonclass)
+nrow(splink_data) # 4.224.316
 
 # if you need rerun name_backbone_checklist, use this
-#species_list_splink <- splink_data %>% 
-#  distinct(scientificname, .keep_all = TRUE) %>%
-#  mutate(scientificname = as.character(scientificname)) %>%
-#  pull("scientificname") %>% 
-#  name_backbone_checklist()
+species_list_splink <- splink_data %>% 
+  distinct(scientificname, .keep_all = TRUE) %>%
+  mutate(scientificname = as.character(scientificname)) %>%
+  pull("scientificname") %>% 
+  name_backbone_checklist()
 
 names(species_list_splink)
 
