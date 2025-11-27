@@ -311,6 +311,10 @@ data_nonbirds_filtered <- data_nonbirds_filter_spatialpoints %>%
 #                      "temp_extract")
 #dir.create(temp_dir, showWarnings = FALSE)
 #unzip(arquivo_zip, exdir = temp_dir)
+local_directory <- file.path("D:",
+                             "MatheusMoroti",
+                             "wallacean_time",
+                             "Dataset") 
 
 # save raw .parquet files 
 parquet_dir <- file.path(local_directory, 
@@ -362,12 +366,12 @@ estatisticas <- data.frame(
   stringsAsFactors = FALSE
 )
 
-for (i in seq_along(familias_disponiveis)) {
+for (i in seq_along(ordens_disponiveis)) {
   
   tryCatch({
-    cat("Processando", familias_disponiveis[i])
+    cat("Processando", ordens_disponiveis[i])
     
-    aves <- open_dataset(file.path(parquet_dir_family, familias_disponiveis[i]))
+    aves <- open_dataset(file.path(parquet_dir, ordens_disponiveis[i]))
     aves_clean <- aves %>%
       collect()
     
@@ -843,27 +847,35 @@ ggsave("Figures/comparing_filter_data.tiff", dpi = 300, units = "in")
 
 # UNIFYING OCCURENCES DATA ---- 
 # load data
-rm(list=ls()); gc() # clean local environment
+rm(list = setdiff(ls(), c("local_directory"))); gc()
+
+# Eu tenho que remover todas as chaves que NAO estao em 
+# `species_list_tetrapods_filter` , porque aqui sao todas as especies 
+# encontradas no TetrapodTraits, e podem ter saido no data_tetrapods_filtered
+# por exemplo, Cristidorsa otai esta no TetrapodTraits, mas todas as ocorrencias
+# estao sem data nas observaçoes feitas por especialistas, mas tem dados nas occ
+# de observacoes humanas com data. Ou seja, essa chave deve ser mantida. 
+load(file.path(
+  local_directory,
+  "tetrapodstraits_data.RData")
+)
+
+parquet_dir <- file.path(local_directory,
+                         "parquet_clean")
+data_birds <- open_dataset(
+  sources = parquet_dir
+) %>%
+  collect()
 
 load(file.path(
   local_directory,
   "datasets_filtered.RData")
 )
 
-parquet_dir <- file.path(local_directory,
-                         "parquet_clean")
-
-data_birds <- open_dataset(
-  sources = parquet_dir
-) %>%
-  collect()
-
-# TODO da para usar para baixar o registro de occ para mais especies com essas 
-# chaves, e buscar + poligonos se necessarios. 
 # BioTIME chaves perdidas
 chaves_perdidas_biotime <- setdiff(
   data_biotime_filtered$speciesKey,
-  data_tetrapods_filtered$speciesKey
+  species_list_tetrapods_filter$speciesKey
 ) 
 # Mantenha APENAS as speciesKeys que NÃO estão na lista de perdidas
 data_biotime_filtered_sa <- data_biotime_filtered %>% 
@@ -874,7 +886,7 @@ data_biotime_filtered_sa <- data_biotime_filtered %>%
 # speciesLink chaves perdidas
 chaves_perdidas_splink <- setdiff(
   data_splink_filtered$speciesKey,
-  data_tetrapods_filtered$speciesKey
+  species_list_tetrapods_filter$speciesKey
 ) 
 
 data_splink_filtered_sa <- data_splink_filtered %>% 
@@ -885,11 +897,11 @@ data_splink_filtered_sa <- data_splink_filtered %>%
 # Non-Birds HumanObsevation chaves perdidas
 chaves_perdidas_nonbirdsHO <- setdiff(
   data_nonbirds_filtered$speciesKey,
-  data_tetrapods_filtered$speciesKey
-)
+  species_list_tetrapods_filter$speciesKey
+) # nenhuma chave eh perdida, pq todas foram baixadas baseado no speciesKey 
 
 data_nonbirdsHO_filtered_sa <- data_birds %>% 
-  filter(!(speciesKey %in% chaves_perdidas_nonbirdsHO)) %>%
+  #filter(!(speciesKey %in% chaves_perdidas_nonbirdsHO)) %>%
   mutate(day = as.integer(day),
          month = as.integer(month)) %>%
   mutate(origin_of_data = "HUMAN_OBSERVATION")
@@ -897,17 +909,14 @@ data_nonbirdsHO_filtered_sa <- data_birds %>%
 # Birds HumanObsevation chaves perdidas
 chaves_perdidas_birdsHO <- setdiff(
   data_birds$speciesKey,
-  data_tetrapods_filtered$speciesKey
-) 
+  species_list_tetrapods_filter$speciesKey
+) # nenhuma chave eh perdida, pq todas foram baixadas baseado no speciesKey
 
 data_birdsHO_filtered_sa <- data_birds %>% 
-  filter(!(speciesKey %in% chaves_perdidas_birdsHO)) %>%
+  #filter(!(speciesKey %in% chaves_perdidas_birdsHO)) %>%
   mutate(day = as.integer(day),
          month = as.integer(month)) %>%
   mutate(origin_of_data = "HUMAN_OBSERVATION")
-
-glimpse(data_splink_filtered_sa)
-glimpse(data_biotime_filtered_sa)
 
 data_occurences_precleaned <- bind_rows(
   data_tetrapods_filtered,
@@ -936,18 +945,25 @@ write_parquet(data_occurences_precleaned,  # dados limpos e integrados
                 local_directory,
                 "data_occurences_filtered.parquet"))
 
-# Checar congruencia de especies entre as bases
-#biotime_species <- unique(data_occurences_precleaned$speciesKey[
-#  data_occurences_precleaned$origin_of_data == "biotime"])
-#splink_species <- unique(data_occurences_precleaned$speciesKey[
-#  data_occurences_precleaned$origin_of_data == "splink"])
-#gbif_species <- unique(data_occurences_precleaned$speciesKey[
-#  data_occurences_precleaned$origin_of_data == "gbif"])
-#
-## spp em biotime que não estão no GBIF
-#setdiff(biotime_species, gbif_species)
-## splink que não estão no GBIF
-#setdiff(splink_species, gbif_species)
+# Criar dataframe combinando todos os vetores
+# TODO da para usar para baixar o registro de occ para mais especies com essas 
+# chaves, e buscar + poligonos se necessarios. 
+chaves_perdidas_combinadas <- bind_rows(
+  data.frame(speciesKey = chaves_perdidas_biotime, Database = "Biotime"),
+  data.frame(speciesKey = chaves_perdidas_splink, Database = "splink"),
+  #data.frame(speciesKey = chaves_perdidas_nonbirdsHO, Database = "nonbirdsHO"),
+  #data.frame(speciesKey = chaves_perdidas_birdsHO, Database = "birdsHO")
+) %>%
+  arrange(speciesKey, Database)
+
+# 858 chaves ao todo perdidas, estao no BioTime e/ou speciesLink, mas nao
+# no TetrapodTraits. Essas podemos conferir para ver se entram ou nao em nossos
+# dados.
+chaves_perdidas_combinadas %>% 
+  distinct(speciesKey) %>% nrow() 
+
+write.table(chaves_perdidas_combinadas, file.path(
+  local_directory, "chaves_perdidas.txt"))
 
 # REMOVE DUPLICATES ----
 rm(list=ls()); gc() # clean local enviroment
