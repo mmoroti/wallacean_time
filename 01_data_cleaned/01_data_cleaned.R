@@ -93,7 +93,8 @@ package_vec <- c(
   "here",
   "CoordinateCleaner",
   "sf",
-  "countrycode"
+  "countrycode",
+  "arrow"
 )
 
 # executing install & load for each package
@@ -205,7 +206,7 @@ data_tetrapods_filtered <- data_tetrapods_filter_spatialpoints %>%
   filter(year >1899)
 nrow(data_tetrapods_filtered) # 13.053.975 
 
-## Human observation ----
+## Human observation non-birds ----
 rm(list = setdiff(ls(), c("local_directory",
                           "validar_dados",
                           "comparative_plot",
@@ -297,6 +298,289 @@ nrow(data_nonbirds_filter_spatialpoints) # 35.209.287
 data_nonbirds_filtered <- data_nonbirds_filter_spatialpoints %>%
   filter(coordinateUncertaintyInMeters / 1000 <= 100 | is.na(coordinateUncertaintyInMeters)) %>%
   filter(year >1899)
+
+## Human observation birds ----
+# Extract ZIP file from eBird
+#arquivo_zip <- file.path(local_directory,
+#                         "Dataset",
+#                         "0018107-251025141854904.zip")
+#temp_dir <- file.path(local_directory,
+#                      "Dataset",
+#                      "temp_extract")
+#dir.create(temp_dir, showWarnings = FALSE)
+#unzip(arquivo_zip, exdir = temp_dir)
+
+# save raw .parquet files 
+parquet_dir <- file.path(local_directory, 
+                         "parquet_por_ordem")
+
+# save clean .parquet files
+parquet_clean <- file.path(local_directory, 
+                           "parquet_clean")
+
+# Obtain human observation data
+nested_cols <- c("speciesKey", "class", "order", 
+                 "family", "species", "gbifID",
+                 "day", "month", "year",
+                 "decimalLatitude", "decimalLongitude",
+                 "coordinateUncertaintyInMeters", "occurrenceStatus",
+                 "taxonRank", "countryCode", "eventDate")
+
+ebird_data <- arrow::open_delim_dataset(
+  file.path(temp_dir, "0018107-251025141854904.csv"), 
+  parse_options = csv_parse_options(
+    delimiter = "\t", 
+    newlines_in_values = TRUE),
+  read_options = list(
+    block_size = 1000000000L, 
+    use_threads = TRUE)) %>%
+  select(all_of(nested_cols))
+
+# create multiple .parquet files
+ebird_data |> 
+  group_by(order) |> 
+  write_dataset(path = parquet_dir,
+                format = "parquet")
+
+tibble(
+  arquivos = list.files(parquet_dir, recursive = TRUE),
+  tamanho_MB = file.size(file.path(parquet_dir, arquivos)) / 1024^2
+) %>% View()
+
+# Cleaning each Order
+ordens_disponiveis <- list.dirs(parquet_dir,
+                                recursive = FALSE,
+                                full.names = FALSE)
+
+# Estatísticas finais
+estatisticas <- data.frame(
+  order = character(),
+  registros_originais = integer(),
+  registros_clean = integer(),
+  stringsAsFactors = FALSE
+)
+
+for (i in seq_along(familias_disponiveis)) {
+  
+  tryCatch({
+    cat("Processando", familias_disponiveis[i])
+    
+    aves <- open_dataset(file.path(parquet_dir_family, familias_disponiveis[i]))
+    aves_clean <- aves %>%
+      collect()
+    
+    n_original <- nrow(aves_clean)
+    
+    # Filter start
+    aves_clean <- aves_clean %>%
+      filter(taxonRank == "SPECIES" | taxonRank == "SUBSPECIES") %>%
+      filter(occurrenceStatus != "ABSENT") %>%
+      mutate(origin_of_data = "gbif") %>%
+      mutate(eventDate = na_if(eventDate, "")) %>%
+      drop_na(decimalLatitude,
+              decimalLongitude,
+              year)
+    
+    # Remove invalidity coordinates
+    aves_clean <- aves_clean %>%
+      filter(
+        !is.na(decimalLatitude),
+        !is.na(decimalLongitude),
+        decimalLatitude >= -90 & decimalLatitude <= 90,
+        decimalLongitude >= -180 & decimalLongitude <= 180
+      ) 
+    
+    aves_clean$countryCode <-  countrycode(
+      aves_clean$countryCode,
+      origin =  'iso2c',
+      destination = 'iso3c',
+      custom_match = c("XK" = "XKX"))
+    
+    # CoordinateCleaner 
+    flags <- clean_coordinates(
+      x = aves_clean,
+      lon = "decimalLongitude",
+      lat = "decimalLatitude",
+      countries = "countryCode",
+      species = "species",
+      tests = c("equal", "gbif", "institutions", "seas", "zeros")
+    )
+    
+    aves_clean <- aves_clean[flags$.summary, ] %>%
+      filter(
+        coordinateUncertaintyInMeters / 1000 <= 100 | is.na(coordinateUncertaintyInMeters),
+        year < 2026 #year > 1899 & 
+      )
+    
+    aves_clean <- aves_clean %>%
+      mutate(
+        # duas casas decimais = 1.11 km 
+        decimalLatitude = round(decimalLatitude, 2), 
+        decimalLongitude = round(decimalLongitude, 2),
+        month = ifelse(month > 12 | month < 1, NA, month),
+        day = ifelse(day > 31 | day < 1, NA, day)          
+      ) %>%
+      arrange(speciesKey, year, month, day) 
+    
+    duplicated_flags <- cc_dupl(
+      aves_clean,
+      lon = "decimalLongitude",
+      lat = "decimalLatitude",
+      species = "speciesKey",
+      value = "flagged"
+    )
+    
+    aves_clean <- aves_clean[
+      duplicated_flags == TRUE, ]
+    
+    # Filter end
+    n_final <- nrow(aves_clean)
+    
+    # Save new parquet file - Ordem
+    ordem_nome <- sub("/.*", "", sub("^order=", "", ordens_disponiveis[i]))
+    write_parquet(aves_clean, 
+                  sink = file.path(parquet_clean,
+                                   paste0("clean_", ordem_nome, ".parquet")))
+    # How much data did we lose?
+    estatisticas <- rbind(estatisticas, data.frame(
+      taxa = ordem_nome,
+      registros_originais = n_original,
+      registros_clean = n_final
+    ))
+    
+  }, error = function(e) {
+    cat("\n❌ Erro em", ordem_nome, ":", e$message, "\n")
+  })
+}
+
+# Mostrar estatísticas finais
+print(estatisticas)
+write.table(estatisticas, "Dataset/clean_statistics_order.txt")
+
+# Passeriformes cannot be processed; let's separate them into families.
+aves_passeriformes <- open_dataset(file.path(parquet_dir, 	
+                                             "order=Passeriformes/part-0.parquet"))
+
+parquet_dir_family <- file.path(local_directory, 
+                                "parquet_por_ordem",
+                                "order=Passeriformes",
+                                "family")
+
+aves_passeriformes |>
+  group_by(family) |> 
+  write_dataset(path = parquet_dir_family,
+                format = "parquet")
+
+tibble(
+  arquivos = list.files(parquet_dir_family, recursive = TRUE),
+  tamanho_MB = file.size(file.path(parquet_dir_family, arquivos)) / 1024^2
+) %>% View() 
+
+familias_disponiveis <- list.dirs(parquet_dir_family,
+                                  recursive = FALSE,
+                                  full.names = FALSE) 
+
+# Estatisticas finais
+estatisticas <- data.frame(
+  ordem = character(),
+  registros_originais = integer(),
+  registros_clean = integer(),
+  stringsAsFactors = FALSE
+)
+
+for (i in seq_along(familias_disponiveis)) {
+  
+  tryCatch({
+    cat("Processando", familias_disponiveis[i])
+    
+    aves <- open_dataset(file.path(parquet_dir_family, familias_disponiveis[i]))
+    aves_clean <- aves %>%
+      collect()
+    
+    n_original <- nrow(aves_clean)
+    
+    # Filter start
+    aves_clean <- aves_clean %>%
+      filter(taxonRank == "SPECIES" | taxonRank == "SUBSPECIES") %>%
+      filter(occurrenceStatus != "ABSENT") %>%
+      mutate(origin_of_data = "gbif") %>%
+      mutate(eventDate = na_if(eventDate, "")) %>%
+      drop_na(decimalLatitude,
+              decimalLongitude,
+              year)
+    
+    # Remove invalidity coordinates
+    aves_clean <- aves_clean %>%
+      filter(
+        !is.na(decimalLatitude),
+        !is.na(decimalLongitude),
+        decimalLatitude >= -90 & decimalLatitude <= 90,
+        decimalLongitude >= -180 & decimalLongitude <= 180
+      ) 
+    
+    aves_clean$countryCode <-  countrycode(
+      aves_clean$countryCode,
+      origin =  'iso2c',
+      destination = 'iso3c',
+      custom_match = c("XK" = "XKX"))
+    
+    # CoordinateCleaner 
+    flags <- clean_coordinates(
+      x = aves_clean,
+      lon = "decimalLongitude",
+      lat = "decimalLatitude",
+      countries = "countryCode",
+      species = "species",
+      tests = c("equal", "gbif", "institutions", "seas", "zeros")
+    )
+    
+    aves_clean <- aves_clean[flags$.summary, ] %>%
+      filter(
+        coordinateUncertaintyInMeters / 1000 <= 100 | is.na(coordinateUncertaintyInMeters),
+        year < 2026 #year > 1899 & 
+      )
+    
+    aves_clean <- aves_clean %>%
+      mutate(
+        # duas casas decimais = 1.11 km 
+        decimalLatitude = round(decimalLatitude, 2), 
+        decimalLongitude = round(decimalLongitude, 2),
+        month = ifelse(month > 12 | month < 1, NA, month),
+        day = ifelse(day > 31 | day < 1, NA, day)          
+      ) %>%
+      arrange(speciesKey, year, month, day) 
+    
+    duplicated_flags <- cc_dupl(
+      aves_clean,
+      lon = "decimalLongitude",
+      lat = "decimalLatitude",
+      species = "speciesKey",
+      value = "flagged"
+    )
+    
+    aves_clean <- aves_clean[
+      duplicated_flags == TRUE, ]
+    
+    # Filter end
+    n_final <- nrow(aves_clean)
+    
+    # Save new parquet file - Family
+    family_nome <- sub("/.*", "", sub("^family=", "", familias_disponiveis[i]))
+    write_parquet(aves_clean, 
+                  sink = file.path(parquet_clean,
+                                   paste0("clean_", family_nome, ".parquet")))
+    
+    # How much data did we lose?
+    estatisticas <- rbind(estatisticas, data.frame(
+      taxa = family_nome,
+      registros_originais = n_original,
+      registros_clean = n_final
+    ))
+    
+  }, error = function(e) {
+    cat("\n❌ Erro em",  family_name, ":", e$message, "\n")
+  })
+}
 
 ## BioTIME 2.0v ----
 rm(list = setdiff(ls(), c("local_directory",
@@ -560,12 +844,25 @@ save(
 #                        by = "speciesKey")
 # load data
 rm(list=ls()); gc() # clean local enviroment
+
 load(file.path(
   "01_data_cleaned",
   "datasets_filtered.RData")
 )
+
+parquet_dir <- file.path("F:",
+                         "datasets_centrais",
+                         "wallacean_time",
+                         "parquet_clean")
+
+data_birds <- open_dataset(
+  sources = parquet_dir
+) %>%
+  collect()
+
 # TODO da para usar para baixar o registro de occ para mais especies com essas 
 # chaves, e buscar + poligonos se necessarios. 
+# BioTIME chaves perdidas
 chaves_perdidas_biotime <- setdiff(
   data_biotime_filtered$speciesKey,
   data_tetrapods_filtered$speciesKey
@@ -576,6 +873,7 @@ data_biotime_filtered_sa <- data_biotime_filtered %>%
   mutate(day = as.integer(day),
          month = as.integer(month))
 
+# speciesLink chaves perdidas
 chaves_perdidas_splink <- setdiff(
   data_splink_filtered$speciesKey,
   data_tetrapods_filtered$speciesKey
@@ -586,40 +884,61 @@ data_splink_filtered_sa <- data_splink_filtered %>%
   mutate(day = as.integer(day),
          month = as.integer(month))
 
+# Birds HumanObsevation chaves perdidas
+chaves_perdidas_birdsHO <- setdiff(
+  data_birds$speciesKey,
+  data_tetrapods_filtered$speciesKey
+) 
+
+data_birdsHO_filtered_sa <- data_birds %>% 
+  filter(!(speciesKey %in% chaves_perdidas_birdsHO)) %>%
+  mutate(day = as.integer(day),
+         month = as.integer(month)) %>%
+  mutate(origin_of_data = "HUMAN_OBSERVATION")
+
 glimpse(data_splink_filtered_sa)
 glimpse(data_biotime_filtered_sa)
 
 data_occurences_precleaned <- bind_rows(
   data_tetrapods_filtered,
   data_biotime_filtered_sa,
-  data_splink_filtered_sa)
+  data_splink_filtered_sa,
+  data_birdsHO_filtered_sa)
 
 nested_cols <- c("speciesKey", "class", "order", "family", "species",
-  "gbifID", "day", "month", "year","decimalLatitude", "decimalLongitude", "origin_of_data")
+                 "gbifID", "day", "month", "year","decimalLatitude", "decimalLongitude", "origin_of_data")
 
 data_occurences_precleaned <- data_occurences_precleaned %>% 
   select(all_of(nested_cols))
 
-biotime_species <- unique(data_occurences_precleaned$speciesKey[data_occurences_precleaned$origin_of_data == "biotime"])
-splink_species <- unique(data_occurences_precleaned$speciesKey[data_occurences_precleaned$origin_of_data == "splink"])
-gbif_species <- unique(data_occurences_precleaned$speciesKey[data_occurences_precleaned$origin_of_data == "gbif"])
-# spp em biotime que não estão no GBIF
-setdiff(biotime_species, gbif_species)
-# splink que não estão no GBIF
-setdiff(splink_species, gbif_species)
+write_parquet(data_occurences_precleaned,  # dados limpos e integrados
+              sink = file.path(
+                "01_data_cleaned",
+                "data_occurences_filtered.parquet"))
 
-save(data_occurences_precleaned,  # dados limpos e integrados
-     file = file.path(
-       "01_data_cleaned",
-       "data_occurences_filtered.RData"))
+# Checar congruencia de especies entre as bases
+#biotime_species <- unique(data_occurences_precleaned$speciesKey[
+#  data_occurences_precleaned$origin_of_data == "biotime"])
+#splink_species <- unique(data_occurences_precleaned$speciesKey[
+#  data_occurences_precleaned$origin_of_data == "splink"])
+#gbif_species <- unique(data_occurences_precleaned$speciesKey[
+#  data_occurences_precleaned$origin_of_data == "gbif"])
+#
+## spp em biotime que não estão no GBIF
+#setdiff(biotime_species, gbif_species)
+## splink que não estão no GBIF
+#setdiff(splink_species, gbif_species)
 
 # REMOVE DUPLICATES ----
 rm(list=ls()); gc() # clean local enviroment
+
 start_time <- Sys.time()
 # occurences data
-load(file = file.path(
-  "01_data_cleaned",
-  "data_occurences_filtered.RData"))
+data_occurences_precleaned <- open_dataset(
+  sources = file.path(
+    "01_data_cleaned",
+    "data_occurences_filtered.parquet")
+)
 
 # plot points without polygons filter
 #ggplot() +
@@ -639,8 +958,10 @@ data_occurences_precleaned <- data_occurences_precleaned %>%
     month = ifelse(month > 12 | month < 1, NA, month),
     day = ifelse(day > 31 | day < 1, NA, day)          
   ) %>%
-  arrange(speciesKey, year, month, day) 
+  arrange(speciesKey, year, month, day) %>%
+  collect()
 
+table(data_occurences_precleaned$origin_of_data)
 # Remove duplicates
 duplicated_flags <- cc_dupl(
   data_occurences_precleaned,
@@ -654,9 +975,8 @@ data_occurences_precleaned_duplicate <- data_occurences_precleaned[
   duplicated_flags == TRUE, ]
 
 nrow(data_occurences_precleaned_duplicate)*100/nrow(data_occurences_precleaned)
-# View(data_occurences_precleaned_duplicate)
+# 79% dos dados mantidos
 length(unique(data_occurences_precleaned_duplicate$speciesKey)) 
-# 7691 south america spp
 # 25928 global scale spp
 
 # FILTER POINTS BY RANGE POLYGONS ----
