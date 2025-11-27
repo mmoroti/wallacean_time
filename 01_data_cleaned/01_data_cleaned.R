@@ -90,7 +90,6 @@ validar_dados <- function(data) {
 package_vec <- c(
   "cowplot",
   "tidyverse",
-  "here",
   "CoordinateCleaner",
   "sf",
   "countrycode",
@@ -102,7 +101,7 @@ package_vec <- c(
 sapply(package_vec, install.load.package)
 
 # Set directory 
-local_directory <- file.path("F:",
+local_directory <- file.path("E:",
                              "datasets_centrais",
                              "wallacean_time") 
 # FILTER AND CLEAN ----
@@ -119,7 +118,7 @@ load(file.path(
 # key of each occurence
 anyDuplicated(data_tetrapodstraits$gbifID) 
 nrow(data_tetrapodstraits) 
-# 24.591.154 occurences species Global
+# 24.591.154 Global species occurrences
 table(data_tetrapodstraits$class)
 
 # Amphibia 4745415                         
@@ -172,9 +171,8 @@ data_tetrapods_filter %>%
             missing_year = sum(is.na(year))) # without missing data =)
 #missing_date = sum(is.na(eventDate))) 
 
-nrow(data_tetrapods_filter) 
-# 14.141.511 total occurences global
-table(data_tetrapods_filter$class) # occurences per classes 
+nrow(data_tetrapods_filter) # 14.141.511 Global species occurrences
+table(data_tetrapods_filter$class) # occurrences per classes 
 
 # coordsclean
 # convert country code from ISO2c to ISO3c
@@ -192,18 +190,19 @@ flags <- clean_coordinates(x = data_tetrapods_filter,
                            tests = c("equal","gbif",
                                      "institutions",
                                      "seas","zeros"))
-
 # Flagged 678.415 of 14141511 records, EQ = 0.05.
+
 #Exclude problematic records
 data_tetrapods_filter_spatialpoints <- data_tetrapods_filter[
   flags$.summary,
-] # 13.463.096 occ
+] 
+
+nrow(data_tetrapods_filter_spatialpoints) # 13.463.096 occ
 
 # filter coordinates uncertain > 100km
-# filter years from 1900
 data_tetrapods_filtered <- data_tetrapods_filter_spatialpoints %>%
-  filter(coordinateUncertaintyInMeters / 1000 <= 100 | is.na(coordinateUncertaintyInMeters)) %>%
-  filter(year >1899)
+  filter(coordinateUncertaintyInMeters / 1000 <= 100 | 
+           is.na(coordinateUncertaintyInMeters)) 
 nrow(data_tetrapods_filtered) # 13.053.975 
 
 ## Human observation non-birds ----
@@ -219,9 +218,15 @@ load(file.path(
 
 # key of each occurence
 anyDuplicated(data_nonbirds$gbifID) 
-nrow(data_nonbirds) 
-# 38.702.092 occurences species Global
+nrow(data_nonbirds) # 38.702.092 Global species occurrences
+
 table(data_nonbirds$class)
+# Amphibia 6.484.723                                     
+# Crocodylia 92.317
+# Mammalia 25.644.889
+# Sphenodontia 1.376
+# Squamata 5.634.057
+# Testudines 844.730
 
 data_nonbirds_clean <- data_nonbirds %>%
   filter(taxonRank == "SPECIES" | taxonRank == "SUBSPECIES") %>%
@@ -229,10 +234,8 @@ data_nonbirds_clean <- data_nonbirds %>%
   mutate(origin_of_data = "gbif") %>%
   mutate(eventDate = na_if(eventDate, "")) 
 
-nrow(data_nonbirds_clean) 
-# 38.317.234 occurences 
-
-table(data_nonbirds_clean)
+nrow(data_nonbirds_clean) # 38.317.234 Global species occurrences
+table(data_nonbirds_clean$class)
 
 # how much data is na?
 data_nonbirds_clean %>%
@@ -256,7 +259,7 @@ data_nonbirds_filter <- data_nonbirds_clean %>%
   drop_na(decimalLatitude,
           decimalLongitude,
           year) #%>%
-#select(-eventDate)
+  #select(-eventDate)
 
 data_nonbirds_filter %>%
   summarise(missing_lat = sum(is.na(decimalLatitude)), # without missing data =)
@@ -265,11 +268,10 @@ data_nonbirds_filter %>%
             missing_month = sum(is.na(month)), # 2.374.207 NA's
             missing_year = sum(is.na(year))) # without missing data =)
 
-nrow(data_nonbirds_filter) 
-# 36.590.997 total occurences global
+nrow(data_nonbirds_filter) # 36.590.997 Global species occurrences
 table(data_nonbirds_filter$class) # occurences per classes 
 
-# coordsclean
+# Coordsclean
 # convert country code from ISO2c to ISO3c
 data_nonbirds_filter$countryCode <-  countrycode(
   data_nonbirds_filter$countryCode,
@@ -285,19 +287,19 @@ flags <- clean_coordinates(x = data_nonbirds_filter,
                            tests = c("equal","gbif",
                                      "institutions",
                                      "seas","zeros"))
-
 # Flagged 1381710 of 36590997 records, EQ = 0.04.
+
 #Exclude problematic records
 data_nonbirds_filter_spatialpoints <- data_nonbirds_filter[
   flags$.summary,
 ]
-nrow(data_nonbirds_filter_spatialpoints) # 35.209.287
+nrow(data_nonbirds_filter_spatialpoints) # 35.209.287 Global species occ
 
 # filter coordinates uncertain > 100km
 # filter years from 1900
 data_nonbirds_filtered <- data_nonbirds_filter_spatialpoints %>%
-  filter(coordinateUncertaintyInMeters / 1000 <= 100 | is.na(coordinateUncertaintyInMeters)) %>%
-  filter(year >1899)
+  filter(coordinateUncertaintyInMeters / 1000 <= 100 | 
+           is.na(coordinateUncertaintyInMeters)) 
 
 ## Human observation birds ----
 # Extract ZIP file from eBird
@@ -409,7 +411,7 @@ for (i in seq_along(familias_disponiveis)) {
     aves_clean <- aves_clean[flags$.summary, ] %>%
       filter(
         coordinateUncertaintyInMeters / 1000 <= 100 | is.na(coordinateUncertaintyInMeters),
-        year < 2026 #year > 1899 & 
+        year < 2026 
       )
     
     aves_clean <- aves_clean %>%
@@ -453,7 +455,7 @@ for (i in seq_along(familias_disponiveis)) {
   })
 }
 
-# Mostrar estatísticas finais
+# How much data was cleaned? 
 print(estatisticas)
 write.table(estatisticas, "Dataset/clean_statistics_order.txt")
 
@@ -582,6 +584,10 @@ for (i in seq_along(familias_disponiveis)) {
   })
 }
 
+# How much data was cleaned? 
+print(estatisticas)
+write.table(estatisticas, "Dataset/clean_statistics_family.txt")
+
 ## BioTIME 2.0v ----
 rm(list = setdiff(ls(), c("local_directory",
                           "validar_dados",
@@ -607,9 +613,9 @@ data_biotime_clean <- biotime_data_key_precleaned %>%
 data_biotime_clean %>% 
   summarise(missing_lat = sum(is.na(decimalLatitude)),
             missing_long = sum(is.na(decimalLongitude)), 
-            missing_day = sum(is.na(day)),
-            missing_month = sum(is.na(month)),
-            missing_year = sum(is.na(year))) # without missing data
+            missing_day = sum(is.na(day)),     # 863.686
+            missing_month = sum(is.na(month)), # 766.064
+            missing_year = sum(is.na(year)))   # without missing data
 
 flags <- clean_coordinates(x = data_biotime_clean,
                            lon = "decimalLongitude",
@@ -649,9 +655,13 @@ data_splink_clean <- splink_data_key_precleaned %>%
          year = yearcollected) %>%
   mutate(origin_of_data = "splink") %>%
   mutate(
-    day = na_if(day, ""),
-    month = na_if(month, ""),
-    year = na_if(year, "")) %>%
+    day = as.numeric(na_if(day, "")),
+    month = as.numeric(na_if(month, "")),
+    year = as.numeric(na_if(year, ""))) %>%
+  mutate(
+    month = ifelse(month > 12 | month < 1, NA, month),
+    day = ifelse(day > 31 | day < 1, NA, day)          
+  ) %>%
   mutate(coordinateprecision = na_if(coordinateprecision, "")) %>% 
   mutate(year = as.integer(as.character(year))) %>%
   filter(!is.na(year))
@@ -659,23 +669,18 @@ data_splink_clean <- splink_data_key_precleaned %>%
 data_splink_clean %>%
   summarise(missing_lat = sum(is.na(decimalLatitude)),
             missing_long = sum(is.na(decimalLongitude)),
-            missing_day = sum(is.na(day)),
-            missing_month = sum(is.na(month)),
+            missing_day = sum(is.na(day)),     # 438.648
+            missing_month = sum(is.na(month)), # 473.340
             missing_year = sum(is.na(year)))
 
 # invalidity coordinates
-vetor <- c(83832, 83833, 83834, 83910, 84687, 84811, 84812, 85370,
-           85383, 86113, 86546, 86787, 86939, 87015, 88115, 88116,
-           88117, 88434, 89098, 89099, 89602, 89603, 89604, 89646, 
-           92475, 94556, 94558, 94578, 94814, 97172, 97174, 98430,
-           99250, 106342, 106343, 196840, 196928, 197185, 197186,
-           197391, 197392, 199691, 200737, 200750, 200862, 201022,
-           201023, 201024, 201025, 201026, 201027, 201481, 214513,
-           215247, 215661, 216281, 216314, 216316, 218010, 218024,
-           218026, 218028, 236713, 236721, 236722, 239871, 240597, 
-           240892, 269242, 331990, 556538, 556759)
-
-data_splink_cleaned <-  data_splink_clean[-vetor, ]
+data_splink_cleaned <- data_splink_clean %>%
+  filter(
+    !is.na(decimalLatitude),
+    !is.na(decimalLongitude),
+    decimalLatitude >= -90 & decimalLatitude <= 90,
+    decimalLongitude >= -180 & decimalLongitude <= 180
+  ) 
 
 flags <- clean_coordinates(x = data_splink_cleaned,
                            lon = "decimalLongitude",
@@ -685,6 +690,7 @@ flags <- clean_coordinates(x = data_splink_cleaned,
                                      "institutions",
                                      "seas","zeros")) 
 # Flagged 244567 of 646315 records, EQ = 0.38.
+
 #Exclude problematic records
 data_splink_filter_spatialpoints <- data_splink_cleaned[
   flags$.summary,
@@ -695,7 +701,18 @@ data_splink_filter_spatialpoints <- data_splink_cleaned[
 data_splink_filtered <- data_splink_filter_spatialpoints %>%
   mutate(coordinateprecision = as.numeric(coordinateprecision)) %>%
   filter(coordinateprecision / 1000 <= 100 | is.na(coordinateprecision)) %>%
-  filter(year > 1899 & year < 2026)
+  filter(year < 2026)
+
+# If data its ok, save data
+save(
+  data_tetrapods_filtered,
+  data_nonbirds_filtered,
+  data_biotime_filtered,
+  data_splink_filtered, 
+  file = file.path(
+    local_directory,
+    "datasets_filtered.RData")
+)
 
 # CHECK DATASETS ----
 dados_perdidos <- read.csv2("Figures/cleaned_data.csv") # atualizar manualmente
@@ -824,35 +841,16 @@ validar_dados(data_splink_filtered)
 cowplot::plot_grid(gbif_plot, biotime_plot, splink_plot, align = "v", ncol=1)
 ggsave("Figures/comparing_filter_data.tiff", dpi = 300, units = "in")
 
-# If data its ok, save data
-save(
-  data_tetrapods_filtered,
-  data_biotime_filtered,
-  data_splink_filtered, 
-  file = file.path(
-    "01_data_cleaned",
-    "datasets_filtered.RData")
-)
-
 # UNIFYING OCCURENCES DATA ---- 
-# TODO aqui vai ser necessario checar quando usarmos dados globais
-# a maioria sao de especies fora da america do sul
-# por isso estamos perdendo tantos dados aqui
-# quando for para fazer para o mundo sera necessario reconferir
-#key_losing <- left_join(data.frame(speciesKey = chaves), 
-#                        data_biotime_clean_v1,
-#                        by = "speciesKey")
 # load data
-rm(list=ls()); gc() # clean local enviroment
+rm(list=ls()); gc() # clean local environment
 
 load(file.path(
-  "01_data_cleaned",
+  local_directory,
   "datasets_filtered.RData")
 )
 
-parquet_dir <- file.path("F:",
-                         "datasets_centrais",
-                         "wallacean_time",
+parquet_dir <- file.path(local_directory,
                          "parquet_clean")
 
 data_birds <- open_dataset(
@@ -867,7 +865,7 @@ chaves_perdidas_biotime <- setdiff(
   data_biotime_filtered$speciesKey,
   data_tetrapods_filtered$speciesKey
 ) 
-
+# Mantenha APENAS as speciesKeys que NÃO estão na lista de perdidas
 data_biotime_filtered_sa <- data_biotime_filtered %>% 
   filter(!(speciesKey %in% chaves_perdidas_biotime)) %>%
   mutate(day = as.integer(day),
@@ -883,6 +881,18 @@ data_splink_filtered_sa <- data_splink_filtered %>%
   filter(!(speciesKey %in% chaves_perdidas_splink)) %>%
   mutate(day = as.integer(day),
          month = as.integer(month))
+
+# Non-Birds HumanObsevation chaves perdidas
+chaves_perdidas_nonbirdsHO <- setdiff(
+  data_nonbirds_filtered$speciesKey,
+  data_tetrapods_filtered$speciesKey
+)
+
+data_nonbirdsHO_filtered_sa <- data_birds %>% 
+  filter(!(speciesKey %in% chaves_perdidas_nonbirdsHO)) %>%
+  mutate(day = as.integer(day),
+         month = as.integer(month)) %>%
+  mutate(origin_of_data = "HUMAN_OBSERVATION")
 
 # Birds HumanObsevation chaves perdidas
 chaves_perdidas_birdsHO <- setdiff(
@@ -903,17 +913,27 @@ data_occurences_precleaned <- bind_rows(
   data_tetrapods_filtered,
   data_biotime_filtered_sa,
   data_splink_filtered_sa,
+  data_nonbirdsHO_filtered_sa,
   data_birdsHO_filtered_sa)
 
+rm(list = setdiff(ls(), c("local_directory",
+                          "data_occurences_precleaned",
+                          "chaves_perdidas_biotime",
+                          "chaves_perdidas_splink",
+                          "chaves_perdidas_nonbirdsHO",
+                          "chaves_perdidas_birdsHO"
+))); gc()
+
 nested_cols <- c("speciesKey", "class", "order", "family", "species",
-                 "gbifID", "day", "month", "year","decimalLatitude", "decimalLongitude", "origin_of_data")
+                 "gbifID", "day", "month", "year",
+                 "decimalLatitude", "decimalLongitude", "origin_of_data")
 
 data_occurences_precleaned <- data_occurences_precleaned %>% 
   select(all_of(nested_cols))
 
 write_parquet(data_occurences_precleaned,  # dados limpos e integrados
               sink = file.path(
-                "01_data_cleaned",
+                local_directory,
                 "data_occurences_filtered.parquet"))
 
 # Checar congruencia de especies entre as bases
