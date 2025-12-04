@@ -104,6 +104,10 @@ sapply(package_vec, install.load.package)
 local_directory <- file.path("E:",
                              "datasets_centrais",
                              "wallacean_time") 
+
+local_directory <- file.path("D:",
+                             "MatheusMoroti",
+                             "wallacean_time")
 # FILTER AND CLEAN ----
 ## GBIF ----
 # load data
@@ -357,6 +361,9 @@ tibble(
 ordens_disponiveis <- list.dirs(parquet_dir,
                                 recursive = FALSE,
                                 full.names = FALSE)
+
+ordens_disponiveis <- ordens_disponiveis[
+  ordens_disponiveis != "order=Passeriformes"]
 
 # Estatísticas finais
 estatisticas <- data.frame(
@@ -859,6 +866,9 @@ load(file.path(
   local_directory,
   "tetrapodstraits_data.RData")
 )
+rm(list = setdiff(ls(), c("local_directory",
+                          "species_list_tetrapods_filter"
+))); gc()
 
 parquet_dir <- file.path(local_directory,
                          "parquet_clean")
@@ -878,7 +888,7 @@ chaves_perdidas_biotime <- setdiff(
   species_list_tetrapods_filter$speciesKey
 ) 
 # Mantenha APENAS as speciesKeys que NÃO estão na lista de perdidas
-data_biotime_filtered_sa <- data_biotime_filtered %>% 
+data_biotime_filtered <- data_biotime_filtered %>% 
   filter(!(speciesKey %in% chaves_perdidas_biotime)) %>%
   mutate(day = as.integer(day),
          month = as.integer(month))
@@ -889,7 +899,7 @@ chaves_perdidas_splink <- setdiff(
   species_list_tetrapods_filter$speciesKey
 ) 
 
-data_splink_filtered_sa <- data_splink_filtered %>% 
+data_splink_filtered <- data_splink_filtered %>% 
   filter(!(speciesKey %in% chaves_perdidas_splink)) %>%
   mutate(day = as.integer(day),
          month = as.integer(month))
@@ -900,7 +910,7 @@ chaves_perdidas_nonbirdsHO <- setdiff(
   species_list_tetrapods_filter$speciesKey
 ) # nenhuma chave eh perdida, pq todas foram baixadas baseado no speciesKey 
 
-data_nonbirdsHO_filtered_sa <- data_birds %>% 
+data_nonbirds_filtered <- data_nonbirds_filtered %>% 
   #filter(!(speciesKey %in% chaves_perdidas_nonbirdsHO)) %>%
   mutate(day = as.integer(day),
          month = as.integer(month)) %>%
@@ -912,7 +922,7 @@ chaves_perdidas_birdsHO <- setdiff(
   species_list_tetrapods_filter$speciesKey
 ) # nenhuma chave eh perdida, pq todas foram baixadas baseado no speciesKey
 
-data_birdsHO_filtered_sa <- data_birds %>% 
+data_birds <- data_birds %>% 
   #filter(!(speciesKey %in% chaves_perdidas_birdsHO)) %>%
   mutate(day = as.integer(day),
          month = as.integer(month)) %>%
@@ -920,18 +930,10 @@ data_birdsHO_filtered_sa <- data_birds %>%
 
 data_occurences_precleaned <- bind_rows(
   data_tetrapods_filtered,
-  data_biotime_filtered_sa,
-  data_splink_filtered_sa,
-  data_nonbirdsHO_filtered_sa,
-  data_birdsHO_filtered_sa)
-
-rm(list = setdiff(ls(), c("local_directory",
-                          "data_occurences_precleaned",
-                          "chaves_perdidas_biotime",
-                          "chaves_perdidas_splink",
-                          "chaves_perdidas_nonbirdsHO",
-                          "chaves_perdidas_birdsHO"
-))); gc()
+  data_biotime_filtered,
+  data_splink_filtered,
+  data_nonbirds_filtered,
+  data_birds)
 
 nested_cols <- c("speciesKey", "class", "order", "family", "species",
                  "gbifID", "day", "month", "year",
@@ -968,7 +970,6 @@ write.table(chaves_perdidas_combinadas, file.path(
 # REMOVE DUPLICATES ----
 rm(list=ls()); gc() # clean local enviroment
 
-start_time <- Sys.time()
 # occurences data
 data_occurences_precleaned <- open_dataset(
   sources = file.path(
@@ -997,7 +998,6 @@ data_occurences_precleaned <- data_occurences_precleaned %>%
   arrange(speciesKey, year, month, day) %>%
   collect()
 
-table(data_occurences_precleaned$origin_of_data)
 # Remove duplicates
 duplicated_flags <- cc_dupl(
   data_occurences_precleaned,
@@ -1011,9 +1011,9 @@ data_occurences_precleaned_duplicate <- data_occurences_precleaned[
   duplicated_flags == TRUE, ]
 
 nrow(data_occurences_precleaned_duplicate)*100/nrow(data_occurences_precleaned)
-# 79% dos dados mantidos
+# 78% dos dados mantidos
 length(unique(data_occurences_precleaned_duplicate$speciesKey)) 
-# 25928 global scale spp
+# 28.459 global scale spp
 
 # FILTER POINTS BY RANGE POLYGONS ----
 # shapefile
@@ -1032,7 +1032,7 @@ data_tetrapods_sa <- tetrapods_polygons_key %>%
 # usando dados de poligonos de outras bases 6527 spp apenas
 # tem que ter o mesmo numero de especies (speciesKey)
 length(unique(data_wallacean_knownledge_sa$speciesKey)) 
-length(unique(data_tetrapods_sa$speciesKey)) # perdendo 3 spp sem poligono
+length(unique(data_tetrapods_sa$speciesKey)) 
 
 # run cc_iucn()
 # terra::vect(data_tetrapods_sa) se funcionar vai dar certo
@@ -1092,16 +1092,30 @@ print(species_keys_with_errors)
 # 405.215 ocorrencias usando dados espaciais do  (7893 spp)
 # 269.333 ocorrencias usando poligonos de especialistas (5748 spp)
 # 263.628 ocorrencias com poligonos e filtro temporal
-nrow(list_occurences_clean) 
-nrow(data_wallacean_knownledge_sa)-nrow(list_occurences_clean) 
-length(unique(list_occurences_clean$speciesKey)) 
-length(unique(data_wallacean_knownledge_sa$speciesKey))
+nrow(list_occurences_clean) # 124.684.269 occ
+nrow(data_wallacean_knownledge_sa)-nrow(list_occurences_clean) # 15.018.549 removed
+length(unique(list_occurences_clean$speciesKey)) # 27405 spp 
+length(
+  unique(
+    data_wallacean_knownledge_sa$speciesKey))-length(
+      unique(list_occurences_clean$speciesKey)) # 1054 spp removed
 
-View(data_wallacean_knownledge_sa)
 # Quantas espécies para cada grupo?
 list_species <- list_occurences_clean %>%
  distinct(speciesKey, .keep_all=TRUE)
 table(list_species$class)
+# Amphibia  4229                         
+# Aves      6617                                                   
+# Crocodylia 17
+# Mammalia 4139
+# Sphenodontia 1
+# Squamata 6787
+# Testudines 257
+
+write_parquet(list_occurences_clean,  # dados limpos e integrados
+              sink = file.path(
+                local_directory, "01_data_cleaned",
+                "list_occurences_clean.parquet"))
 
 # Compare
 plot_sujo <- ggplot() +
@@ -1123,15 +1137,16 @@ plot_clean <- ggplot() +
   theme_bw()
 
 # EXTRACTING GEOLOCATIONS ----
-# shapefile to crop adm unit
-south_america <- st_read(file.path(
-  "Shapefiles",
-  "GEOGRAPHIC_SHAPEFILE",
-  "south_america_br_states.shp"
-))
+rm(list = setdiff(ls(), c("local_directory",
+                          "list_occurences_clean",
+                          "data_tetrapods_sa"
+))); gc()
 
+# shapefile to crop adm unit
 load(file.path("00_raw_data",
        "geographic_shape_data.RData"))
+
+load(file.path("C:", "Users", "MNCN-JHPINAR-3", "Downloads", "geographic_shape_data.RData"))
 
 # Verificar validade das geometrias
 sf_use_s2(FALSE)
@@ -1143,10 +1158,7 @@ data_occurences <- st_as_sf(list_occurences_clean,
                    coords = c("decimalLongitude", "decimalLatitude"),
                    crs = st_crs(geographic_shape_data))
 
-# com os poligonos de especialistas tinhamos 269333
-# usando o tetrapodtraits aumentamos para 405215 occ
-nrow(data_occurences) 
-nrow(list_occurences_clean) 
+nrow(data_occurences) == nrow(list_occurences_clean) 
 
 data_occurences <- data_occurences %>%
   mutate(ID = 1:nrow(data_occurences))
@@ -1188,7 +1200,6 @@ data_occurences_units <- data_occurences_geometry %>%
 # SPECIES LIST PER ADMINASTRIVE UNIT ----
 interseccao_sf <- st_intersection(data_tetrapods_sa, geographic_shape_data)
 
-View(geographic_shape_data)
 list_per_admunit <- interseccao_sf %>%
   st_drop_geometry()
 
@@ -1242,15 +1253,13 @@ data_wallacean_nested <- left_join(
 View(data_wallacean_nested)
 # check data
 table(data_wallacean_nested$Class)
-# com os poligonos de especialistas
-# Amphibia     Aves   Mammalia Reptilia
-#     797      2764      898     1281
-# com o tetrapodtraits
-# Amphibia     Aves Mammalia Reptilia
-#    1825     2829     1024     1367
-# para o mundo
+
+# para o mundo sem human observation
 #Amphibia  Aves   Mammalia Reptilia 
 # 4942     8250     4459     7050 
+# para o mundo com human observation
+#Amphibia  Aves   Mammalia Reptilia 
+# 5553     8941     4794     8107 
 
 table(data_wallacean_nested$Order)
 anyDuplicated(data_wallacean_nested$speciesKey)
@@ -1270,12 +1279,72 @@ anyDuplicated(data_wallacean_nested$speciesKey)
 data_wallacean_unnested <- data_wallacean_nested %>%
   unnest(cols = c(event_table))
 nrow(data_wallacean_unnested) 
-# 342.259  occ south america
+
 # 3.144.303 occ global
+# 123.776.782
 
 save(data_wallacean_nested,
     data_wallacean_unnested,
-    file = here(
+    file = file.path(
       "01_data_cleaned",
       "dataset_occurences.RData")
 )
+
+# Explore
+test <- data_wallacean_unnested %>%
+  group_by(speciesKey) %>%
+  arrange(year) %>%
+  slice(1) %>%  # Pega a primeira linha de cada grupo (ano mais antigo)
+  ungroup()
+
+test %>%
+  select(scientificName, year, YearOfDescription) %>%
+  mutate(diff = year - YearOfDescription ) %>%
+  View()
+
+data_wallacean_unnested %>%
+  filter(scientificName == "Chiasmocleis albopunctata (Boettger, 1885)") %>%
+  View()
+
+tetrapods_polygons_key %>%
+  filter(verbatim_name == "Aratinga solstitialis")
+
+# Dados do polígono (assumindo que tetrapods_polygons_key já está carregado)
+polygon_data <- tetrapods_polygons_key %>%
+  filter(verbatim_name == "Aratinga solstitialis")
+
+# 1. Mapa simples com ggplot2
+ggplot() +
+  # Adicionar polígono da espécie
+  geom_sf(data = polygon_data, 
+          fill = "red", 
+          alpha = 0.3, 
+          color = "darkred", 
+          linewidth = 1) +
+  # Título
+  ggtitle("Distribuição de Aratinga solstitialis") +
+  theme_minimal()
+
+# 2. Mapa com fundo do mundo
+ggplot() +
+  # Adicionar mapa do mundo de fundo
+  borders("world", 
+          colour = "gray50", 
+          fill = "lightgray") +
+  # Adicionar polígono da espécie
+  geom_sf(data = polygon_data, 
+          fill = "red", 
+          alpha = 0.5, 
+          color = "darkred", 
+          linewidth = 1,
+          inherit.aes = FALSE) +
+  # Limitar ao bounding box do polígono + margem
+  coord_sf(xlim = c(-65, -55),  # Extensão leste-oeste
+           ylim = c(-5, 7),      # Extensão norte-sul
+           expand = TRUE) +
+  # Título e labels
+  ggtitle("Distribuição de Aratinga solstitialis") +
+  labs(subtitle = "Ararajuba - Papagaio-amarelo") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+        plot.subtitle = element_text(hjust = 0.5))
