@@ -1,28 +1,40 @@
 library(tidyverse)
 
+rm(list=ls()); gc() # clean local enviroment
 # TODO:
 # Separar por grupos
 # Montar a completude por pais - lista de spp poligonos/o que existe no gbif*100
 # incluir dados socieconomicos
 
-rm(list=ls()); gc() # clean local enviroment
+# Set directory 
+local_directory <- file.path("F:",
+                             "datasets_centrais",
+                             "wallacean_time") 
+
 # socieconomic data
 load(
   file = file.path(
     "01_data_cleaned",
     "data_socieconomic_cleaned.RData")
 )
+
+# list per adm unit
+load(file = file.path(
+  local_directory,
+  "data_occurences_geolocation.RData")
+)
+rm(list = setdiff(ls(), c("local_directory",
+                          "list_per_admunit"))); gc()
+                                        
 # occurences data
 load(
     file = file.path(
-      "01_data_cleaned",
+      local_directory,
       "dataset_occurences.RData")
 )
-# list per adm unit
-load(file = file.path(
-       "01_data_cleaned",
-       "data_occurences_geolocation.RData")
-)
+rm(list = setdiff(ls(), c("local_directory",
+                          "list_per_admunit",
+                          "data_wallacean_unnested"))); gc()
 
 # Gerando lista de quantas und administrativas cada especie pode ocupar
 sp_count <- list_per_admunit %>% 
@@ -120,7 +132,6 @@ save(
   richness_completude_reptilia,
   richness_completude_aves,
   richness_completude_mammalia,
-  richness_completude,
   file = "02_data_analysis/richness_completude.RData"
 )
 
@@ -139,12 +150,12 @@ data_wallacean_unnested_modified <- data_wallacean_unnested %>%
     date = make_datetime(year_modified, month, day),
     date = date + days(1) # TODO CHECAR SPP QUE SOH TEM ANO NO PRIMEIRO REGISTRO
   ) 
-View(data_wallacean_unnested_modified)
+View(head(data_wallacean_unnested_modified, 50))
 any(is.na(data_wallacean_unnested_modified$year_modified))
 any(is.na(data_wallacean_unnested_modified$date))
 
 # Join socieconomic data with occurences
-data_wallacean <- data_wallacean_unnested_modified %>%
+data_wallacean_unnested_modified <- data_wallacean_unnested_modified %>%
   left_join(sp_count, by = "speciesKey") %>% # adm. unit count
   #left_join(dados_socieconomic_merge, by = c("sigla_admu", "year")) %>% #socioeconomic data
   select(speciesKey, scientificName, Class, Order, Family, name_en, date, 
@@ -153,7 +164,7 @@ data_wallacean <- data_wallacean_unnested_modified %>%
   #'pop_density(person/km2)','pib_dollar_current', 
   #rename('pop_density' = 'pop_density(person/km2)') 
 
-dados_ajustados <- data_wallacean %>%
+data_wallacean_unnested_modified <- data_wallacean_unnested_modified %>%
   group_by(speciesKey) %>%
   mutate(date = as.Date(date)) %>%
   arrange(date, .by_group = TRUE) %>%

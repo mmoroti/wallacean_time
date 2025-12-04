@@ -101,13 +101,10 @@ package_vec <- c(
 sapply(package_vec, install.load.package)
 
 # Set directory 
-local_directory <- file.path("E:",
+local_directory <- file.path("F:",
                              "datasets_centrais",
                              "wallacean_time") 
 
-local_directory <- file.path("D:",
-                             "MatheusMoroti",
-                             "wallacean_time")
 # FILTER AND CLEAN ----
 ## GBIF ----
 # load data
@@ -1214,15 +1211,17 @@ save(list_occurences_clean, # sem duplicatas e filtrados por poligonos
 )
 
 # NESTED DATAFRAME WITH BIOLOGICAL TRAITS ----
-rm(list=ls()); gc() # clean local enviroment
+rm(list = setdiff(ls(), c("local_directory",
+                          "list_per_admunit"
+                          ))); gc()
 
 load(file = file.path(
-       "01_data_cleaned",
+       local_directory,
        "data_occurences_geolocation.RData")
 )
 
 load(file.path(
-  "00_raw_data",
+  local_directory,
   "trait_data.RData")
 ) # match taxonomic and trait information with speciesKey
 
@@ -1250,7 +1249,6 @@ data_wallacean_nested <- left_join(
   relocate(event_table,count_events, .after = Family) %>%
   arrange(Class, Order, scientificName)
 
-View(data_wallacean_nested)
 # check data
 table(data_wallacean_nested$Class)
 
@@ -1261,19 +1259,7 @@ table(data_wallacean_nested$Class)
 #Amphibia  Aves   Mammalia Reptilia 
 # 5553     8941     4794     8107 
 
-table(data_wallacean_nested$Order)
 anyDuplicated(data_wallacean_nested$speciesKey)
-
-# adicionar contagem de unidades administrativas diferentes
-#for (i in 1:nrow(data_wallacean_nested)) {
-#  data_wallacean_nested[i,"count_events"] <- nrow(
-#    data_wallacean_nested$event_table[[i]])
-#  
-#  data_wallacean_nested$event_table[[i]] <- 
-#    data_wallacean_nested$event_table[[i]][
-#      order(data_wallacean_nested$event_table[[i]]$year), 
-#    ]
-#}
 
 # unnest data
 data_wallacean_unnested <- data_wallacean_nested %>%
@@ -1281,17 +1267,19 @@ data_wallacean_unnested <- data_wallacean_nested %>%
 nrow(data_wallacean_unnested) 
 
 # 3.144.303 occ global
-# 123.776.782
+# 123.776.782 occ global com Human Observation
 
 save(data_wallacean_nested,
     data_wallacean_unnested,
+    list_per_admunit,
     file = file.path(
       "01_data_cleaned",
       "dataset_occurences.RData")
 )
 
-# Explore
+# Explore data ----
 test <- data_wallacean_unnested %>%
+  filter(year > 1200) %>%
   group_by(speciesKey) %>%
   arrange(year) %>%
   slice(1) %>%  # Pega a primeira linha de cada grupo (ano mais antigo)
