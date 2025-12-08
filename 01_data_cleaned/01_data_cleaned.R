@@ -1213,24 +1213,25 @@ save(list_occurences_clean, # sem duplicatas e filtrados por poligonos
 # NESTED DATAFRAME WITH BIOLOGICAL TRAITS ----
 rm(list = setdiff(ls(), c("local_directory",
                           "list_per_admunit"
-                          ))); gc()
+))); gc()
 
 load(file = file.path(
-       local_directory,
-       "data_occurences_geolocation.RData")
+  #local_directory,
+  "01_data_cleaned",
+  "data_occurences_geolocation.RData")
 )
 
 load(file.path(
-  local_directory,
+  "00_raw_data",
   "trait_data.RData")
 ) # match taxonomic and trait information with speciesKey
 
 tetrapods_key_species <- trait_data %>%
   select("speciesKey","scientificName","Class", "Order","Family", 
-  "YearOfDescription","BodyLength_mm","ImputedLength","BodyMass_g",
-  "ImputedMass","Diu","Noc","Nocturnality", "Fos", "Ter", "Aqu", "Arb", "Aer",
-  "ImputedHabitat","Verticality","MajorHabitatSum","ImputedMajorHabitat","RangeSize",
-   "HumanDensity", "AssessedStatus") %>%
+         "YearOfDescription","BodyLength_mm","ImputedLength","BodyMass_g",
+         "ImputedMass","Diu","Noc","Nocturnality", "Fos", "Ter", "Aqu", "Arb", "Aer",
+         "ImputedHabitat","Verticality","MajorHabitatSum","ImputedMajorHabitat","RangeSize",
+         "HumanDensity", "AssessedStatus", "Latitude", "Elevation", "ETA50K", "AnnuMeanTemp") %>%
   distinct(speciesKey, .keep_all = TRUE) # 117 speciesKey duplicated
 anyDuplicated(tetrapods_key_species$speciesKey) # ok
 
@@ -1245,8 +1246,7 @@ data_wallacean_nested <- left_join(
   tetrapods_key_species,
   by = "speciesKey"
 ) %>% 
-  mutate(count_events = NA) %>%
-  relocate(event_table,count_events, .after = Family) %>%
+  relocate(event_table, .after = Family) %>%
   arrange(Class, Order, scientificName)
 
 # check data
@@ -1270,11 +1270,11 @@ nrow(data_wallacean_unnested)
 # 123.776.782 occ global com Human Observation
 
 save(data_wallacean_nested,
-    data_wallacean_unnested,
-    list_per_admunit,
-    file = file.path(
-      "01_data_cleaned",
-      "dataset_occurences.RData")
+     data_wallacean_unnested,
+     list_per_admunit,
+     file = file.path(
+       "01_data_cleaned",
+       "dataset_occurences.RData")
 )
 
 # Explore data ----
