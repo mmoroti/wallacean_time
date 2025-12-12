@@ -3,7 +3,6 @@ library(tidyverse)
 rm(list=ls()); gc() # clean local enviroment
 # TODO:
 # Separar por grupos
-# Montar a completude por pais - lista de spp poligonos/o que existe no gbif*100
 # incluir dados socieconomicos
 
 # Set directory 
@@ -11,20 +10,13 @@ local_directory <- file.path("F:",
                              "datasets_centrais",
                              "wallacean_time") 
 
+# Load data ----
 # socieconomic data
-load(
-  file = file.path(
-    "01_data_cleaned",
-    "data_socieconomic_cleaned.RData")
-)
-
-# list per adm unit
-load(file = file.path(
-  local_directory,
-  "data_occurences_geolocation.RData")
-)
-rm(list = setdiff(ls(), c("local_directory",
-                          "list_per_admunit"))); gc()
+#load(
+#  file = file.path(
+#    "01_data_cleaned",
+#    "data_socieconomic_cleaned.RData")
+#)
                                         
 # occurences data
 load(
@@ -36,7 +28,7 @@ rm(list = setdiff(ls(), c("local_directory",
                           "list_per_admunit",
                           "data_wallacean_unnested"))); gc()
 
-# Gerando lista de quantas und administrativas cada especie pode ocupar
+# Species count per adm. unit ----
 sp_count <- list_per_admunit %>% 
   group_by(speciesKey) %>%
   mutate(ua_total = n()) %>%
@@ -135,38 +127,37 @@ save(
   file = "02_data_analysis/richness_completude.RData"
 )
 
-# Change data to discovery
+# Create time-to-event table ----
 data_wallacean_unnested_modified <- data_wallacean_unnested %>%
-  # especie so pode ser encontrada depois de ja ter sido descrita
+  #filter(speciesKey %in% c("2426805")) %>%
+  #filter(speciesKey %in% c("2433011", "2423581", "2472164","2426805")) %>% 
+  filter(year > 1500) %>% 
+  # spp so pode ser encontrada depois de ja ter sido descrita
   mutate(year_modified = if_else(year < YearOfDescription, YearOfDescription, year)) %>%
+  distinct(speciesKey, year_modified, name_en, .keep_all = TRUE) %>%
   relocate(year, YearOfDescription, year_modified, .after = species) %>%
   mutate(
     # Substitui valores ausentes com o mínimo possível válido
     year_modified = as.integer(year_modified),
     month = if_else(is.na(month), 1L, as.integer(month)),
     day = if_else(is.na(day), 1L, as.integer(day)),
-    
     # cria uma data completa
     date = make_datetime(year_modified, month, day),
-    date = date + days(1) # TODO CHECAR SPP QUE SOH TEM ANO NO PRIMEIRO REGISTRO
-  ) 
-View(head(data_wallacean_unnested_modified, 50))
-any(is.na(data_wallacean_unnested_modified$year_modified))
-any(is.na(data_wallacean_unnested_modified$date))
-
-# Join socieconomic data with occurences
-data_wallacean_unnested_modified <- data_wallacean_unnested_modified %>%
+    date = as.POSIXct(date, tz = "UTC"),
+    date = date + seconds(1) # TODO CHECAR SPP QUE SOH TEM ANO NO PRIMEIRO REGISTRO
+  ) %>%
   left_join(sp_count, by = "speciesKey") %>% # adm. unit count
-  #left_join(dados_socieconomic_merge, by = c("sigla_admu", "year")) %>% #socioeconomic data
-  select(speciesKey, scientificName, Class, Order, Family, name_en, date, 
-  BodyLength_mm, BodyMass_g, Nocturnality, Verticality, ua_total, YearOfDescription,
-  RangeSize)# %>% # id, time, cov., adm. unit count
-  #'pop_density(person/km2)','pib_dollar_current', 
-  #rename('pop_density' = 'pop_density(person/km2)') 
+  # Join socieconomic data with occurences
+  #left_join(dados_socieconomic_merge, by = c("sigla_admu", "year")) %>%
+  select(speciesKey, scientificName, Class, Order, Family, 
+         name_en, date, year_modified,
+         BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
+         HumanDensity, Latitude, Elevation, ETA50K, AnnuMeanTemp,
+         ua_total, YearOfDescription, RangeSize, origin_of_data)
 
 data_wallacean_unnested_modified <- data_wallacean_unnested_modified %>%
   group_by(speciesKey) %>%
-  mutate(date = as.Date(date)) %>%
+  #mutate(date = as.Date(date)) %>%
   arrange(date, .by_group = TRUE) %>%
   distinct(name_en, date, .keep_all = TRUE) %>%
   # Adiciona dias sequenciais (0, 1, 2...) para cada data repetida
@@ -179,54 +170,63 @@ data_wallacean_unnested_modified <- data_wallacean_unnested_modified %>%
       if (length(datas) > 1) {
         for (i in 2:length(datas)) {
           if (datas[i] <= datas[i - 1]) {
-            datas[i] <- datas[i - 1] + days(1)
+            datas[i] <- datas[i - 1] + seconds(1)
           }
         }
       }
       datas
     }
   ) %>%
-  mutate(date = as.Date(date_corrigida)) %>%
+  mutate(date = date_corrigida) %>%
   select(-date_corrigida) %>%
   ungroup()
 
-#teste <- dados_ajustados %>%
-#  filter(speciesKey == "2433011") 
-#any(duplicated(teste$date))
-
 # Create time to event table 
-df_wallacean_time <- dados_ajustados %>%
+df_wallacean_time <- data_wallacean_unnested_modified %>%
   filter(ua_total > 2) %>% # pelo menos tres unidades administrativas
   group_by(speciesKey) %>%
   arrange(date, .by_group = TRUE) %>%
   mutate(
-  # se o ano da descrição for anterior a 1900, inicia em 1900
-    ano_descricao = if_else(YearOfDescription < 1900, 1900, YearOfDescription),
-  # a data do stop corresponde a data da ocorrencia (evento ou censura)
-    t.stop.date = as.Date(date),
-  # a data de start corresponde a ultima data de ocorrencia
+    # se o ano da descrição for anterior a 1900, inicia em 1900
+    #ano_descricao = if_else(YearOfDescription < 1900, 1900, YearOfDescription),
+    # a data do stop corresponde a data da ocorrencia (evento ou censura)
+    #t.stop.date = as.Date(date),
+    t.stop.date = as.POSIXct(date, tz = "UTC"),
+    # a data de start corresponde a ultima data de ocorrencia
     t.start.date = lag(t.stop.date),
-  # o primeiro e o ultimo valor sempre terminam com NA, por isso para cada
-  # especie, a data de inicio corresponde a descricao da especie - ou seja - 
-  # inicia a possibilidade de geolocacao
-    t.start.date = if_else(is.na(t.start.date), make_date(ano_descricao, 1,1), t.start.date),
+    # o primeiro e o ultimo valor sempre terminam com NA, por isso para cada
+    # especie, a data de inicio corresponde a descricao da especie - ou seja - 
+    # inicia a possibilidade de geolocacao
+    t.start.date = if_else(is.na(t.start.date), make_date(YearOfDescription, 1,1), t.start.date),
     t.stop.date = if_else(is.na(t.stop.date), make_date(2026, 1,1), t.stop.date),
-  # event
+    # event
     event = if_else(!duplicated(name_en), 1L, 0L),
     ua_acumulada = cumsum(!duplicated(name_en)),
-  # se 1L em event, a wallacecompletude eh junto do ultimo evento
-  # se 0L em event, a wallacecompletude eh depois do ultimo evento
+    # se 1L em event, a wallacecompletude eh junto do ultimo evento
+    # se 0L em event, a wallacecompletude eh depois do ultimo evento
     WallaceCompletude = if_else(event == 1L & ua_acumulada == ua_total, 1L, 0L),
     Wallace75 = if_else(event == 1L & ua_acumulada >= ua_total * 0.75, 1L, 0L),
     Wallace50 = if_else(event == 1L & ua_acumulada >= ua_total * 0.5, 1L, 0L)) %>%
   # cria o t.start e o t.stop em dias e transforma em anos
   mutate(
-    duracao_evento = as.numeric(difftime(t.stop.date, t.start.date, units = "days")),
-    t.start = cumsum(lag(duracao_evento, default = 0))/365.25,
-    t.stop  = t.start + duracao_evento/365.25
-  ) 
+    duracao_evento = as.numeric(difftime(t.stop.date, t.start.date, units = "secs")),
+    duracao_evento = if_else(duracao_evento <= 0, 1, duracao_evento),
+    t.start = cumsum(lag(duracao_evento, default = 0)) / (86400 * 365.25),
+    t.stop  = t.start + duracao_evento / (86400 * 365.25)
+  ) %>% 
+  mutate(
+    t.start.cal = as.numeric(difftime(t.start.date,
+                                      as.POSIXct("1756-01-01 00:00:00", tz="UTC"),
+                                      units = "secs")) / (365.25 * 24 * 3600),
+    t.stop.cal  = as.numeric(difftime(t.stop.date,
+                                      as.POSIXct("1756-01-01 00:00:00", tz="UTC"), 
+                                      units = "secs")) / (365.25 * 24 * 3600)
+  ) %>%
+  mutate(
+    t.start.year = t.start.cal + 1756,
+    t.stop.year  = t.stop.cal  + 1756
+  )
 
-# Criando cenários
 df_wallacean_100 <- df_wallacean_time %>%
   # remove todos eventos apos completude 
   mutate(
@@ -235,9 +235,12 @@ df_wallacean_100 <- df_wallacean_time %>%
   ) %>%
   filter(linha <= pos_completude) %>%
   ungroup() %>%
-  select(speciesKey, Class, Order, Family, scientificName, date,
-         t.start.date, t.stop.date, t.start,t.stop, event, WallaceCompletude,
-         Nocturnality, Verticality, BodyLength_mm, BodyMass_g, RangeSize)
+  select(speciesKey, Class, Order, Family, scientificName, name_en, date,
+         t.start.date, t.stop.date, t.start, t.stop, t.start.year, t.stop.year,
+         event, WallaceCompletude,
+         BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
+         HumanDensity, Latitude, Elevation, ETA50K, AnnuMeanTemp, RangeSize, 
+         ua_total, origin_of_data, YearOfDescription) 
 
 df_wallacean_75 <- df_wallacean_time %>%
   # remove todos eventos apos completude 
@@ -247,9 +250,12 @@ df_wallacean_75 <- df_wallacean_time %>%
   ) %>%
   filter(linha <= pos_completude) %>%
   ungroup() %>%
-  select(speciesKey, Class, Order, Family, scientificName, date,
-         t.start.date, t.stop.date, t.start,t.stop, event, Wallace75,
-         Nocturnality, Verticality, BodyLength_mm, BodyMass_g, RangeSize)
+  select(speciesKey, Class, Order, Family, scientificName, name_en, 
+         date, t.start.date, t.stop.date, t.start,t.stop, t.start.year, t.stop.year,
+         event, Wallace75,
+         BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
+         HumanDensity, Latitude, Elevation, ETA50K, AnnuMeanTemp, RangeSize, 
+         ua_total, origin_of_data, YearOfDescription) 
 
 df_wallacean_50 <- df_wallacean_time %>%
   # remove todos eventos apos completude 
@@ -259,9 +265,12 @@ df_wallacean_50 <- df_wallacean_time %>%
   ) %>%
   filter(linha <= pos_completude) %>%
   ungroup() %>%
-  select(speciesKey, Class, Order, Family, scientificName, date,
-         t.start.date, t.stop.date, t.start,t.stop, event, Wallace50,
-         Nocturnality, Verticality, BodyLength_mm, BodyMass_g, RangeSize)
+  select(speciesKey, Class, Order, Family, scientificName, name_en, date, 
+         t.start.date, t.stop.date, t.start,t.stop, t.start.year, t.stop.year,
+         event, Wallace50,
+         BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
+         HumanDensity, Latitude, Elevation, ETA50K, AnnuMeanTemp, RangeSize, 
+         ua_total, origin_of_data, YearOfDescription) 
 
 # TODO precisa checar isso!
 # TODO Precisa pensar em validacoes para atender o modelo de evento
@@ -277,5 +286,5 @@ save(df_wallacean_100,
      df_wallacean_50,
     file = file.path(
       "02_data_analysis",
-      "data_wallacean_time_global.RData")
+      "data_wallacean_time_amphibia.RData")
 )
