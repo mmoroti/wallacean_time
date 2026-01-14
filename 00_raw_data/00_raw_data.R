@@ -28,13 +28,20 @@ pwd <- readline() # your gbif.org password
 email <- "mmoroti@gmail.com" # your email 
 
 # DATA FROM GBIF USING TETRAPODTRAITS AS BACKBONE ----
-TetraData <- data.table::fread("00_raw_data/TetrapodTraits_1.0.0.csv")
+TetraData <- data.table::fread(
+  file.path(
+  local_directory, 
+  "00_raw_data",
+  "TetrapodTraits_1.0.0.csv")
+)
 
 # if you don't need to rerun backbone, use this
 load(file.path(
   local_directory,
+  "00_raw_data",
   "tetrapodstraits_data.RData")
 )
+
 # if you need to rerun backbone, use this
 # if we download with usageKey instead of speciesKey, we will use exactly
 # the code number corresponding to the species, for example, in TetrapodTraits
@@ -73,21 +80,11 @@ occ_download(
   user=user,pwd=pwd,email=email
 )
 
-# 03-07-2025
-#occ_download_wait('0093818-250525065834625')
-#data_tetrapodstraits <- occ_download_get('0093818-250525065834625',
-#                                         path = local_directory) %>%
-#  occ_download_import()
-# 06-08-2025 GLOBAL
-#occ_download_wait('0021280-250802193616735')
-#data_tetrapodstraits <- occ_download_get('0021280-250802193616735',
-#                                         path = local_directory) %>%
-#  occ_download_import()
-
-# 05-11-2025 GLOBAL
+# Download in 05-11-2025 GLOBAL
 occ_download_wait('0017652-251025141854904')
 data_tetrapodstraits <- occ_download_get('0017652-251025141854904',
-                                         path = local_directory) %>%
+                                         path = file.path(local_directory,
+                                                          "00_raw_data")) %>%
   occ_download_import()
 
 # Salva o dataset
@@ -97,6 +94,7 @@ save(species_list_tetrapods, # chaves a serem recuperadas
      data_tetrapodstraits, # dados baixados
      file = file.path(
        local_directory,
+       "00_raw_data",
        "tetrapodstraits_data.RData")
 )
 
@@ -108,6 +106,7 @@ trait_data <- left_join(
 
 save(trait_data,
      file = file.path(
+       local_directory,
       "00_raw_data",
       "trait_data.RData")
 ) # 33158 spp, sem correspondencia nos dados para 123 spp
@@ -132,12 +131,14 @@ occ_download(
 
 occ_download_wait('0017881-251025141854904')
 data_nonbirds <- occ_download_get('0017881-251025141854904',
-                                         path = local_directory) %>%
+                                         path = file.path(local_directory,
+                                                          "00_raw_data")) %>%
   occ_download_import()
 
 save(data_nonbirds,
      file = file.path(
        local_directory,
+       "00_raw_data",
        "nonbirds_humanobservation_data.RData")
 )
 
@@ -158,12 +159,14 @@ occ_download(
 
 occ_download_wait('0018107-251025141854904')
 data_birds <- occ_download_get('0018107-251025141854904',
-                                  path = local_directory) %>%
+                                  path = file.path(local_directory,
+                                                   "00_raw_data")) %>%
   occ_download_import()
 
 save(data_birds,
      file = file.path(
        local_directory,
+       "00_raw_data",
        "birds_humanobservation_data.RData")
 )
 
@@ -172,6 +175,7 @@ rm(list = setdiff(ls(), "local_directory")); gc()
 
 biotime_data_raw <- data.table::fread(
   file.path(local_directory,
+            "00_raw_data",
             "biotime_v2_full_2025",
             "biotime_v2_rawdata_2025.csv"),
   stringsAsFactors=T)
@@ -180,6 +184,7 @@ table(biotime_data_raw$taxon)
 # if you don't needs to rerun backbone, use this
 load(file.path(
   local_directory,
+  "00_raw_data",
   "biotime_data.RData"))
 
 # if you need to rerun backbone, use this
@@ -220,6 +225,7 @@ save(species_list_biotime, # backbone do rgbif
      biotime_data_key_precleaned, # dataset biotime filtrado pelo backbone
      file = file.path(
        local_directory,
+       "00_raw_data",
        "biotime_data.RData")
 )
 
@@ -330,127 +336,6 @@ save(species_list_splink, # backbone splink
      species_list_splink_key_precleaned, # name splink and respective speciesKey
      splink_data_key_precleaned, # match with records in splink
      file = file.path(
+       local_directory,
       "00_raw_data",
        "splinks_data.RData"))
-
-# DATA USING CLASSKEY FILTER IN RGBIF ----
-# Please always cite the download DOI when using this data.
-# https://www.gbif.org/citation-guidelines
-# DOI: 10.15468/dl.x8mf7a
-# Citation:  GBIF Occurrence Download https://doi.org/10.15468/dl.x8mf7a 
-# Accessed from R via rgbif (https://github.com/ropensci/rgbif) on 2024-07-20
-
-# consulting keys
-# squamata
-#name_backbone("Bothrops jararaca")$classKey
-#name_backbone("Tropidurus torquatus")$classKey
-#name_backbone("Amphisbaena")$classKey
-
-# testudines
-#name_backbone("Careta careta")$classKey
-
-# crocodylia
-#name_backbone("Caiman")$classKey
-
-# mammals
-#name_backbone("Guira guira")$classKey
-#name_backbone("Didelphis aurita")$classKey
-#name_backbone("Mazama")$classKey
-#name_backbone("Puma")$classKey
-
-# amphibia
-#name_backbone("Hypsiboas faber")$classKey
-#name_backbone("Odontophrynus toledoi")$classKey
-#name_backbone("Bolitoglossa")$classKey
-
-# query
-#occ_download(
-#  pred_in("classKey", 
-#          c(212,    # aves
-#          11418114, # testudines
-#          11592253, # squamata
-#          11493978, # crocodylia
-#          131,      # amphibia
-#          359       # mammals
-#          )),
-#  pred_in("basisOfRecord", c('PRESERVED_SPECIMEN',
-#                             'OCCURRENCE',
-#                             'MATERIAL_SAMPLE')),
-#  pred_in("country", c('BR','AR','BO', 
-#                       'CL', 'CO', 'EC',
-#                       'GY', 'GF', 'PY',
-#                       'PE', 'SR', 'UY',
-#                       'VE')),
-#  format = "SIMPLE_CSV",
-#  user=user,pwd=pwd,email=email
-#)
-#
-#occ_download_wait('0043734-240626123714530')
-#
-## 11-09-2024
-#occ_download_wait('0012222-240906103802322')
-#
-#data_tetrapods_rgbif <- occ_download_get(
-#  '0012222-240906103802322',
-#  path = "00_raw_data"
-#) %>% 
-#  occ_download_import()
-#
-#save(data_tetrapods_rgbif, 
-#     file = file.path(
-#       "00_raw_data",
-#       "classKey_data.RData"))
-#
-# COMPARING  DOWNLOAD RGBIF classKey != TetrapodTraitsbackbone ----
-# basis of record
-#nrow(data_tetrapods_rgbif)
-## 2889406
-#nrow(data_tetrapodstraits)
-## 2465860
-#
-#table(data_tetrapodstraits$basisOfRecord)
-#table(data_tetrapods_rgbif$basisOfRecord)
-#
-#table(data_tetrapodstraits$taxonRank)
-#table(data_tetrapods_rgbif$taxonRank)
-#
-#table(data_tetrapodstraits$class)
-#table(data_tetrapods_rgbif$class)
-#
-## count records
-#data_tetrapodstraits_count <- data_tetrapodstraits %>%
-#  group_by(species) %>%
-#  summarise(count = n())
-#
-#data_rgbif_count <- data_tetrapods_rgbif %>%
-#  group_by(species) %>%
-#  summarise(count = n())
-#
-#comparative_df <- left_join(
-#  data_rgbif_count,
-#  data_tetrapodstraits_count,
-#  by = "species")
-#
-#View(comparative_df %>%
-#  filter(count.x != count.y) %>%
-#  mutate(dif = count.x - count.y)) # apenas 43 spp possuem 
-#                              # diferencas nos numeros de registros, mas diferencas
-#                              # pequenas
-#
-#View(comparative_df %>%
-#       filter(if_any(everything(), is.na))) # 1169 especies diferentes, ou seja,
-# nao estavam no backbone do tetrapodtraits
-
-# checar o vazio em species do rgbif 
-### apenas duas tem linhas com coluna  'species' vazias, ou seja, a diferenca
-# dos dois df em 377,040 a menos eh por isso
-#blank_rgbif <- data_tetrapods_rgbif %>%
-#  filter(species == "")
-
-#table(blank_rgbif$taxonRank) 
-
-#glue::glue("So, {nrow(blank_rgbif)} occurrences correspond to records that have \\
-#not been identified to the species level. Make the \\
-#difference in records between the two dataframes only \\
-#be {(nrow(data_tetrapods_rgbif) - nrow(data_tetrapodstraits)) - nrow(blank_rgbif)} "
-#)

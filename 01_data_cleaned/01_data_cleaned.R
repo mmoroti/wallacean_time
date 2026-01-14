@@ -113,6 +113,7 @@ rm(list = setdiff(ls(), c("local_directory",
                           "comparative_plot"))); gc()
 load(file.path(
   local_directory,
+  "00_raw_data",
   "tetrapodstraits_data.RData")
 )
 
@@ -214,6 +215,7 @@ rm(list = setdiff(ls(), c("local_directory",
 
 load(file.path(
   local_directory,
+  "00_raw_data",
   "nonbirds_humanobservation_data.RData")
 )
 
@@ -305,24 +307,22 @@ data_nonbirds_filtered <- data_nonbirds_filter_spatialpoints %>%
 ## Human observation birds ----
 # Extract ZIP file from eBird
 #arquivo_zip <- file.path(local_directory,
-#                         "Dataset",
+#                         "00_raw_data",
 #                         "0018107-251025141854904.zip")
 #temp_dir <- file.path(local_directory,
-#                      "Dataset",
+#                      "00_raw_data",
 #                      "temp_extract")
 #dir.create(temp_dir, showWarnings = FALSE)
 #unzip(arquivo_zip, exdir = temp_dir)
-local_directory <- file.path("D:",
-                             "MatheusMoroti",
-                             "wallacean_time",
-                             "Dataset") 
 
 # save raw .parquet files 
 parquet_dir <- file.path(local_directory, 
+                         "00_raw_data",
                          "parquet_por_ordem")
 
 # save clean .parquet files
-parquet_clean <- file.path(local_directory, 
+parquet_clean <- file.path(local_directory,
+                           "01_data_cleaned",
                            "parquet_clean")
 
 # Obtain human observation data
@@ -465,7 +465,9 @@ for (i in seq_along(ordens_disponiveis)) {
 
 # How much data was cleaned? 
 print(estatisticas)
-write.table(estatisticas, "Dataset/clean_statistics_order.txt")
+write.table(estatisticas, file.path(
+  local_directory, "00_raw_data", "clean_statistics",
+  "clean_statistics_order.txt"))
 
 # Passeriformes cannot be processed; let's separate them into families.
 aves_passeriformes <- open_dataset(file.path(parquet_dir, 	
@@ -594,7 +596,9 @@ for (i in seq_along(familias_disponiveis)) {
 
 # How much data was cleaned? 
 print(estatisticas)
-write.table(estatisticas, "Dataset/clean_statistics_family.txt")
+write.table(estatisticas,file.path(
+  local_directory, "00_raw_data", "clean_statistics",
+  "clean_statistics_family.txt"))
 
 ## BioTIME 2.0v ----
 rm(list = setdiff(ls(), c("local_directory",
@@ -604,6 +608,7 @@ rm(list = setdiff(ls(), c("local_directory",
                           "data_nonbirds_filtered"))); gc()
 load(file.path(
   local_directory,
+  "00_raw_data",
   "biotime_data.RData")
 ) 
 
@@ -648,6 +653,7 @@ rm(list = setdiff(ls(), c("local_directory",
                           "data_biotime_filtered"))); gc()
 load(file.path(
   local_directory,
+  "00_raw_data",
   "splinks_data.RData")
 )
 
@@ -719,6 +725,7 @@ save(
   data_splink_filtered, 
   file = file.path(
     local_directory,
+    "01_data_cleaned",
     "datasets_filtered.RData")
 )
 
@@ -861,6 +868,7 @@ rm(list = setdiff(ls(), c("local_directory"))); gc()
 # de observacoes humanas com data. Ou seja, essa chave deve ser mantida. 
 load(file.path(
   local_directory,
+  "00_raw_data",
   "tetrapodstraits_data.RData")
 )
 rm(list = setdiff(ls(), c("local_directory",
@@ -868,6 +876,7 @@ rm(list = setdiff(ls(), c("local_directory",
 ))); gc()
 
 parquet_dir <- file.path(local_directory,
+                         "01_data_cleaned",
                          "parquet_clean")
 data_birds <- open_dataset(
   sources = parquet_dir
@@ -876,6 +885,7 @@ data_birds <- open_dataset(
 
 load(file.path(
   local_directory,
+  "01_data_cleaned",
   "datasets_filtered.RData")
 )
 
@@ -942,6 +952,7 @@ data_occurences_precleaned <- data_occurences_precleaned %>%
 write_parquet(data_occurences_precleaned,  # dados limpos e integrados
               sink = file.path(
                 local_directory,
+                "01_data_cleaned",
                 "data_occurences_filtered.parquet"))
 
 # Criar dataframe combinando todos os vetores
@@ -970,6 +981,7 @@ rm(list=ls()); gc() # clean local enviroment
 # occurences data
 data_occurences_precleaned <- open_dataset(
   sources = file.path(
+    local_directory,
     "01_data_cleaned",
     "data_occurences_filtered.parquet")
 )
@@ -1015,6 +1027,7 @@ length(unique(data_occurences_precleaned_duplicate$speciesKey))
 # FILTER POINTS BY RANGE POLYGONS ----
 # shapefile
 load(file = file.path(
+  local_directory,
   "00_raw_data",
   "tetrapods_polygons_key.RData")) # From TetrapodTraits
 
@@ -1111,7 +1124,8 @@ table(list_species$class)
 
 write_parquet(list_occurences_clean,  # dados limpos e integrados
               sink = file.path(
-                local_directory, "01_data_cleaned",
+                local_directory, 
+                "01_data_cleaned",
                 "list_occurences_clean.parquet"))
 
 # Compare
@@ -1140,10 +1154,10 @@ rm(list = setdiff(ls(), c("local_directory",
 ))); gc()
 
 # shapefile to crop adm unit
-load(file.path("00_raw_data",
-       "geographic_shape_data.RData"))
-
-load(file.path("C:", "Users", "MNCN-JHPINAR-3", "Downloads", "geographic_shape_data.RData"))
+load(file.path(
+  local_directory,
+  "00_raw_data",
+  "geographic_shape_data.RData"))
 
 # Verificar validade das geometrias
 sf_use_s2(FALSE)
@@ -1206,6 +1220,7 @@ save(list_occurences_clean, # sem duplicatas e filtrados por poligonos
      data_occurences_units, # com as unidades administrativas
      list_per_admunit,      # lista de especies por und adm
      file = file.path(
+       local_directory,
        "01_data_cleaned",
        "data_occurences_geolocation.RData")
 )
@@ -1216,12 +1231,13 @@ rm(list = setdiff(ls(), c("local_directory",
 ))); gc()
 
 load(file = file.path(
-  #local_directory,
+  local_directory,
   "01_data_cleaned",
   "data_occurences_geolocation.RData")
 )
 
 load(file.path(
+  local_directory,
   "00_raw_data",
   "trait_data.RData")
 ) # match taxonomic and trait information with speciesKey
