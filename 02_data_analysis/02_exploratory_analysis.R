@@ -7,131 +7,156 @@ library(ggstats)
 library(ggrepel)
 library(ggpubr)
 library(car)
+library(broom)
+library(tidyr)
 
 ## Function ----
 plot_bivariate_map <- function(geographic_shape_data,
                                richness_completude_amphibia,
                                title = NULL) {
   
-  # Calcular a porcentagem de completude Wallace
-  # Aqui criamos uma nova coluna "percent_wallace" = (riqueza observada / riqueza total) * 100
+  # 1) porcentagem de completude
   richness_completude <- richness_completude_amphibia %>%
     mutate(percent_wallace = observed_richness * 100 / polygons_richness)
   
-  # Juntar com o shapefile (geometrias)
-  # Fazemos um left_join pelo nome da unidade administrativa
-  # Em seguida transformamos para o sistema de coordenadas projetadas EPSG:6933
+  # 2) join com shapefile
   dados_join <- geographic_shape_data %>%
     left_join(richness_completude, by = c("name_en" = "name_en")) %>%
     st_transform(6933)
   
-  # Criar classes de riqueza e completude em 4 categorias usando quantis
-  # Aqui usamos 'cut' para transformar valores contínuos em categorias ordenadas
+  # 3) quantis (usar só >0 e não NA para richness)
+  rich_valid <- dados_join$polygons_richness[
+    !is.na(dados_join$polygons_richness) & dados_join$polygons_richness > 0
+  ]
+  
+  rich_q_raw <- quantile(rich_valid, probs = seq(0, 1, length.out = 5))
+  # converter para inteiros e garantir monotonicidade
+  rich_breaks <- as.integer(floor(rich_q_raw))
+  # garantir monotonicidade estrita
+  for(i in 2:length(rich_breaks)){
+    if(rich_breaks[i] <= rich_breaks[i-1]){
+      rich_breaks[i] <- rich_breaks[i-1] + 1
+    }
+  }
+  rich_breaks[1] <- min(rich_valid)
+  rich_breaks[length(rich_breaks)] <- max(rich_valid)
+  
+  # percentuais (continua contínuo)
+  perc_breaks <- quantile(dados_join$percent_wallace,
+                          probs = seq(0, 1, length.out = 5),
+                          na.rm = TRUE)
+  
+  # funções de label
+  make_labels_int <- function(breaks, suffix = "") {
+    paste0(
+      breaks[-length(breaks)],
+      "–",
+      breaks[-1],
+      suffix
+    )
+  }
+  make_labels_pct <- function(breaks, suffix = "") {
+    paste0(
+      round(breaks[-length(breaks)], 1),
+      "–",
+      round(breaks[-1], 1),
+      suffix
+    )
+  }
+  
+  rich_labs <- make_labels_int(rich_breaks, " spp")
+  perc_labs <- make_labels_pct(perc_breaks, "%")
+  
+  # 4) criar categorias (NA para sem dado / zero)
   dados_bi <- dados_join %>%
     mutate(
-      richness_cat = cut(observed_richness,
-                         breaks = quantile(observed_richness, probs = seq(0, 1, length.out = 5), na.rm = TRUE),
-                         include.lowest = TRUE,
-                         labels = c("very low", "low", "medium", "high")),
-      percent_cat = cut(percent_wallace,
-                        breaks = quantile(percent_wallace, probs = seq(0, 1, length.out = 5), na.rm = TRUE),
-                        include.lowest = TRUE,
-                        labels = c("very low", "low", "medium", "high"))
-    ) %>%
-    mutate(
-      bi_class = paste0(richness_cat, "-", percent_cat)
-    )
-  
-  # Criar paleta de cores para cada combinação 4x4
-  bi_pal <- tibble(
-    bi_class = c(
-      "very low-very low", "low-very low", "medium-very low", "high-very low",
-      "very low-low",      "low-low",      "medium-low",      "high-low",
-      "very low-medium",   "low-medium",   "medium-medium",   "high-medium",
-      "very low-high",     "low-high",     "medium-high",     "high-high"
-    ),
-    color = c(
-      "#f0f0f0", "#cfe7e7", "#9fd0d0", "#5ababa",
-      "#e6cfe6", "#c5cfe0", "#94b8c9", "#4fa3b3",
-      "#d7a6d7", "#b69fcf", "#8688b8", "#4373a1",
-      "#c179c1", "#9f73b9", "#6f5ca2", "#2d478b"
-    )
-  )
-  
-  # Adicionar a cor correspondente em cada polígono
-  dados_bi <- dados_bi %>%
-    left_join(bi_pal, by = "bi_class")
-  
-  # Criar dados para a legenda 4x4
-  # Aqui também transformamos as categorias em números para posicionar no grid
-  legend_data <- expand.grid(
-    richness_cat = c("very low", "low", "medium", "high"),
-    percent_cat  = c("very low", "low", "medium", "high")
-  ) %>%
-    mutate(
-      bi_class = paste0(richness_cat, "-", percent_cat)
-    ) %>%
-    left_join(bi_pal, by = "bi_class") %>%
-    mutate(
-      richness_num = case_when(
-        richness_cat == "very low" ~ 1,
-        richness_cat == "low"      ~ 2,
-        richness_cat == "medium"   ~ 3,
-        richness_cat == "high"     ~ 4
+      richness_cat = case_when(
+        is.na(polygons_richness) | polygons_richness == 0 ~ NA_character_,
+        TRUE ~ as.character(cut(polygons_richness,
+                                breaks = rich_breaks,
+                                include.lowest = TRUE,
+                                labels = rich_labs))
       ),
-      percent_num = case_when(
-        percent_cat == "very low" ~ 1,
-        percent_cat == "low"      ~ 2,
-        percent_cat == "medium"   ~ 3,
-        percent_cat == "high"     ~ 4
+      percent_cat = case_when(
+        is.na(percent_wallace) ~ NA_character_,
+        TRUE ~ as.character(cut(percent_wallace,
+                                breaks = perc_breaks,
+                                include.lowest = TRUE,
+                                labels = perc_labs))
+      ),
+      bi_class = ifelse(is.na(richness_cat) | is.na(percent_cat),
+                        NA_character_,
+                        paste0(richness_cat, " | ", percent_cat))
+    )
+  
+  # 5) paleta 4x4 — evitar coluna com mesmo nome 'color' para não sobrescrever
+  rich_labs_factor <- factor(rich_labs, levels = rich_labs, ordered = TRUE)
+  perc_labs_factor <- factor(perc_labs, levels = perc_labs, ordered = TRUE)
+  
+  bi_pal <- expand.grid(
+    richness_cat = rich_labs_factor,
+    percent_cat  = perc_labs_factor,
+    stringsAsFactors = FALSE
+  ) %>%
+    arrange(richness_cat, percent_cat) %>%
+    mutate(
+      bi_class = paste0(richness_cat, " | ", percent_cat),
+      fill = c(
+        "#4e3d43", "#535e68", "#577e8b", "#5b9cad",
+        "#724448", "#786970", "#7e8d96", "#84afba",
+        "#944b4d", "#9c7478", "#a59ba0", "#acc1c6",
+        "#b65252", "#c07f7f", "#caaaaa", "#d3d3d3"
       )
     )
   
-  # Criar o mapa principal
+  # join (bi_class é chave)
+  dados_bi <- dados_bi %>%
+    left_join(bi_pal %>% select(bi_class, fill), by = "bi_class")
+  
+  # 6) definir cor padrão (cinza claro) para quem não entrou na classificação
+  dados_bi <- dados_bi %>%
+    mutate(fill = ifelse(is.na(fill), "#ffffff", fill))
+  
+  # 7) MAPA
   map_plot <- ggplot(dados_bi) +
-    geom_sf(aes(fill = color), color = "black", size = 0.2) +
+    geom_sf(aes(fill = fill), color = "black", size = 0.15) +
     scale_fill_identity() +
     theme_minimal() +
     labs(title = title) +
     theme(legend.position = "none")
   
-  # Criar a legenda bivariada
-  legend_plot <- ggplot(legend_data, aes(x = percent_num, y = richness_num, fill = color)) +
+  # 8) LEGENDA
+  legend_data <- bi_pal
+  
+  legend_plot <- ggplot(legend_data,
+                        aes(x = percent_cat,
+                            y = richness_cat,
+                            fill = fill)) +
     geom_tile() +
     scale_fill_identity() +
-    scale_x_continuous(
-      breaks = 1:4,
-      labels = c("Very Low", "Low", "Medium", "High"),
-      expand = c(0, 0)
+    labs(
+      x = "Completeness of \ngeographic distribution (%)",
+      y = "Species richness"
     ) +
-    scale_y_continuous(
-      breaks = 1:4,
-      labels = c("Very Low", "Low", "Medium", "High"),
-      expand = c(0, 0)
-    ) +
-    labs(x = "Knowledge of \ngeographic distribution", y = "Richness") +
     theme_minimal() +
     theme(
       axis.title = element_text(size = 8),
-      axis.text.x = element_text(size = 6, angle = 45, hjust = 1), # rotação do eixo X
-      axis.text.y = element_text(size = 6),
+      axis.text.x = element_text(size = 8, angle = 45, hjust = 1),
+      axis.text.y = element_text(size = 8),
       panel.grid = element_blank()
     )
   
-  # ️Combinar mapa e legenda no mesmo layout
+  # 9) combinar mapa e legenda
   final_plot <- ggdraw() +
     draw_plot(map_plot) +
     draw_plot(legend_plot,
-              x = 0.07, y = 0.1, 
-              width = 0.20, height = 0.35)
+              x = 0.05, y = 0.22,
+              width = 0.18, height = 0.25)
   
-  # Retornar o gráfico final
   return(final_plot)
 }
 
-# with numbers
 ## Load data ----
-# Lista de países/unidades do Sul Global (exemplo baseado em América Latina, África, Sul/Sudeste da Ásia, Oceania não-ocidental)
 load(file.path(
   local_directory,
   "02_data_analysis",
@@ -142,25 +167,6 @@ load(file.path(
   "00_raw_data",
   "geographic_shape_data.RData"))
 
-# Plots
-plot_bivariate_map(geographic_shape_data,
-                   richness_completude_amphibia,
-                   title = "Amphibia")
-
-plot_bivariate_map(geographic_shape_data,
-                   richness_completude_reptilia,
-                   title = "Reptilia")
-
-plot_bivariate_map(geographic_shape_data, 
-                   richness_completude_aves,
-                   title = "Aves")
-
-plot_bivariate_map(geographic_shape_data,
-                   richness_completude_mammalia,
-                   title = "Mammalia")
-
-# correlacoes entre os preditores e range size
-# Carregar variaveis socieconomicas
 load(
   file = file.path(
     local_directory,
@@ -168,6 +174,8 @@ load(
     "data_socieconomic_agregatte.RData")
 )
 
+# Preparing data ----
+# All terrestrial tetrapods
 richness_all <- richness_completude_amphibia %>%
   left_join(richness_completude_amphibia, by = "name_en") %>%
   left_join(richness_completude_aves, by = "name_en") %>%
@@ -182,136 +190,432 @@ richness_all <- richness_completude_amphibia %>%
     percent_wallace_prop = percent_wallace / 100
   ) 
 
-View(richness_all)
-#df_completeness_adj <- richness_completude_reptilia %>%
-#  mutate(
-#    name_en = stri_trans_general(tolower(name_en), "Latin-ASCII"))
-#
 df_all <- left_join(
   richness_all,
   data_sociopolitic,
-  by = "name_en") 
-
-df <- df_all %>%
+  by = "name_en") %>%
   select(polygons_richness, percent_wallace_prop, democracy_index_mean,
-         academic_freedom_mean, gdp_mean, pop, GlobalNorth) %>%
+         academic_freedom_mean, gdp_mean, pop, GlobalNorth, name_en, area_km2,
+         colonial_origin, n_institutions) %>%
   mutate(
+    n_institutions_scale = scale(n_institutions),
     polygons_richness_scaled = scale(log(as.numeric(polygons_richness))),
     democracy_index_scaled = scale(log(as.numeric(democracy_index_mean))),
     academic_freedom_scaled = scale(as.numeric(academic_freedom_mean)),
-    mean_pop_scaled = scale(log(as.numeric(pop)+1)),
-    mean_grp_scaled = scale(log(as.numeric(gdp_mean)+1))
+    dens_pop_scaled = scale(log(as.numeric(pop/area_km2))),
+    mean_grp_scaled = scale(log(as.numeric(gdp_mean)))
   ) %>% 
   remove_missing()
-table(df$GlobalNorth)
 
-# ajustar glm binomial
-model_glm <- glm(percent_wallace_prop ~ 
-                   polygons_richness_scaled + 
-                   mean_pop_scaled + 
-                   mean_grp_scaled +
-                   democracy_index_scaled, data = df)
-summary(model_glm)
-performance::r2(model_glm) # R2: 0.419
+# Amphibia
+richness_amphibia <- richness_completude_amphibia %>%
+  select("name_en", "polygons_richness", "observed_richness") %>%
+  mutate(
+    percent_wallace = observed_richness * 100 / polygons_richness,
+    percent_wallace_prop = percent_wallace / 100
+  ) 
 
-ggstats::ggcoef_model(model_glm)
+df_amphibia <- left_join(
+  richness_amphibia,
+  data_sociopolitic,
+  by = "name_en") %>%
+  select(polygons_richness, percent_wallace_prop, democracy_index_mean,
+         academic_freedom_mean, gdp_mean, pop, GlobalNorth, name_en, area_km2,
+         colonial_origin, n_institutions) %>%
+  mutate(
+    n_institutions_scale = scale(n_institutions),
+    polygons_richness_scaled = scale(log(as.numeric(polygons_richness))),
+    democracy_index_scaled = scale(log(as.numeric(democracy_index_mean))),
+    academic_freedom_scaled = scale(as.numeric(academic_freedom_mean)),
+    dens_pop_scaled = scale(log(as.numeric(pop/area_km2))),
+    mean_grp_scaled = scale(log(as.numeric(gdp_mean)))
+  ) %>% 
+  remove_missing()
 
-table(df$GlobalNorth)
-vif(model_glm)
+# Reptilia
+richness_reptilia <- richness_completude_reptilia %>%
+  select("name_en", "polygons_richness", "observed_richness") %>%
+  mutate(
+    percent_wallace = observed_richness * 100 / polygons_richness,
+    percent_wallace_prop = percent_wallace / 100
+  ) 
+
+df_reptilia <- left_join(
+  richness_reptilia,
+  data_sociopolitic,
+  by = "name_en") %>%
+  select(polygons_richness, percent_wallace_prop, democracy_index_mean,
+         academic_freedom_mean, gdp_mean, pop, GlobalNorth, name_en, area_km2,
+         colonial_origin, n_institutions) %>%
+  mutate(
+    n_institutions_scale = scale(n_institutions),
+    polygons_richness_scaled = scale(log(as.numeric(polygons_richness))),
+    democracy_index_scaled = scale(log(as.numeric(democracy_index_mean))),
+    academic_freedom_scaled = scale(as.numeric(academic_freedom_mean)),
+    dens_pop_scaled = scale(log(as.numeric(pop/area_km2))),
+    mean_grp_scaled = scale(log(as.numeric(gdp_mean)))
+  ) %>% 
+  remove_missing()
+
+# Aves
+richness_aves <- richness_completude_aves %>%
+  select("name_en", "polygons_richness", "observed_richness") %>%
+  mutate(
+    percent_wallace = observed_richness * 100 / polygons_richness,
+    percent_wallace_prop = percent_wallace / 100
+  ) 
+
+df_aves <- left_join(
+  richness_aves,
+  data_sociopolitic,
+  by = "name_en") %>%
+  select(polygons_richness, percent_wallace_prop, democracy_index_mean,
+         academic_freedom_mean, gdp_mean, pop, GlobalNorth, name_en, area_km2,
+         colonial_origin, n_institutions) %>%
+  mutate(
+    n_institutions_scale = scale(n_institutions),
+    polygons_richness_scaled = scale(log(as.numeric(polygons_richness))),
+    democracy_index_scaled = scale(log(as.numeric(democracy_index_mean))),
+    academic_freedom_scaled = scale(as.numeric(academic_freedom_mean)),
+    dens_pop_scaled = scale(log(as.numeric(pop/area_km2))),
+    mean_grp_scaled = scale(log(as.numeric(gdp_mean)))
+  ) %>% 
+  remove_missing()
+
+# Mammalia
+richness_mammalia <- richness_completude_mammalia %>%
+  select("name_en", "polygons_richness", "observed_richness") %>%
+  mutate(
+    percent_wallace = observed_richness * 100 / polygons_richness,
+    percent_wallace_prop = percent_wallace / 100
+  ) 
+
+df_mammalia <- left_join(
+  richness_mammalia,
+  data_sociopolitic,
+  by = "name_en") %>%
+  select(polygons_richness, percent_wallace_prop, democracy_index_mean,
+         academic_freedom_mean, gdp_mean, pop, GlobalNorth, name_en, area_km2,
+         colonial_origin, n_institutions) %>%
+  mutate(
+    n_institutions_scale = scale(n_institutions),
+    polygons_richness_scaled = scale(log(as.numeric(polygons_richness))),
+    democracy_index_scaled = scale(log(as.numeric(democracy_index_mean))),
+    academic_freedom_scaled = scale(as.numeric(academic_freedom_mean)),
+    dens_pop_scaled = scale(log(as.numeric(pop/area_km2))),
+    mean_grp_scaled = scale(log(as.numeric(gdp_mean)))
+  ) %>% 
+  remove_missing()
+
+# Plot maps ----
+plot <- plot_bivariate_map(geographic_shape_data,
+                   richness_all,
+                   title = "Terrestrial vertebrates"); plot
+
+ggsave(filename="Figures/Figure1_TerrestrialVertebrates.pdf",
+       plot= plot,
+       width=12,
+       height=8,
+       units="in",
+       bg="white",
+       limitsize=F)
+
+# Class
+plot_amphibia <- plot_bivariate_map(geographic_shape_data,
+                                    richness_completude_amphibia,
+                                    title = "Amphibia")
+plot_reptilia <- plot_bivariate_map(geographic_shape_data,
+                                    richness_completude_reptilia,
+                                    title = "Reptilia")
+plot_aves <- plot_bivariate_map(geographic_shape_data,
+                                richness_completude_aves,
+                                title = "Reptilia")
+plot_mammalia <- plot_bivariate_map(geographic_shape_data,
+                                    richness_completude_mammalia,
+                                    title = "Mammalia")
+
+ggsave(filename="Figures/Figure1_Amphibia.pdf",
+       plot= plot_amphibia,
+       width=12,
+       height=8,
+       units="in",
+       bg="white",
+       limitsize=F)
+
+ggsave(filename="Figures/Figure1_Reptilia.pdf",
+       plot= plot_reptilia,
+       width=12,
+       height=8,
+       units="in",
+       bg="white",
+       limitsize=F)
+
+ggsave(filename="Figures/Figure1_Aves.pdf",
+       plot= plot_aves,
+       width=12,
+       height=8,
+       units="in",
+       bg="white",
+       limitsize=F)
+
+ggsave(filename="Figures/Figure1_Mammalia.pdf",
+       plot= plot_mammalia,
+       width=12,
+       height=8,
+       units="in",
+       bg="white",
+       limitsize=F)
+
+# Beta regression ----
+table(df_all$GlobalNorth)
+table(df_amphibia$GlobalNorth)
+table(df_reptilia$GlobalNorth)
+table(df_aves$GlobalNorth)
+table(df_mammalia$GlobalNorth)
 
 # Ajustar beta regression (percent_wallace já em proporção 0-1)
 modelo_beta <- betareg(percent_wallace_prop ~ 
-                       polygons_richness_scaled + 
-                       mean_pop_scaled + 
-                       mean_grp_scaled +
-                       democracy_index_scaled,
-                       data = df)
+                         polygons_richness_scaled + 
+                         dens_pop_scaled + 
+                         mean_grp_scaled +
+                         democracy_index_scaled +
+                         colonial_origin +
+                         n_institutions_scale,
+                       data = df_all)
 summary(modelo_beta)
 car::vif(modelo_beta)
 
-par(mfrow = c(1, 2))
-plot(modelo_beta)
-dev.off()
+modelo_beta_amphibia <- betareg(percent_wallace_prop ~ 
+                         polygons_richness_scaled + 
+                         dens_pop_scaled + 
+                         mean_grp_scaled +
+                         academic_freedom_scaled +
+                         colonial_origin +
+                         n_institutions_scale,
+                       data = df_amphibia)
+summary(modelo_beta_amphibia)
+car::vif(modelo_beta_amphibia)
 
-## sem perder muitos paises
-#df <- df_all %>%
-#  mutate(
-#    latitude_scaled = scale(abs(latitude)),
-#    polygons_richness_scaled = scale(log(polygons_richness/area_km2)),
-#    percent_wallace = observed_richness * 100 / polygons_richness,
-#    percent_wallace_prop = percent_wallace / 100
-#  ) %>%
-#  select(name_en, latitude_scaled, polygons_richness_scaled,
-#         percent_wallace, percent_wallace_prop) %>%
-#  remove_missing()
+modelo_beta_reptilia <- betareg(percent_wallace_prop ~ 
+                                  polygons_richness_scaled + 
+                                  dens_pop_scaled + 
+                                  mean_grp_scaled +
+                                  academic_freedom_scaled +
+                                  colonial_origin +
+                                  n_institutions_scale,
+                                data = df_reptilia)
+summary(modelo_beta_reptilia)
+car::vif(modelo_beta_reptilia)
 
-df %>%
-  ggplot(aes(x = latitude_scaled, y = percent_wallace_prop, color = global_region)) +
-  geom_point(alpha = 0.5) +
-  geom_smooth(method = "lm", formula = y ~ x, se = TRUE,
-              alpha = 0.5, color = "black") +  # linha de tendência preta
-  geom_hline(yintercept = 0.5, linetype = "dashed", color = "black") +
-  geom_text_repel(aes(label = name_en), size = 3, max.overlaps = 20) +
-  scale_color_manual(values = c("Norte Global" = "#2DA5E8", "Sul Global" = "#c40e3e")) +
-  theme_bw() +
+modelo_beta_aves <- betareg(percent_wallace_prop ~ 
+                                  polygons_richness_scaled + 
+                                  dens_pop_scaled + 
+                                  mean_grp_scaled +
+                                  academic_freedom_scaled+
+                                  colonial_origin +
+                                  n_institutions_scale,
+                                data = df_aves)
+summary(modelo_beta_aves)
+car::vif(modelo_beta_aves)
+
+modelo_beta_mammalia <- betareg(percent_wallace_prop ~ 
+                              polygons_richness_scaled + 
+                              dens_pop_scaled + 
+                              mean_grp_scaled +
+                              academic_freedom_scaled +
+                              colonial_origin +
+                              n_institutions_scale,
+                            data = df_mammalia)
+summary(modelo_beta_mammalia)
+car::vif(modelo_beta_mammalia)
+
+# Plot dos coeficientes 
+# Criar uma tabela de mapeamento para nomes mais legíveis
+new_names <- tibble::tribble(
+  ~term, ~term_novo,
+  "polygons_richness_scaled", "Species richness",
+  "dens_pop_scaled", "Population density",
+  "mean_grp_scaled", "GDP per capta",
+  "democracy_index_scaled", "Democracy index",
+  "colonial_origin", "Colonial origin",
+  "n_institutions_scale", "N. of research \ninstitutions"
+)
+map <- setNames(new_names$term_novo, new_names$term)
+
+coef_list <- tidy(modelo_beta) %>%
+  filter(!term %in% c("(Intercept)", "(phi)", "Log(nu)"))  %>%
+  mutate(term = dplyr::recode(term, !!!map))
+
+ggplot(coef_list, aes(x = estimate, y = reorder(term, estimate))) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50", linewidth = 0.5) +
+  geom_point(size = 3, color = "black") +
+  geom_errorbarh(
+    aes(xmin = estimate - 1.96 * std.error, 
+        xmax = estimate + 1.96 * std.error),
+    height = 0.1, color = "black", linewidth = 1
+  ) +
   labs(
-    x = "Latitude absoluta",
-    y = "Proporção do Conhecimento Wallaceano (%)",
-    color = ""
-    )
+    x = "Model coefficients (CI 95%)",
+    y = "",
+    title = "",
+    subtitle = ""
+  ) +
+  coord_cartesian(xlim = c(-0.5, 0.5)) +
+  # Alterações para aumentar e colocar em negrito as variáveis
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    plot.subtitle = element_text(hjust = 0.5, size = 10),
+    axis.title = element_text(face = "bold", size = 12),  # Aumentar título do eixo X
+    axis.title.x = element_text(margin = margin(t = 10)),  # Espaçamento para o título
+    axis.text.y = element_text(
+      size = 11,          # Tamanho aumentado das variáveis
+      face = "bold",      # Texto em negrito
+      color = "black"     # Cor preta
+    ),
+    axis.text.x = element_text(
+      size = 10,          # Tamanho dos números no eixo X
+      color = "black"
+    ),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Adicionar borda preta fina ao redor do painel
+    panel.border = element_rect(
+      color = "black",     # Cor da borda
+      fill = NA,           # Não preencher
+      linewidth = 0.5      # Espessura da borda
+    ),
+    # Ajustar margens se necessário
+    plot.margin = margin(10, 10, 10, 10)  # Topo, direita, baixo, esquerda
+  )
 
-richness_all %>%
-  ggplot(aes(x = GlobalNorth, y = percent_wallace_prop, fill = GlobalNorth)) +
-  geom_boxplot(alpha = 1, outlier.shape = NA, aes(group = GlobalNorth)) +
-  geom_jitter(width = 0.2, alpha = 0.3, color = "black") +
-  scale_fill_manual(values = c("1" = "#2DA5E8", "0" = "#c40e3e")) +
-  theme_bw() +
+# Grupos combinados ----
+model_list <- list(
+  "Terrestrial tetrapods" = modelo_beta,
+  "Amphibia" = modelo_beta_amphibia,
+  "Reptilia" = modelo_beta_reptilia,
+  "Aves" = modelo_beta_aves,
+  "Mammalia" = modelo_beta_mammalia
+)
+
+coef_all <- bind_rows(
+  lapply(names(model_list), function(model_name) {
+    tidy(model_list[[model_name]], conf.int = TRUE) %>%
+      mutate(modelo = model_name)
+  })
+) %>%
+  filter(!term %in% c("(Intercept)", "(phi)", "Log(nu)"))
+
+# Criar plot combinado
+ggplot(coef_all, aes(x = estimate, y = term, color = modelo)) +
+  # Linha de referência
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50", size = 0.5) +
+  
+  # Intervalos de confiança
+  geom_errorbarh(
+    aes(xmin = conf.low, xmax = conf.high),
+    height = 0.1,
+    position = position_dodge(width = 0.7),
+    size = 0.8
+  ) +
+  
+  # Pontos
+  geom_point(
+    size = 3,
+    position = position_dodge(width = 0.7)
+  ) +
+
+  # Cores por grupo
+  scale_color_brewer(palette = "Set1", name = "Grupo") +
+  
+  # Tema
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(color = "gray90"),
+    legend.position = "bottom",
+    axis.text = element_text(color = "black"),
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  ) +
+  
   labs(
-    x = "Região geopolítica",
-    y = "Proporção conhecimento Wallaceano (%)"
-    )  
+    title = "",
+    subtitle = "",
+    x = "Model coefficients (CI 95%)",
+    y = ""
+  )
 
-ggplot(df, aes(x = factor(GlobalNorth),
-               y = democracy_index_scaled)) +
-  geom_boxplot(aes(fill = as.factor(GlobalNorth))) +
-  scale_fill_manual(values = c("1" = "#2DA5E8", "0" = "#c40e3e")) +
-  labs(x = "Global North",
-       y = "Democracy",
-       title = "") +
-  theme_minimal()
-
-# Teste de Wilcoxon
-wilcox.test(democracy_index_scaled ~ GlobalNorth, data = df)
-
-hist(df$latitude_scaled)
-hist(df$polygons_richness_scaled)
-hist(df$mean_pop_scaled)
-hist(df$mean_grp_scaled)
-
-# Ajustar beta regression (percent_wallace já em proporção 0-1)
-modelo_beta <- betareg(percent_wallace_prop ~ latitude_scaled + polygons_richness_scaled + 
-                         mean_pop_scaled + mean_grp_scaled, data = df)
-summary(modelo_beta)
-car::vif(modelo_beta)
-
-par(mfrow = c(1, 2))
-plot(modelo_beta)
-dev.off()
-
-# ajustar glm binomial
-
-model_glm <- glm(percent_wallace_prop ~ latitude_scaled + polygons_richness_scaled + 
-                   mean_pop_scaled + mean_grp_scaled, data = df)
-summary(model_glm)
-performance::r2(model_glm) # R2: 0.419
-
-ggstats::ggcoef_model(model_glm)
-par(mfrow = c(2, 2))
-plot(model_glm)
-
-
-
-# simples
-model_glm <- glm(percent_wallace_prop ~ 
-                   latitude_scaled + polygons_richness_scaled, data = df) 
-summary(model_glm)
+# Compare North vs South Completeness (Boxplot) ----
+wilcox.test(percent_wallace_prop ~ GlobalNorth, data = df_all)
+# Criar o gráfico
+ggplot(df_all, aes(x = factor(GlobalNorth),
+                   y = percent_wallace_prop)) +
+  # Fundo branco primeiro
+  theme_minimal() +
+  # Boxplot com fill
+  geom_boxplot(
+    aes(fill = as.factor(GlobalNorth)),
+    outlier.shape = NA  # Remover outliers padrão
+  ) +
+  # Adicionar pontos individuais (jitter) bem sutis
+  geom_jitter(
+    aes(color = as.factor(GlobalNorth)),
+    width = 0.2,        # Pouco espalhamento horizontal
+    height = 0,         # Sem espalhamento vertical
+    alpha = 0.15,       # Muito transparente
+    size = 1.5          # Pequeno
+  ) +
+  # Cores dos boxplots
+  scale_fill_manual(
+    values = c("0" = "#c40e3e", "1" = "#2DA5E8"),
+    labels = c("0" = "Global South", "1" = "Global North")
+  ) +
+  # Cores dos pontos (mesmas cores, mas muito transparentes)
+  scale_color_manual(
+    values = c("0" = "#c40e3e", "1" = "#2DA5E8"),
+    guide = "none"  # Sem legenda para cores
+  ) +
+  # Rótulos do eixo X
+  scale_x_discrete(
+    labels = c("0" = "Global South", "1" = "Global North")
+  ) +
+  # Rótulos dos eixos e título
+  labs(
+    x = "",
+    y = "Geographic distribution \ncompleteness (%)",
+    title = "",
+    fill = ""  # Título vazio para legenda de fill
+  ) +
+  # Tema personalizado
+  theme(
+    # Fundo branco
+    panel.background = element_rect(
+      fill = "white",
+      color = "black",        # Borda preta
+      linewidth = 0.5         # Linha fina
+    ),
+    plot.background = element_rect(
+      fill = "white",
+      color = "black",        # Borda preta ao redor de todo o gráfico
+      linewidth = 0.5
+    ),
+    # Remover grid de fundo (opcional - para deixar mais limpo)
+    panel.grid.major = element_line(color = "gray90", linewidth = 0.2),
+    panel.grid.minor = element_blank(),
+    # Eixos
+    axis.line = element_line(color = "black", linewidth = 0.3),
+    axis.text = element_text(color = "black", size = 10),
+    axis.text.x = element_text(
+      face = "bold",          # Negrito nos rótulos
+      size = 15,
+      margin = margin(t = 5)  # Espaço acima
+    ),
+    axis.text.y = element_text(size = 15),
+    axis.title.y = element_text(
+      size = 15,
+      margin = margin(r = 10)  # Espaço à direita
+    ),
+    # Legenda (se quiser mantê-la, mas discreta)
+    legend.position = "none",  # Remove completamente a legenda
+    # Margens
+    plot.margin = margin(15, 15, 15, 15)  # Espaço interno da borda
+  ) 

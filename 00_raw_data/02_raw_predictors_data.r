@@ -1,92 +1,74 @@
-library(WDI) # API world bank
-library(ipeadatar) # API ipea (Brazilian states data)
-library(tidyverse) # data handling
-options(scipen = 999, digits = 15) # evitar anotacoes cientificas 
+library(tidyverse)         # Data handling
+library(CoordinateCleaner) # Access to institution
+options(scipen = 999, digits = 15) 
 
-head(data.frame(WDIsearch("GDP")))
-WDIsearch("education")  # Busca por indicadores relacionados à educação
-WDIsearch("health")     # Busca por indicadores relacionados à saúde
+# Set directory 
+local_directory <- file.path("F:",
+                             "datasets_centrais",
+                             "wallacean_time")
 
-indicadores_economicos <- c(
-  #"NY.GDP.MKTP.KD.ZG",  # Crescimento do PIB (% anual)
-  #"NY.GDP.PCAP.KD.ZG",  # Crescimento do PIB per capita (% anual)
-  "EN.POP.DNST",        # Densidade populacional (pessoas por km² de terra)
-  "NY.GDP.MKTP.CD",     # PIB em dólares correntes
-  "SP.POP.TOTL",        # População total
-  "GB.XPD.RSDV.GD.ZS"   # Despesa em P&D como % do PIB (indicador similar para "Human resources in R&D")
-)
+# Data loading
+# V-Dem provides a multidimensional and disaggregated dataset that reflects the 
+# complexity of the concept of democracy as a system of rule that goes beyond 
+# the simple presence of elections. We distinguish between five high-level 
+# principles of democracy: electoral, liberal, participatory, deliberative, 
+# and egalitarian, and collect data to measure these principles
+politic_data <- readRDS(file.path(
+  local_directory, "00_raw_data",
+  "V-Dem-CY-FullOthers-v15_rds", "V-Dem-CY-Full+Others-v15.rds")) %>%
+  select("country_name", "country_text_id", "year", 
+         "e_peedgini",    # Educational inequality, Gini (E)
+         "e_pop",         # Populacao
+         "e_gdppc",       # GPD per capta
+         "e_miinterc",    # Armed conflict, internal
+         "v2x_polyarchy", # Electoral democracy index
+         "v2x_api",       # Additive polyarchy index 
+         "v2x_mpi",       # Multiplicative polyarchy index
+         "v2clacfree")    # Freedom of academic and cultural expression
 
-# Baixar dados de PIB e população
-data_worldbank <- WDI(
-  indicator = indicadores_economicos,
-    start = 1960, end = 2024
-)
+# DOSE é um dataset global separado por unidades administrativas, no caso, estamos
+# usando as unidades administrativas dos 6 países do mundo que tem cobertura de terra
+# maior que 5%, o que aqui chamaremos de 'big six'. Com isso, esperamos identificar
+# desigualdades regionais dentro desses países muito grandes. Do DOSE, iremos
+# usar apenas os dados dos Big Six.
+dose_data <- read.csv2(file.path(
+  local_directory, "00_raw_data", "DOSE", "DOSE_V2.11.csv"), sep = ',') %>%
+  mutate(pop_abs = as.numeric(pop),
+         gdp_2015 = as.numeric(grp_pc_usd_2015)) %>%
+  select(country, region, GID_0, GID_1, year, pop_abs, gdp_2015) 
 
-# rename_cols
-data_socieconomic <- data_worldbank %>%
+# Maddison project
+# The Maddison Project Database provides information on comparative economic 
+# growth and income levels over the very long run.
+maddison_data <- readxl::read_xlsx(file.path(
+  local_directory, "00_raw_data", "Maddison", "mpd2023_web.xlsx"),
+  sheet = "Full data") %>%
+  filter(year > 1755) %>%
   rename(
-    #"pib_growth_anual(%)" = "NY.GDP.MKTP.KD.ZG",
-    #"pib_growth_percapta_anual(%)" = "NY.GDP.PCAP.KD.ZG",
-    "pop_density(person/km2)" = "EN.POP.DNST",
-    "pib_dollar_current" = "NY.GDP.MKTP.CD",
-    "total_population" = "SP.POP.TOTL",
-    "invest_pd_pib" = "GB.XPD.RSDV.GD.ZS",
-  ) %>%
-  select(-iso2c)
-#names(data_socieconomic)
+    gdp_2011 = gdppc,
+    macroregion = region
+  ) 
 
-# IPEA data (States of Brazilian) ----
-# podem ser acessadas em
-# http://www.ipeadata.gov.br/ExibeSerieR.aspx?stub=1&serid=1540855420&MINDATA=2014&MAXDATA=2030&TNIVID=2&TPAID=1&module=R
-search_series("Taxa de câmbio")
-View(available_series())
+# The Quality of Government Institute
+qog_data <- read.csv2(file.path(
+  local_directory, "00_raw_data", "The_QoG_Institute",
+  "qog_std_ts_jan25.csv"), sep = ",") %>%
+  select("cname", "ccodealp", "year", "ht_colonial", "gpi_gpi")
 
-# PIB estadual
-#print(metadata("PIBPMCE")$comment
-# O produto interno bruto (PIB) é o total dos bens e serviços
-# produzidos pelas unidades produtoras residentes destinados
-# ao consumo final, sendo equivalente à soma dos valores adicionados
-# pelas diversas atividades econômicas acrescida dos impostos,
-# líquidos de subsídios, sobre produtos. Equivale também à soma
-# dos consumos finais de bens e serviços valorados a preço de mercado,
-# sendo também equivalente à soma das rendas primárias.
-# Neste caso é a medição do PIB de um determinado
-# Exemplo de extração dos dados
-pib_estadual <- ipeadata("PIBPMCE")
-
-# Os dados do World Bank geralmente estão em dólares americanos (USD). 
-# Para garantir comparabilidade, será necessário converter os valores de PIB
-#  estadual (em reais) para dólares. Isso pode ser feito utilizando a taxa
-#  de câmbio nominal anual média (R$ / USD) correspondente a cada ano.
-# taxa de câmbio comercial - venda - média anual para cada ano
-taxa_cambio <- ipeadata("BM_ERV")
-
-# POPULATION PER ADM UNIT IN BIG SIX COUNTRIES
-# pop_density(person/km2) Brazil
-# obtain in
-# Concatenando a URL em múltiplas linhas
-brazil_population <- readr::read_delim(file.path(
-  "00_raw_data",
-  "raw_data",
-  "densidade_estado_1900_2010.xls"
-  )
-)
-
-brazil_population_current <- readr::read_delim(file.path(
-  "00_raw_data",
-  "raw_data",
-  "populacao_estado_2000_2015.xls"
-  )
-)
-
+# A global gazetteer for biodiversity institutions from various sources, 
+# including zoos, museums, botanical gardens, GBIF contributors, herbaria,
+# university collections. 'institutions' data from CoordinateCleaner
+data(institutions)
 
 # Save socieconomic dataset
 save(
-  data_socieconomic,
-  pib_estadual,
-  taxa_cambio,
-  brazil_population,
+  politic_data,
+  dose_data,
+  maddinson_data,
+  qog_data,
+  institutions,
   file = file.path(
+    local_directory,
     "00_raw_data",
     "data_socieconomic.RData"
   )
