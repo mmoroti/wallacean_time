@@ -38,20 +38,15 @@ poligonos_especies <- vert_assemblages_sf %>%
   group_by(Scientific.Name) %>%     # Agrupa por espécie
   summarise(geometry = st_union(geometry)) %>% # Une as células
   st_as_sf() %>%
-  st_transform(crs = 4326)
+  st_transform(st_crs(grid_cells_sf)) %>%
+  mutate(TetrapodTraits.Name = Scientific.Name)
 
 tetrapods_polygons_key <- species_list_tetrapods_filter %>%
   select(verbatim_name, speciesKey) %>%
   left_join(poligonos_especies, by = c('verbatim_name' = 'Scientific.Name')) %>%
-  st_as_sf() 
-
-save(tetrapods_polygons_key,
-  file = file.path(
-    local_directory,
-    "00_raw_data",
-    "tetrapods_polygons_key.RData"
-  )
-)
+  st_as_sf() %>%
+  # algumas espécies ficaram com NA's pq nao tem dados espaciais
+  remove_missing()
 
 # GEOGRAPHIC SHAPEFILES ----
 big_six <-  c("Brazil",
@@ -142,7 +137,7 @@ geographic_shape_data <- st_transform(geographic_shape_data,
 
 
 world_globalnorth <- world_continents %>% 
-  select(CountryName, GlobalNorth, ISO3) %>%
+  select(CountryName, GlobalNorth, Georegion, ISO3) %>%
   mutate(
     CountryName = if_else(CountryName == "Russian Federation",
                           "Russia",
@@ -160,7 +155,7 @@ global_to_fill <- left_join(
 # Filtrando os NA's
 to_fill <- global_to_fill %>%
   filter(is.na(GlobalNorth)) %>%
-  select(-GlobalNorth)
+  select(-GlobalNorth, -Georegion, -ISO3)
 
 # Recuperando via ISO3
 to_fill_2 <- left_join(
@@ -172,7 +167,7 @@ to_fill_2 <- left_join(
 # Ainda nao conseguimos
 to_fill_3 <- to_fill_2 %>%
   filter(is.na(GlobalNorth)) %>%
-  select(-GlobalNorth)
+  select(-GlobalNorth, -Georegion)
 
 to_fill_4 <- to_fill_3 %>%
   mutate(
@@ -186,26 +181,54 @@ to_fill_4 <- to_fill_3 %>%
         "French Southern and Antarctic Lands",
         "Aland",
         "Sint Maarten",
-        "Curaçao"
+        "Curaçao",
+        "Kosovo",
+        "South Georgia and the Islands"
       ) ~ 1,
       
       admin %in% c(
-        "Kosovo",
         "Palestine",
         "Somaliland",
         "Northern Cyprus"
       ) ~ 0,
       
       admin %in% c(
-        "South Georgia and the Islands",
         "Indian Ocean Territories",
         "Heard Island and McDonald Islands",
         "Ashmore and Cartier Islands",
-        "Siachen Glacier",
-        "Antarctica"
+        "Siachen Glacier"
       ) ~ 0,
       
       TRUE ~ NA_real_
+    ),
+    
+    # Classificação das regiões
+    Georegion = case_when(
+      admin %in% c("Saint Helena", "Saint Pierre and Miquelon", 
+                   "Wallis and Futuna", "Saint Martin", 
+                   "Saint Barthelemy", "Aland", 
+                   "Sint Maarten", "Curaçao") ~ "Europe",
+      
+      admin == "French Southern and Antarctic Lands" ~ "Australia and New Zealand",
+      
+      admin == "Kosovo" ~ "Europe",
+      
+      admin == "South Georgia and the Islands" ~ "Latin America and Caribbean",
+      
+      admin %in% c("Palestine", "Somaliland", "Northern Cyprus") ~ 
+        case_when(
+          admin == "Palestine" ~ "Near East and Northern Africa",
+          admin == "Somaliland" ~ "Sub-Saharan Africa",
+          admin == "Northern Cyprus" ~ "Near East and Northern Africa"
+        ),
+      
+      admin %in% c("Indian Ocean Territories", 
+                   "Heard Island and McDonald Islands",
+                   "Ashmore and Cartier Islands") ~ "Australia and New Zealand",
+      
+      admin == "Siachen Glacier" ~ "Central, East and South Asia",
+      
+      TRUE ~ NA_character_
     )
   )
 
@@ -237,8 +260,232 @@ geographic_shape_data <- bind_rows(
       GlobalNorth
     )
   ) %>%
-  select(-"adm0_a3", -"CountryName")
+  select(-"ISO3", -"CountryName") %>%
+  rename("ISO3" = "adm0_a3") %>%
+  filter(!is.na(name_en))
 
+# Washington e Moscow aparecem duplicados
+# Georgia aparece duas vezes no name_en pq tem um pais e um estado com 
+# mesmo nome
+# Identificar quais name_en são duplicados
+# Unir polígonos duplicados
+
+unified_data <- geographic_shape_data %>%
+  filter(name_en %in% c("Altai Republic", "Washington", "Moscow", "Georgia")) %>%
+  # renomear antes de agrupar
+  mutate(
+    name_en = case_when(
+      # Washington mais ao leste → DC
+      name_en == "Washington" & st_coordinates(st_centroid(geometry))[,1] > -90 ~ "Washington D.C.",
+      # Washington mais a oeste → estado
+      name_en == "Washington" & st_coordinates(st_centroid(geometry))[,1] <= -90 ~ "Washington",
+      # Altai Republic mais ao norte → Altai Krai
+      name_en == "Altai Republic" & st_coordinates(st_centroid(geometry))[,1] >= 85 ~ "Altai Republic",
+      # Altai Republic mais ao sul → mantém Altai Republic
+      name_en == "Altai Republic" & st_coordinates(st_centroid(geometry))[,1] < 85 ~ "Altai Krai",
+      # Georgia no país → Georgia Country
+      name_en == "Georgia" & ISO3 == "GEO" ~ "Georgia Country",
+      # Moscow mantém mesmo nome
+      TRUE ~ name_en
+    )
+  ) %>%
+  # agrupar pelo novo nome
+  group_by(name_en) %>%
+  summarize(
+    admin = first(admin),
+    ISO3 = first(ISO3),
+    GlobalNorth = first(GlobalNorth),
+    Georegion = first(Georegion),
+    geometry = st_union(geometry),
+    .groups = "drop"
+  )
+
+geographic_shape_data <- geographic_shape_data %>%
+  filter(!name_en %in% c("Altai Republic", "Washington", "Moscow", "Georgia")) %>%
+  bind_rows(unified_data)
+
+geographic_shape_data %>%
+  group_by(name_en) %>%
+  filter(n() > 1) %>%
+  ungroup()
+  
+
+# SENSITIVITY ANALYSIS ----
+## Expanded polygons ----
+expand_species_polygons <- function(sf_polygons,
+                                    buffer_distance_m,
+                                    crs_metric = st_crs(grid_cells_sf)) {
+  sf_polygons %>%
+    st_transform(crs_metric) %>%
+    mutate(
+      geometry = if (buffer_distance_m > 0) {
+        st_buffer(geometry, dist = buffer_distance_m)
+      } else {
+        geometry
+      }
+    ) %>%
+    st_make_valid() 
+}
+
+scenarios <- tibble::tibble(
+  scenario = c("base", "buffer_110km", "buffer_220km"),
+  buffer_m = c(0, 110000, 220000)
+)
+
+tetrapods_polygons_expanded <- scenarios %>%
+  mutate(
+    polygons = map(
+      buffer_m,
+      ~ expand_species_polygons(
+        sf_polygons = tetrapods_polygons_key,
+        buffer_distance_m = .x
+      )
+    )
+  ) %>%
+  select(scenario, polygons) %>%
+  unnest(polygons) %>%
+  st_as_sf() %>%
+  st_make_valid()
+
+table(tetrapods_polygons_expanded$scenario)
+# 32.002 poligonos
+
+# only_land
+only_land <- geographic_shape_data %>%
+  st_union() %>%      # dissolve todos os estados
+  st_transform(st_crs(grid_cells_sf)) %>%
+  st_make_valid()
+
+st_crs(only_land)
+st_crs(tetrapods_polygons_expanded)
+
+tetrapods_polygons_expanded_land <- st_intersection(
+  tetrapods_polygons_expanded,
+  only_land
+)
+
+table(tetrapods_polygons_expanded_land$scenario)
+# 32002-31882 = 120 da base sairam
+# 32002-31943 = 59 dos 110km sairam
+# 32002-31966 = 36 dos 220km sairam
+
+# conferindo quem saiu
+completo <- tetrapods_polygons_expanded %>%
+  filter(scenario == "buffer_110km") 
+  
+perdidos <- tetrapods_polygons_expanded_land %>%
+  filter(scenario == "buffer_110km") 
+
+sp_perdidas <- setdiff(completo$verbatim_name, perdidos$verbatim_name)
+
+# Basicamente das 120 spp que sairam da base, são de ilhas!
+mapview::mapview(tetrapods_polygons_expanded %>%
+                   filter(verbatim_name %in% sp_perdidas & scenario == "buffer_110km"))
+
+mapview::mapview(tetrapods_polygons_expanded %>%
+                   filter(verbatim_name %in% "Cyanoramphus unicolor"))
+
+tetrapods_polygons_sensitivity <- tetrapods_polygons_expanded_land %>%
+  filter(scenario != "base") %>%
+  arrange(verbatim_name)
+
+## Percent of admnistrative cover ----
+# 1) garantir a mesma projeção equal area
+st_crs(tetrapods_polygons_key) == st_crs(grid_cells_sf)
+geographic_shape_data <- st_transform(
+  geographic_shape_data, st_crs(grid_cells_sf))
+
+st_crs(tetrapods_polygons_key) == st_crs(geographic_shape_data)
+
+# 2) area total da unidade administrativa
+admin_units_sf <- geographic_shape_data %>%
+  mutate(area_total = st_area(geometry))
+
+# 3) interseccao das especies
+species_admin_intersect <- st_intersection(
+  tetrapods_polygons_key %>% select(verbatim_name, geometry),
+  admin_units_sf %>% select(name_en, area_total, geometry)
+)
+
+# 4) % cobertura das especies na unidade administrativa
+species_admin_intersect <- species_admin_intersect %>%
+  mutate(
+    area_species_in_unit = st_area(geometry),
+    cover_percent = as.numeric(area_species_in_unit / area_total * 100)
+  ) %>%
+  st_set_geometry(NULL)  # remover geometria se quiser apenas tabela
+
+hist(species_admin_intersect$cover_percent, breaks = 100)
+quantile(species_admin_intersect$cover_percent, probs = seq(0, 1, 0.01))
+
+# 5) criando diferentes limites
+species_admin_1perc <- species_admin_intersect %>%
+  filter(cover_percent >= 1)
+
+species_admin_05perc <- species_admin_intersect %>%
+  filter(cover_percent >= 0.5)
+
+species_admin_01perc <- species_admin_intersect %>%
+  filter(cover_percent >= 0.1)
+
+# Correlation
+perc_1 <- species_admin_1perc %>%
+  group_by(name_en) %>%
+  summarise(count_1 = n())
+
+perc_05 <- species_admin_05perc %>%
+  group_by(name_en) %>%
+  summarise(count_05 = n())
+
+perc_01 <- species_admin_01perc %>%
+  group_by(name_en) %>%
+  summarise(count_01 = n())
+
+counts <- species_admin_intersect %>%
+  group_by(name_en) %>%
+  summarise(count = n()) %>%
+  left_join(perc_1, by = "name_en") %>%
+  left_join(perc_05, by = "name_en") %>%
+  left_join(perc_01, by = "name_en") 
+
+cor(counts$count, counts$count_1)
+cor(counts$count, counts$count_05)
+cor(counts$count, counts$count_01)
+
+# SAVE ----
+# Base
+save(tetrapods_polygons_key,
+     file = file.path(
+       local_directory,
+       "00_raw_data",
+       "tetrapods_polygons_key.RData"
+     )
+)
+
+# Sensitivity analysis expanded 110km and 220km
+save(tetrapods_polygons_key,
+     file = file.path(
+       local_directory,
+       "00_raw_data",
+       "tetrapods_polygons_sensitivity.RData"
+     )
+)
+
+# Sensitivity analysis administrative unit species list 
+save(
+  species_admin_intersect,
+  species_admin_1perc,
+  species_admin_05perc,
+  species_admin_01perc,
+  counts,
+     file = file.path(
+       local_directory,
+       "00_raw_data",
+       "tetrapods_list_sensitivity.RData"
+     )
+)
+
+# Geographic file
 save(geographic_shape_data,
      file = file.path(
        local_directory,

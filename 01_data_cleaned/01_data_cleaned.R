@@ -986,16 +986,6 @@ data_occurences_precleaned <- open_dataset(
     "data_occurences_filtered.parquet")
 )
 
-# plot points without polygons filter
-#ggplot() +
-#  coord_fixed() +
-#  borders("world", colour = "gray50", fill = "gray50") +
-#  geom_point(data = data_occurences_precleaned,
-#             aes(x = decimalLongitude, y = decimalLatitude),
-#             colour = "darkred",
-#             size = 0.5) +
-#  theme_bw()
-
 data_occurences_precleaned <- data_occurences_precleaned %>%
   mutate(
     # duas casas decimais = 1.11 km 
@@ -1014,7 +1004,7 @@ duplicated_flags <- cc_dupl(
   lat = "decimalLatitude",
   species = "speciesKey",
   value = "flagged"
-) # TODO conferir ordenacao se ta certinho, mas ja havia feito isso
+)
 
 data_occurences_precleaned_duplicate <- data_occurences_precleaned[
   duplicated_flags == TRUE, ]
@@ -1025,11 +1015,19 @@ length(unique(data_occurences_precleaned_duplicate$speciesKey))
 # 28.459 global scale spp
 
 # FILTER POINTS BY RANGE POLYGONS ----
-# shapefile
+# Shapefile base
 load(file = file.path(
   local_directory,
   "00_raw_data",
   "tetrapods_polygons_key.RData")) # From TetrapodTraits
+
+# Sensitivity shapefiles expanded 110km and 220km
+load(file = file.path(
+       local_directory,
+       "00_raw_data",
+       "tetrapods_polygons_sensitivity.RData"
+     )
+)
 
 # deixar apenas as especies que tem poligonos
 data_wallacean_knownledge_sa <- data_occurences_precleaned_duplicate %>%
@@ -1148,6 +1146,31 @@ plot_clean <- ggplot() +
   theme_bw()
 
 # EXTRACTING GEOLOCATIONS ----
+parquet_dir <- file.path(local_directory, 
+                         "01_data_cleaned",
+                         "list_occurences_clean.parquet")
+list_occurences_clean <- open_dataset(
+  sources = parquet_dir
+) %>%
+  collect()
+
+load(file = file.path(
+  local_directory,
+  "00_raw_data",
+  "tetrapods_polygons_key.RData")) # From TetrapodTraits
+
+# deixar apenas os poligonos que tem dados de distribuicao
+data_tetrapods_sa <- tetrapods_polygons_key %>% 
+  filter(speciesKey %in% list_occurences_clean$speciesKey) 
+
+# run cc_iucn()
+# terra::vect(data_tetrapods_sa) se funcionar vai dar certo
+data_tetrapods_sa_transf <- st_cast(data_tetrapods_sa,
+                                    "MULTIPOLYGON")
+# Verificar se a conversão funcionou
+geometry_types <- st_geometry_type(data_tetrapods_sa_transf)
+table(geometry_types)
+
 rm(list = setdiff(ls(), c("local_directory",
                           "list_occurences_clean",
                           "data_tetrapods_sa"
@@ -1166,8 +1189,9 @@ st_is_valid(geographic_shape_data) %>% table()
 
 # extracting geolocation per specie
 data_occurences <- st_as_sf(list_occurences_clean,
-                   coords = c("decimalLongitude", "decimalLatitude"),
-                   crs = st_crs(geographic_shape_data))
+                            coords = c("decimalLongitude", "decimalLatitude"),
+                            crs = 4326) %>%    # WGS84
+  st_transform(st_crs(geographic_shape_data))  # equal area
 
 nrow(data_occurences) == nrow(list_occurences_clean) 
 

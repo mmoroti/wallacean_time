@@ -14,19 +14,28 @@ local_directory <- file.path("F:",
 # socieconomic data
 #load(
 #  file = file.path(
+#    local_directory,
 #    "01_data_cleaned",
-#    "data_socieconomic_cleaned.RData")
+#    "data_socieconomic_agregatte.RData")
 #)
                                         
 # occurences data
 load(
     file = file.path(
       local_directory,
+      "01_data_cleaned",
       "dataset_occurences.RData")
 )
+
 rm(list = setdiff(ls(), c("local_directory",
                           "list_per_admunit",
                           "data_wallacean_unnested"))); gc()
+
+load(file.path(
+  local_directory,
+  "00_raw_data",
+  "trait_data.RData")
+)
 
 # Species count per adm. unit ----
 sp_count <- list_per_admunit %>% 
@@ -39,13 +48,14 @@ any(is.na(data_wallacean_unnested$year))
 # Gerar uma lista de quantos registros sao esperados pelos poligonos
 # nas unidades administrativas pelo numero de ocorrencias disponiveis na base
 # Global
-data_key <- data_wallacean_unnested %>%
+data_key <- trait_data %>%
   distinct(speciesKey, .keep_all = TRUE) %>%
   select(Class, Order, speciesKey)
 
 list_species <- left_join(list_per_admunit,
           data_key, 
           by = "speciesKey")
+
 # Amphibia
 rich_admunit_expected_amphibia <- list_species %>%
   filter(Class == "Amphibia") %>%
@@ -124,7 +134,10 @@ save(
   richness_completude_reptilia,
   richness_completude_aves,
   richness_completude_mammalia,
-  file = "02_data_analysis/richness_completude.RData"
+  file = file.path(
+   local_directory,
+   "02_data_analysis",
+   "richness_completude.RData")
 )
 
 # Create time-to-event table ----
@@ -152,7 +165,7 @@ data_wallacean_unnested_modified <- data_wallacean_unnested %>%
   select(speciesKey, scientificName, Class, Order, Family, 
          name_en, date, year_modified,
          BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
-         HumanDensity, Latitude, Elevation, ETA50K, AnnuMeanTemp,
+         HumanDensity, Latitude, Elevation, ETA50K, AssessedStatus,
          ua_total, YearOfDescription, RangeSize, origin_of_data)
 
 data_wallacean_unnested_modified <- data_wallacean_unnested_modified %>%
@@ -239,7 +252,7 @@ df_wallacean_100 <- df_wallacean_time %>%
          t.start.date, t.stop.date, t.start, t.stop, t.start.year, t.stop.year,
          event, WallaceCompletude,
          BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
-         HumanDensity, Latitude, Elevation, ETA50K, AnnuMeanTemp, RangeSize, 
+         HumanDensity, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
          ua_total, origin_of_data, YearOfDescription) 
 
 df_wallacean_75 <- df_wallacean_time %>%
@@ -254,7 +267,7 @@ df_wallacean_75 <- df_wallacean_time %>%
          date, t.start.date, t.stop.date, t.start,t.stop, t.start.year, t.stop.year,
          event, Wallace75,
          BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
-         HumanDensity, Latitude, Elevation, ETA50K, AnnuMeanTemp, RangeSize, 
+         HumanDensity, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
          ua_total, origin_of_data, YearOfDescription) 
 
 df_wallacean_50 <- df_wallacean_time %>%
@@ -269,7 +282,7 @@ df_wallacean_50 <- df_wallacean_time %>%
          t.start.date, t.stop.date, t.start,t.stop, t.start.year, t.stop.year,
          event, Wallace50,
          BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
-         HumanDensity, Latitude, Elevation, ETA50K, AnnuMeanTemp, RangeSize, 
+         HumanDensity, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
          ua_total, origin_of_data, YearOfDescription) 
 
 # TODO precisa checar isso!
