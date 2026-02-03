@@ -101,7 +101,7 @@ package_vec <- c(
 sapply(package_vec, install.load.package)
 
 # Set directory 
-local_directory <- file.path("F:",
+local_directory <- file.path("E:",
                              "datasets_centrais",
                              "wallacean_time") 
 
@@ -1216,21 +1216,15 @@ data_occurences_geo <- st_join(data_occurences,
   ungroup()
 
 any(duplicated(data_occurences_geo$ID))
-# 62.956 occ registros fora do poligonos (oceano, areas em litigio, etc)
-nrow(data_occurences)-nrow(data_occurences_geo) # 21821 occ removidas 
+# 907.533 occ registros fora do poligonos (oceano, areas em litigio, etc)
+nrow(data_occurences)-nrow(data_occurences_geo) # 907.533 occ removidas 
 names(data_occurences_geo)
 
 data_occurences_geometry <- data_occurences_geo %>%
-  select(speciesKey, species,day,month, year, origin_of_data, name_en, ID) #%>%
-  #rename(codeAdmUnit = adm0_a3, adm_unit = name_en)
+  select(speciesKey, species, day, month, year, origin_of_data, name_en, ID) 
 
 data_occurences_units <- data_occurences_geometry %>%
   st_drop_geometry()
-
-#mapview(geographic_shape_data,
-# col.regions = "lightblue", alpha.regions = 0.4, color = "black", layer.name = "Regiões") +
-#  mapview(data_occurences_geo, 
-#  color = "red", cex = 2, layer.name = "Ocorrências", popup = popupTable(data_occurences_geo, zcol = "name_en"))
 
 # SPECIES LIST PER ADMINASTRIVE UNIT ----
 interseccao_sf <- st_intersection(data_tetrapods_sa, geographic_shape_data)
@@ -1307,8 +1301,7 @@ data_wallacean_unnested <- data_wallacean_nested %>%
 nrow(data_wallacean_unnested) 
 
 # 3.144.303 occ global
-# 123.776.782 occ global com Human Observation
-
+# 123.776.736 occ global com Human Observation
 save(data_wallacean_nested,
      data_wallacean_unnested,
      list_per_admunit,
