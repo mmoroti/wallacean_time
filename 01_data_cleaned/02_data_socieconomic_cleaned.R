@@ -92,9 +92,9 @@ rm(list = setdiff(ls(), c("local_directory",
 
 # HANDLING DATA ----
 admunit <- list_per_admunit %>%
-  select(name_en, adm0_a3) %>%
+  select(name_en, ISO3) %>%
   distinct() %>%
-  arrange(adm0_a3)
+  arrange(ISO3)
 
 politic_data_summary <- politic_data %>%
   group_by(country_text_id) %>%
@@ -123,7 +123,7 @@ politic_data_summary <- politic_data %>%
 admunit_politic <- left_join(
   admunit,
   politic_data_summary,
-  by = c("adm0_a3" = "country_text_id")
+  by = c("ISO3" = "country_text_id")
 ) 
 
 # Primeiro vamos tentar unir uma media para as unidades admnistrativas
@@ -201,7 +201,7 @@ region_data <- dose_data %>%
   ungroup() 
 
 admunit_sociopolitic <- admunit_politic %>%
-  filter(adm0_a3 %in% c("BRA", "RUS", "CHN", "AUS", "CAN", "USA")) %>%
+  filter(ISO3 %in% c("BRA", "RUS", "CHN", "AUS", "CAN", "USA")) %>%
   mutate(region_tolower = tolower(name_en)) %>%
   left_join(region_data, by = "region_tolower") #%>%
   # verificar as unidades faltantes
@@ -257,8 +257,8 @@ maddinson_data_edit <- maddinson_data %>%
   ) 
 
 country_sociopolitic <- admunit_politic %>%
-  filter(!adm0_a3 %in% c("BRA", "RUS", "CHN", "AUS", "CAN", "USA")) %>%
-  left_join(maddinson_data_edit, by = c("adm0_a3" = "countrycode")) 
+  filter(!ISO3 %in% c("BRA", "RUS", "CHN", "AUS", "CAN", "USA")) %>%
+  left_join(maddinson_data_edit, by = c("ISO3" = "countrycode")) 
 
 # Obtain colonial origin
 qog_data_edit <- qog_data %>%
@@ -269,7 +269,6 @@ qog_data_edit <- qog_data %>%
 
 # Obtain area 
 geographic_shape_data <- geographic_shape_data %>%
-  st_transform(crs = "+proj=eck4 +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs") %>%
   mutate(
     area_m2 = st_area(geometry),  # Área em metros quadrados
     area_km2 = set_units(area_m2, km^2),  # Converter para km²
@@ -284,7 +283,7 @@ institutions_sf <- institutions %>%
   filter(is.na(country) | country %in% c("BRA", "CHN", "RUS", "USA", "CAN", "AUS")) %>%
   filter(!is.na(decimalLongitude) & !is.na(decimalLatitude)) %>%
   st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = 4326) %>%
-  st_transform(crs = "+proj=eck4 +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs")
+  st_transform(crs = st_crs(geographic_shape_data))
 
 # Contagem das instituicoes dentro dos name_en
 institutions_with_location <- institutions_sf %>%
@@ -332,10 +331,10 @@ data_sociopolitic <- bind_rows(
 ) %>%
   select(-region_tolower) %>%
   # Georgia país aparece duplicado mas nao temos nenhum grupo com occ la
-  filter(adm0_a3 != "GEO") %>%
+  #filter(ISO3 != "GEO") %>%
   left_join(geographic_shape_data %>% 
               # se nao colocar is.na(ISO3) ele remove os NA's tambem
-              filter(is.na(ISO3) | ISO3 != "GEO") %>%
+              #filter(is.na(ISO3) | ISO3 != "GEO") %>%
               select(name_en, area_km2, GlobalNorth) %>%
               st_drop_geometry(),
             by = "name_en") %>%
@@ -350,7 +349,7 @@ data_sociopolitic <- bind_rows(
       !is.na(gdp_2015_mean) ~ "DOSE"
     )) %>%
   left_join(qog_data_edit,
-            by = c("adm0_a3" = "ccodealp")) %>%
+            by = c("ISO3" = "ccodealp")) %>%
   left_join(df_institutions, by = "name_en")  %>%
   mutate(
     n_institutions = ifelse(is.na(n_institutions), 0, n_institutions)

@@ -389,69 +389,6 @@ tetrapods_polygons_sensitivity <- tetrapods_polygons_expanded_land %>%
   filter(scenario != "base") %>%
   arrange(verbatim_name)
 
-## Percent of admnistrative cover ----
-# 1) garantir a mesma projeção equal area
-st_crs(tetrapods_polygons_key) == st_crs(grid_cells_sf)
-geographic_shape_data <- st_transform(
-  geographic_shape_data, st_crs(grid_cells_sf))
-
-st_crs(tetrapods_polygons_key) == st_crs(geographic_shape_data)
-
-# 2) area total da unidade administrativa
-admin_units_sf <- geographic_shape_data %>%
-  mutate(area_total = st_area(geometry))
-
-# 3) interseccao das especies
-species_admin_intersect <- st_intersection(
-  tetrapods_polygons_key %>% select(verbatim_name, geometry),
-  admin_units_sf %>% select(name_en, area_total, geometry)
-)
-
-# 4) % cobertura das especies na unidade administrativa
-species_admin_intersect <- species_admin_intersect %>%
-  mutate(
-    area_species_in_unit = st_area(geometry),
-    cover_percent = as.numeric(area_species_in_unit / area_total * 100)
-  ) %>%
-  st_set_geometry(NULL)  # remover geometria se quiser apenas tabela
-
-hist(species_admin_intersect$cover_percent, breaks = 100)
-quantile(species_admin_intersect$cover_percent, probs = seq(0, 1, 0.01))
-
-# 5) criando diferentes limites
-species_admin_1perc <- species_admin_intersect %>%
-  filter(cover_percent >= 1)
-
-species_admin_05perc <- species_admin_intersect %>%
-  filter(cover_percent >= 0.5)
-
-species_admin_01perc <- species_admin_intersect %>%
-  filter(cover_percent >= 0.1)
-
-# Correlation
-perc_1 <- species_admin_1perc %>%
-  group_by(name_en) %>%
-  summarise(count_1 = n())
-
-perc_05 <- species_admin_05perc %>%
-  group_by(name_en) %>%
-  summarise(count_05 = n())
-
-perc_01 <- species_admin_01perc %>%
-  group_by(name_en) %>%
-  summarise(count_01 = n())
-
-counts <- species_admin_intersect %>%
-  group_by(name_en) %>%
-  summarise(count = n()) %>%
-  left_join(perc_1, by = "name_en") %>%
-  left_join(perc_05, by = "name_en") %>%
-  left_join(perc_01, by = "name_en") 
-
-cor(counts$count, counts$count_1)
-cor(counts$count, counts$count_05)
-cor(counts$count, counts$count_01)
-
 # SAVE ----
 # Base
 save(tetrapods_polygons_key,
@@ -468,20 +405,6 @@ save(tetrapods_polygons_key,
        local_directory,
        "00_raw_data",
        "tetrapods_polygons_sensitivity.RData"
-     )
-)
-
-# Sensitivity analysis administrative unit species list 
-save(
-  species_admin_intersect,
-  species_admin_1perc,
-  species_admin_05perc,
-  species_admin_01perc,
-  counts,
-     file = file.path(
-       local_directory,
-       "00_raw_data",
-       "tetrapods_list_sensitivity.RData"
      )
 )
 

@@ -1,9 +1,8 @@
 library(tidyverse)
+library(sf)
+library(arrow)
 
 rm(list=ls()); gc() # clean local enviroment
-# TODO:
-# Separar por grupos
-# incluir dados socieconomicos
 
 # Set directory 
 local_directory <- file.path("F:",
@@ -11,14 +10,6 @@ local_directory <- file.path("F:",
                              "wallacean_time") 
 
 # Load data ----
-# socieconomic data
-#load(
-#  file = file.path(
-#    local_directory,
-#    "01_data_cleaned",
-#    "data_socieconomic_agregatte.RData")
-#)
-                                        
 # occurences data
 load(
     file = file.path(
@@ -30,41 +21,44 @@ load(
 rm(list = setdiff(ls(), c("local_directory",
                           "list_per_admunit",
                           "data_wallacean_unnested"))); gc()
-
+# trait data
 load(file.path(
   local_directory,
   "00_raw_data",
   "trait_data.RData")
 )
 
-# Species count per adm. unit ----
-sp_count <- list_per_admunit %>% 
-  group_by(speciesKey) %>%
-  mutate(ua_total = n()) %>%
-  distinct(speciesKey, .keep_all = TRUE) %>%
-  select(speciesKey, ua_total)
-any(is.na(data_wallacean_unnested$year))
+# socieconomic data
+#load(
+#  file = file.path(
+#    local_directory,
+#    "01_data_cleaned",
+#    "data_socieconomic_agregatte.RData")
+#)
 
-# Gerar uma lista de quantos registros sao esperados pelos poligonos
-# nas unidades administrativas pelo numero de ocorrencias disponiveis na base
-# Global
-data_key <- trait_data %>%
-  distinct(speciesKey, .keep_all = TRUE) %>%
-  select(Class, Order, speciesKey)
-
-list_species <- left_join(list_per_admunit,
-          data_key, 
-          by = "speciesKey")
+# species list
+load(
+  file.path(
+    local_directory,
+    "00_raw_data",
+    "tetrapods_list_sensitivity.RData"
+    )
+  )
 
 # Amphibia
-rich_admunit_expected_amphibia <- list_species %>%
+rich_admunit_expected_amphibia <- species_admin_all %>%
+  select(name_en, all_species) %>%
+  unnest(all_species) %>%
   filter(Class == "Amphibia") %>%
   select(name_en, speciesKey) %>%
   group_by(name_en) %>%
   summarise(polygons_richness = n_distinct(speciesKey))
 
-rich_admunit_observed_amphibia <- data_wallacean_unnested %>%
+rich_admunit_observed_amphibia <- species_admin_all %>%
+  select(name_en, joined_df) %>%
+  unnest(joined_df) %>%
   filter(Class == "Amphibia") %>%
+  filter(observed == TRUE) %>%
   select(name_en, speciesKey) %>%
   group_by(name_en) %>%
   summarise(observed_richness = n_distinct(speciesKey))
@@ -75,14 +69,19 @@ richness_completude_amphibia <- left_join(
   by = "name_en"
 )
 # Squamata
-rich_admunit_expected_reptilia <- list_species %>%
+rich_admunit_expected_reptilia <- species_admin_all %>%
+  select(name_en, all_species) %>%
+  unnest(all_species) %>%
   filter(Class == "Reptilia") %>%
   select(name_en, speciesKey) %>%
   group_by(name_en) %>%
   summarise(polygons_richness = n_distinct(speciesKey))
 
-rich_admunit_observed_reptilia <- data_wallacean_unnested %>%
+rich_admunit_observed_reptilia <- species_admin_all %>%
+  select(name_en, joined_df) %>%
+  unnest(joined_df) %>%
   filter(Class == "Reptilia") %>%
+  filter(observed == TRUE) %>%
   select(name_en, speciesKey) %>%
   group_by(name_en) %>%
   summarise(observed_richness = n_distinct(speciesKey))
@@ -92,15 +91,20 @@ richness_completude_reptilia <- left_join(
   rich_admunit_observed_reptilia,
   by = "name_en"
 )
-# Squamata
-rich_admunit_expected_aves <- list_species %>%
+# Aves
+rich_admunit_expected_aves <- species_admin_all %>%
+  select(name_en, all_species) %>%
+  unnest(all_species) %>%
   filter(Class == "Aves") %>%
   select(name_en, speciesKey) %>%
   group_by(name_en) %>%
   summarise(polygons_richness = n_distinct(speciesKey))
 
-rich_admunit_observed_aves <- data_wallacean_unnested %>%
+rich_admunit_observed_aves <- species_admin_all %>%
+  select(name_en, joined_df) %>%
+  unnest(joined_df) %>%
   filter(Class == "Aves") %>%
+  filter(observed == TRUE) %>%
   select(name_en, speciesKey) %>%
   group_by(name_en) %>%
   summarise(observed_richness = n_distinct(speciesKey))
@@ -111,14 +115,19 @@ richness_completude_aves <- left_join(
   by = "name_en"
 )
 # Mammals
-rich_admunit_expected_mammalia <- list_species %>%
+rich_admunit_expected_mammalia <- species_admin_all %>%
+  select(name_en, all_species) %>%
+  unnest(all_species) %>%
   filter(Class == "Mammalia") %>%
   select(name_en, speciesKey) %>%
   group_by(name_en) %>%
   summarise(polygons_richness = n_distinct(speciesKey))
 
-rich_admunit_observed_mammalia <- data_wallacean_unnested %>%
+rich_admunit_observed_mammalia <- species_admin_all %>%
+  select(name_en, joined_df) %>%
+  unnest(joined_df) %>%
   filter(Class == "Mammalia") %>%
+  filter(observed == TRUE) %>%
   select(name_en, speciesKey) %>%
   group_by(name_en) %>%
   summarise(observed_richness = n_distinct(speciesKey))
@@ -139,6 +148,29 @@ save(
    "02_data_analysis",
    "richness_completude.RData")
 )
+
+# Species count per adm. unit ----
+# TODO aqui vamos precisar rever. Porque ate entao, estamos construindo a qtde
+# de unidades esperadas para cada especie mesmo com uma pequena bordinha delas
+# chegando as vezes aonde elas não estão! então aqui talvez precisamos considerar
+# diferentes cenários de 'completeness'. Também aqui só temos as espécies que tem
+# poligonos & ocorrencias, para os cenarios de completeness, vamos incluir as 
+# especies que nao tem ocorrencia...
+list_per_admunit <- species_admin_all %>%
+  select(name_en, all_species) %>%
+  unnest(all_species)
+
+sp_count <- list_per_admunit %>% 
+  group_by(speciesKey) %>%
+  mutate(ua_total = n()) %>%
+  distinct(speciesKey, .keep_all = TRUE) %>%
+  select(speciesKey, ua_total)
+any(is.na(data_wallacean_unnested$year))
+
+# Mobilization effort
+mobilization_effort <- data_wallacean_unnested %>%
+  group_by(name_en) %>%
+  summarise(mobilization_effort = n())
 
 # Create time-to-event table ----
 data_wallacean_unnested_modified <- data_wallacean_unnested %>%
@@ -172,8 +204,9 @@ data_wallacean_unnested_modified <- data_wallacean_unnested_modified %>%
   group_by(speciesKey) %>%
   #mutate(date = as.Date(date)) %>%
   arrange(date, .by_group = TRUE) %>%
+  # TODO aqui estamos tirando para cada speciesKey, repeticoes de data na mesma unidade
   distinct(name_en, date, .keep_all = TRUE) %>%
-  # Adiciona dias sequenciais (0, 1, 2...) para cada data repetida
+  # Adiciona secundos sequenciais (0, 1, 2...) para cada data repetida
   # TODO uma premissa chatinha porque algo pode ter vindo antes,
   # como a escala da analise é em anos, acho que acabara ficando diluido
   # mudar a escala em dias!
@@ -285,19 +318,27 @@ df_wallacean_50 <- df_wallacean_time %>%
          HumanDensity, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
          ua_total, origin_of_data, YearOfDescription) 
 
-# TODO precisa checar isso!
 # TODO Precisa pensar em validacoes para atender o modelo de evento
 df_wallacean_time %>%
   filter(t.start >= t.stop) %>% View()
+
+table(df_wallacean_time$WallaceCompletude) 
+# 1988 completeness sem threshold
+# 2322 completeness com 0.1%
+# 2828 completeness com 0.5%
+# 3123 completeness com 1%
 
 # bons exemplos para checar problemas
 # 2433011
 # 2423581
 # 2472164
+
 save(df_wallacean_100,
      df_wallacean_75,
      df_wallacean_50,
+     mobilization_effort,
     file = file.path(
+      local_directory,
       "02_data_analysis",
-      "data_wallacean_time_amphibia.RData")
+      "data_wallacean_time.RData")
 )

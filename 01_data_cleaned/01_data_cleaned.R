@@ -101,7 +101,7 @@ package_vec <- c(
 sapply(package_vec, install.load.package)
 
 # Set directory 
-local_directory <- file.path("E:",
+local_directory <- file.path("F:",
                              "datasets_centrais",
                              "wallacean_time") 
 
@@ -1226,7 +1226,11 @@ data_occurences_geometry <- data_occurences_geo %>%
 data_occurences_units <- data_occurences_geometry %>%
   st_drop_geometry()
 
-# SPECIES LIST PER ADMINASTRIVE UNIT ----
+# Species count per adm. unit ----
+# TODO aqui vamos precisar rever. Porque ate entao, estamos construindo a qtde
+# de unidades esperadas para cada especie mesmo com uma pequena bordinha delas
+# chegando as vezes aonde elas não estão! então aqui talvez precisamos considerar
+# diferentes cenários de 'completeness'
 interseccao_sf <- st_intersection(data_tetrapods_sa, geographic_shape_data)
 
 list_per_admunit <- interseccao_sf %>%
@@ -1236,7 +1240,7 @@ list_per_admunit$name_en %>% table()
 
 save(list_occurences_clean, # sem duplicatas e filtrados por poligonos
      data_occurences_units, # com as unidades administrativas
-     list_per_admunit,      # lista de especies por und adm
+     #list_per_admunit,      # lista de especies por und adm
      file = file.path(
        local_directory,
        "01_data_cleaned",
@@ -1266,8 +1270,42 @@ tetrapods_key_species <- trait_data %>%
          "ImputedMass","Diu","Noc","Nocturnality", "Fos", "Ter", "Aqu", "Arb", "Aer",
          "ImputedHabitat","Verticality","MajorHabitatSum","ImputedMajorHabitat","RangeSize",
          "HumanDensity", "AssessedStatus", "Latitude", "Elevation", "ETA50K", "AnnuMeanTemp") %>%
-  distinct(speciesKey, .keep_all = TRUE) # 117 speciesKey duplicated
+  distinct(speciesKey, .keep_all = TRUE) 
+
 anyDuplicated(tetrapods_key_species$speciesKey) # ok
+
+# TODO Algumas especies presentes no TetrapodTraits sao consideradas sinonimos,
+# entao precisamos manter apenas as espécies mais antigas, e lidar com os atributos delas
+trait_data %>%
+  filter(duplicated(speciesKey) | duplicated(speciesKey, fromLast = TRUE)) %>%
+  View()
+
+traits_summary <- tetrapods_key_species %>%
+  group_by(speciesKey) %>%
+  
+  # 1. Selecionar o menor YearOfDescription
+  mutate(YearOfDescription = min(YearOfDescription, na.rm = TRUE)) %>%
+  
+  # 2. Agregar os traits conforme solicitado
+  summarise(
+    # manter YearOfDescription mais antigo
+    YearOfDescription = first(YearOfDescription),
+    
+    # agregações
+    RangeSize = sum(RangeSize, na.rm = TRUE),
+    
+    BodyLength_mm = mean(BodyLength_mm, na.rm = TRUE),
+    BodyMass_g    = mean(BodyMass_g, na.rm = TRUE),
+    Latitude      = mean(Latitude, na.rm = TRUE),
+    
+    Nocturnality = median(Nocturnality, na.rm = TRUE),
+    Verticality  = median(Verticality, na.rm = TRUE),
+    Elevation    = median(Elevation, na.rm = TRUE),
+    
+    # manter outras colunas fixas (opcional)
+    across(where(is.character), ~ first(.x))
+  ) %>%
+  ungroup()
 
 data_tetrapods_nested <- data_occurences_units %>%
   group_by(speciesKey) %>%  # Agrupa pelo speciesKey
@@ -1304,68 +1342,311 @@ nrow(data_wallacean_unnested)
 # 123.776.736 occ global com Human Observation
 save(data_wallacean_nested,
      data_wallacean_unnested,
-     list_per_admunit,
+     #list_per_admunit,
      file = file.path(
+       local_directory,
        "01_data_cleaned",
        "dataset_occurences.RData")
 )
 
-# Explore data ----
-test <- data_wallacean_unnested %>%
-  filter(year > 1200) %>%
-  group_by(speciesKey) %>%
-  arrange(year) %>%
-  slice(1) %>%  # Pega a primeira linha de cada grupo (ano mais antigo)
-  ungroup()
+# SPECIES LIST PER ADMINISTRATIVE UNIT ----
+rm(list = setdiff(ls(), c("local_directory"))); gc()
+# occurences data
+load(
+  file = file.path(
+    local_directory,
+    "01_data_cleaned",
+    "dataset_occurences.RData")
+)
 
-test %>%
-  select(scientificName, year, YearOfDescription) %>%
-  mutate(diff = year - YearOfDescription ) %>%
-  View()
+# polygon data
+load(file = file.path(
+  local_directory,
+  "00_raw_data",
+  "tetrapods_polygons_key.RData")) # From TetrapodTraits
 
-data_wallacean_unnested %>%
-  filter(scientificName == "Chiasmocleis albopunctata (Boettger, 1885)") %>%
-  View()
+# shapefile to crop adm unit
+load(file.path(
+  local_directory,
+  "00_raw_data",
+  "geographic_shape_data.RData"))
 
-tetrapods_polygons_key %>%
-  filter(verbatim_name == "Aratinga solstitialis")
+# dataset antes de filtrar
+data_occurences_precleaned <- open_dataset(
+  sources = file.path(
+    local_directory,
+    "01_data_cleaned",
+    "data_occurences_filtered.parquet")
+) 
 
-# Dados do polígono (assumindo que tetrapods_polygons_key já está carregado)
-polygon_data <- tetrapods_polygons_key %>%
-  filter(verbatim_name == "Aratinga solstitialis")
+load(file.path(
+  local_directory,
+  "00_raw_data",
+  "trait_data.RData")
+) # match taxonomic and trait information with speciesKey
 
-# 1. Mapa simples com ggplot2
-ggplot() +
-  # Adicionar polígono da espécie
-  geom_sf(data = polygon_data, 
-          fill = "red", 
-          alpha = 0.3, 
-          color = "darkred", 
-          linewidth = 1) +
-  # Título
-  ggtitle("Distribuição de Aratinga solstitialis") +
-  theme_minimal()
+tetrapods_key_species <- trait_data %>%
+  select("speciesKey","scientificName","Class", "Order","Family", 
+         "YearOfDescription","BodyLength_mm","ImputedLength","BodyMass_g",
+         "ImputedMass","Diu","Noc","Nocturnality", "Fos", "Ter", "Aqu", "Arb", "Aer",
+         "ImputedHabitat","Verticality","MajorHabitatSum","ImputedMajorHabitat","RangeSize",
+         "HumanDensity", "AssessedStatus", "Latitude", "Elevation", "ETA50K", "AnnuMeanTemp") %>%
+  distinct(speciesKey, .keep_all = TRUE) 
 
-# 2. Mapa com fundo do mundo
-ggplot() +
-  # Adicionar mapa do mundo de fundo
-  borders("world", 
-          colour = "gray50", 
-          fill = "lightgray") +
-  # Adicionar polígono da espécie
-  geom_sf(data = polygon_data, 
-          fill = "red", 
-          alpha = 0.5, 
-          color = "darkred", 
-          linewidth = 1,
-          inherit.aes = FALSE) +
-  # Limitar ao bounding box do polígono + margem
-  coord_sf(xlim = c(-65, -55),  # Extensão leste-oeste
-           ylim = c(-5, 7),      # Extensão norte-sul
-           expand = TRUE) +
-  # Título e labels
-  ggtitle("Distribuição de Aratinga solstitialis") +
-  labs(subtitle = "Ararajuba - Papagaio-amarelo") +
-  theme_minimal() +
-  theme(plot.title = element_text(hjust = 0.5, face = "bold"),
-        plot.subtitle = element_text(hjust = 0.5))
+# pegando todas as chaves que tem nos dados baixados e filtrados pelos poligonos
+keys_with_occ <- data_wallacean_unnested %>%
+  select(speciesKey) %>%
+  distinct() %>%
+  pull()
+length(keys_with_occ) # 27.395 especies com occ filtradas 
+
+# pegando a chave das especies que tem poligono mas nao estao nas nossas ocorrencias
+# aqui eu to pegando todas as especies que nao achei ocorrencia, 
+# ou pq sairam devido as ocorrencias cairem fora do poligono de especialista
+keys_without_occ <- tetrapods_polygons_key %>% # 31583 com poligono
+  filter(!speciesKey %in% keys_with_occ) %>%
+  st_drop_geometry() %>%
+  # Pegando só as chaves speciesKey delas
+  select(speciesKey) %>%
+  distinct() %>%
+  pull()
+# 4188 especies com poligonos mas nao estao nos nossos dados
+length(keys_without_occ) 
+
+# Tem occ perdidas por mismatch espacial?
+# as especies que tiverem em 'lost_occurences' 
+# sao as especies que tem poligono, recuperamos ocorrencias, mas foram excluidas
+# porque existe um mismatch entre as duas fontes de dados. O erro pode estar
+# tanto nos pontos, quanto nos poligonos, mudanças taxonômicas entre as bases, etc
+lost_occurences <- data_occurences_precleaned %>%
+  filter(speciesKey %in% keys_without_occ) %>%
+  select(speciesKey) %>%
+  distinct() %>%
+  collect() %>%
+  pull()
+length(lost_occurences)
+# 1064 perdemos pq os pontos de ocorrencia cairam todos fora dos poligonos
+# para essas especies nao podemos considerar no completeness pq tem dados delas
+# no GBIF, mas por algum motivo, as ocorrencias delas tem mismatch espacial com
+# os poligonos. 
+
+tetrapods_polygons_completeness <- tetrapods_polygons_key %>%
+  filter(!speciesKey %in% lost_occurences) %>% 
+  group_by(speciesKey) %>% 
+  summarise(geometry = st_union(geometry))
+
+# Montar a lista
+st_crs(tetrapods_polygons_completeness) == st_crs(geographic_shape_data)
+
+# Obter a area total de cada unidade administrativa
+admin_units_sf <- geographic_shape_data %>%
+  mutate(area_total = st_area(geometry))
+
+# Interseccao das especies com as unidades administrativas
+species_admin_intersect <- st_intersection(
+  tetrapods_polygons_completeness %>% select(speciesKey, geometry),
+  admin_units_sf %>% select(name_en, area_total, geometry)
+) %>%
+  mutate(
+    area_species_in_unit = st_area(geometry),
+    cover_percent = as.numeric(area_species_in_unit / area_total * 100)) %>%
+  st_set_geometry(NULL)  %>%
+  # adicionando dados das especies
+  left_join(tetrapods_key_species %>%
+              select("speciesKey",
+                     "scientificName",
+                     "Class", "Order","Family"), by = "speciesKey") 
+
+# Aqui estamos gerando algumas listas de ocorrencias esperadas (poligonos) e
+# listas de ocorrencias observadas (pontos de ocorrencia). Essas listas
+# serao usadas para calcular o completeness usando diferentes 'cortes' para
+# testar a robustez dos nossos dados.
+
+# lista de todas ocorrencias observadas (pontos de ocorrencia)
+# lista de todas as ocorrencias dos poligonos possiveis (algumas spp tem no darwin core team, mas nao tem ocorrencia)
+# lista de especies por und adm 
+# lista de especies que tem occ&poligono nest()
+# lista de especies com cobertura > 1% na und adm.
+# lista de especies com cobertura > 0.5% na und adm
+# lista de especies com cobertura > 0.1% na und adm
+
+# Todas as ocorrencias observadas por unidade administrativa
+occ_nested <- data_wallacean_unnested %>%
+  select(speciesKey, name_en) %>%
+  distinct() %>%
+  group_by(name_en) %>%
+  nest() %>%
+  rename(observed_df = data) %>%
+  mutate(observerd_rich = map_int(observed_df, ~ n_distinct(.x$speciesKey)))
+
+# Todas as especies que tem poligonos mas podem nao ter ocorrencia
+species_admin_all <- species_admin_intersect %>%
+  group_by(name_en) %>%
+  nest() %>%
+  rename(all_species = data) %>%
+  mutate(expected_rich = map_int(all_species, ~ n_distinct(.x$speciesKey))) %>%
+  left_join(occ_nested, by = "name_en") %>%
+  mutate(
+    joined_df = map2(
+      all_species,
+      observed_df,
+      ~ left_join(
+        .x, 
+        if (is.null(.y)) tibble(speciesKey = integer(), observed = logical()) else .y %>% mutate(observed = TRUE),
+        by = "speciesKey"
+      ) %>%
+        mutate(observed = if_else(is.na(observed), FALSE, TRUE))
+    )
+  ) %>%
+  mutate(
+    observed_rich_all = map_int(joined_df, ~ sum(.x$observed)),
+    completeness_all  = observed_rich_all / expected_rich
+  )
+
+# Corte de 1%
+species_admin_1perc <- species_admin_intersect %>%
+  filter(cover_percent >= 1) %>%
+  group_by(name_en) %>%
+  nest() %>%
+  rename(perc_1 = data) %>%
+  mutate(expected_rich = map_int(perc_1, ~ n_distinct(.x$speciesKey))) %>%
+  left_join(occ_nested, by = "name_en") %>%
+  mutate(
+    joined_df = map2(
+      perc_1,
+      observed_df,
+      ~ left_join(
+        .x, 
+        if (is.null(.y)) tibble(speciesKey = integer(), observed = logical()) else .y %>% mutate(observed = TRUE),
+        by = "speciesKey"
+      ) %>%
+        mutate(observed = if_else(is.na(observed), FALSE, TRUE))
+    )
+  ) %>%
+  mutate(
+    observed_rich_all = map_int(joined_df, ~ sum(.x$observed)),
+    completeness_all  = observed_rich_all / expected_rich
+  )
+
+# Corte de 0.5%
+species_admin_05perc <- species_admin_intersect %>%
+  filter(cover_percent >= 0.5) %>%
+  group_by(name_en) %>%
+  nest() %>%
+  rename(perc_05 = data) %>%
+  mutate(expected_rich = map_int(perc_05, ~ n_distinct(.x$speciesKey))) %>%
+  left_join(occ_nested, by = "name_en")  %>%
+  mutate(
+    joined_df = map2(
+      perc_05,
+      observed_df,
+      ~ left_join(
+        .x, 
+        if (is.null(.y)) tibble(speciesKey = integer(), observed = logical()) else .y %>% mutate(observed = TRUE),
+        by = "speciesKey"
+      ) %>%
+        mutate(observed = if_else(is.na(observed), FALSE, TRUE))
+    )
+  ) %>%
+  mutate(
+    observed_rich_all = map_int(joined_df, ~ sum(.x$observed)),
+    completeness_all  = observed_rich_all / expected_rich
+  )
+
+# Corte de 0.1%
+species_admin_01perc <- species_admin_intersect %>%
+  filter(cover_percent >= 0.1) %>%
+  group_by(name_en) %>%
+  nest() %>%
+  rename(perc_01 = data) %>%
+  mutate(expected_rich = map_int(perc_01, ~ n_distinct(.x$speciesKey))) %>%
+  left_join(occ_nested, by = "name_en") %>%
+  mutate(
+    joined_df = map2(
+      perc_01,
+      observed_df,
+      ~ left_join(
+        .x, 
+        if (is.null(.y)) tibble(speciesKey = integer(), observed = logical()) else .y %>% mutate(observed = TRUE),
+        by = "speciesKey"
+      ) %>%
+        mutate(observed = if_else(is.na(observed), FALSE, TRUE))
+    )
+  ) %>%
+  mutate(
+    observed_rich_all = map_int(joined_df, ~ sum(.x$observed)),
+    completeness_all  = observed_rich_all / expected_rich
+  ) 
+
+# Apenas especies com ocorrencia e com poligonos
+species_admin_occ_polygons <- species_admin_intersect %>%
+  filter(speciesKey %in% keys_with_occ) %>%
+  group_by(name_en) %>%
+  nest() %>%
+  rename(occ_polygons = data) %>%
+  mutate(expected_rich = map_int(occ_polygons, ~ n_distinct(.x$speciesKey))) %>%
+  left_join(occ_nested, by = "name_en") %>%
+  mutate(
+    joined_df = map2(
+      occ_polygons,
+      observed_df,
+      ~ left_join(
+        .x, 
+        if (is.null(.y)) tibble(speciesKey = integer(), observed = logical()) else .y %>% mutate(observed = TRUE),
+        by = "speciesKey"
+      ) %>%
+        mutate(observed = if_else(is.na(observed), FALSE, TRUE))
+    )
+  ) %>%
+  mutate(
+    observed_rich_all = map_int(joined_df, ~ sum(.x$observed)),
+    completeness_all  = observed_rich_all / expected_rich
+  ) 
+
+species_admin_occ_polygons %>%
+  filter(observed_rich_all != observerd_rich | is.na(observerd_rich))
+
+# Summarise statistics 
+specieslist_count <- species_admin_all %>%
+  select(name_en, expected_rich, completeness_all) %>%
+  rename(expected_rich_all = expected_rich,
+         completeness_all_all = completeness_all) %>%
+  left_join(
+    species_admin_occ_polygons %>%
+      select(name_en, expected_rich, completeness_all) %>%
+      rename(expected_rich_occpolygon = expected_rich,
+             completeness_all_occpolygon = completeness_all), by = "name_en") %>%
+  left_join(
+    species_admin_1perc %>%
+      select(name_en, expected_rich, completeness_all) %>%
+      rename(expected_rich_1 = expected_rich,
+            completeness_all_1 = completeness_all), by = "name_en") %>% 
+  left_join(
+    species_admin_05perc %>%
+      select(name_en, expected_rich, completeness_all) %>%
+      rename(expected_rich_05 = expected_rich,
+             completeness_all_05 = completeness_all), by = "name_en"
+  ) %>%
+  left_join(
+    species_admin_01perc %>%
+      select(name_en, expected_rich, completeness_all) %>%
+      rename(expected_rich_01 = expected_rich,
+             completeness_all_01 = completeness_all), by = "name_en"
+  ) 
+
+save(
+  specieslist_count,         # data.frame com as contagens por threshold
+  occ_nested,                # lista de todas ocorrencias 
+  species_admin_intersect,   # lista de todas as ocorrencias dos poligonos 
+  species_admin_all,         # lista de especies por und adm nest()
+  species_admin_occ_polygons,# lista de especies que tem occ&poligono nest()
+  keys_with_occ,             # chaves das especies que tem occ baixadas
+  species_admin_1perc,       # lista de especies com cobertura > 1% na und adm.
+  species_admin_05perc,      # lista de especies com cobertura > 0.5% na und adm
+  species_admin_01perc,      # lista de especies com cobertura > 0.1% na und adm
+  file = file.path(
+    local_directory,
+    "00_raw_data",
+    "tetrapods_list_sensitivity.RData"
+  )
+)

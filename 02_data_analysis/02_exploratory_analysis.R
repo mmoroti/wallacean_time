@@ -177,7 +177,7 @@ load(
 # Preparing data ----
 # All terrestrial tetrapods
 richness_all <- richness_completude_amphibia %>%
-  left_join(richness_completude_amphibia, by = "name_en") %>%
+  left_join(richness_completude_reptilia, by = "name_en") %>%
   left_join(richness_completude_aves, by = "name_en") %>%
   left_join(richness_completude_mammalia, by = "name_en") %>%
   mutate(
@@ -194,19 +194,22 @@ df_all <- left_join(
   richness_all,
   data_sociopolitic,
   by = "name_en") %>%
-  select(polygons_richness, percent_wallace_prop, democracy_index_mean,
+  left_join(mobilization_effort, by = "name_en") %>%
+  select(percent_wallace_prop, polygons_richness, democracy_index_mean,
          academic_freedom_mean, gdp_mean, pop, GlobalNorth, name_en, area_km2,
-         colonial_origin, n_institutions) %>%
+         colonial_origin, n_institutions, mobilization_effort) %>%
+  remove_missing() %>%
   mutate(
     n_institutions_scale = scale(n_institutions),
     polygons_richness_scaled = scale(log(as.numeric(polygons_richness))),
     democracy_index_scaled = scale(log(as.numeric(democracy_index_mean))),
     academic_freedom_scaled = scale(as.numeric(academic_freedom_mean)),
     dens_pop_scaled = scale(log(as.numeric(pop/area_km2))),
-    mean_grp_scaled = scale(log(as.numeric(gdp_mean)))
-  ) %>% 
-  remove_missing()
+    mean_grp_scaled = scale(log(as.numeric(gdp_mean))),
+    mobilization_effort_scaled = scale(log(as.numeric(mobilization_effort)))
+  ) 
 
+glimpse(df_all)
 # Amphibia
 richness_amphibia <- richness_completude_amphibia %>%
   select("name_en", "polygons_richness", "observed_richness") %>%
@@ -308,11 +311,16 @@ df_mammalia <- left_join(
   remove_missing()
 
 # Plot maps ----
+drive <- file.path("G:", "Meu Drive", "Artigos", "wallace_time")
+
 plot <- plot_bivariate_map(geographic_shape_data,
                    richness_all,
                    title = "Terrestrial vertebrates"); plot
 
-ggsave(filename="Figures/Figure1_TerrestrialVertebrates.pdf",
+ggsave(filename= 
+         file.path(drive,
+                   "Figures",
+                   "Figure2_TerrestrialVertebrates.pdf"),
        plot= plot,
        width=12,
        height=8,
@@ -439,7 +447,7 @@ new_names <- tibble::tribble(
   "democracy_index_scaled", "Democracy index",
   "colonial_origin", "Colonial origin",
   "n_institutions_scale", "N. of research \ninstitutions"
-)
+) #  "mobilization_effort_scaled", "Mobilization effort"
 map <- setNames(new_names$term_novo, new_names$term)
 
 coef_list <- tidy(modelo_beta) %>%
@@ -460,7 +468,7 @@ ggplot(coef_list, aes(x = estimate, y = reorder(term, estimate))) +
     title = "",
     subtitle = ""
   ) +
-  coord_cartesian(xlim = c(-0.5, 0.5)) +
+  coord_cartesian(xlim = c(-1, 1)) +
   # Alterações para aumentar e colocar em negrito as variáveis
   theme(
     plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
@@ -545,8 +553,13 @@ ggplot(coef_all, aes(x = estimate, y = term, color = modelo)) +
   )
 
 # Compare North vs South Completeness (Boxplot) ----
-wilcox.test(percent_wallace_prop ~ GlobalNorth, data = df_all)
-# Criar o gráfico
+wtest <- wilcox.test(percent_wallace_prop ~ GlobalNorth, data = df_all)
+p_label <- paste0(
+  "Wilcoxon test\n",
+  "W = ", round(wtest$statistic, 1),
+  "\np = ", format.pval(wtest$p.value, digits = 2, eps = .001)
+)
+
 ggplot(df_all, aes(x = factor(GlobalNorth),
                    y = percent_wallace_prop)) +
   # Fundo branco primeiro
@@ -605,7 +618,7 @@ ggplot(df_all, aes(x = factor(GlobalNorth),
     axis.line = element_line(color = "black", linewidth = 0.3),
     axis.text = element_text(color = "black", size = 10),
     axis.text.x = element_text(
-      face = "bold",          # Negrito nos rótulos
+      #face = "bold",          # Negrito nos rótulos
       size = 15,
       margin = margin(t = 5)  # Espaço acima
     ),
@@ -618,4 +631,15 @@ ggplot(df_all, aes(x = factor(GlobalNorth),
     legend.position = "none",  # Remove completamente a legenda
     # Margens
     plot.margin = margin(15, 15, 15, 15)  # Espaço interno da borda
-  ) 
+  ) +
+  annotate(
+    "text",
+    x = 2.5,                     # lado direito (Global North)
+    y = 0.42,
+    label = p_label,
+    hjust = 1.05,              # encosta no canto
+    vjust = 1.2,               # encosta no topo
+    size = 4.5,
+    fontface = "italic"
+  )
+

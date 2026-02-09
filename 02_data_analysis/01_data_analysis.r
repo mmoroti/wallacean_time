@@ -274,8 +274,9 @@ plot_cumulative_events <- function(fits,
 
 # Load data ----
 load(file = file.path(
+  local_directory,
   "02_data_analysis",
-  "data_wallacean_time_global.RData")
+  "data_wallacean_time.RData")
 )
 
 load(file = file.path(
@@ -283,11 +284,19 @@ load(file = file.path(
   "adm_unit_global.RData")
 )
 
+# shapefile to crop adm unit
+load(file.path(
+  local_directory,
+  "00_raw_data",
+  "geographic_shape_data.RData"))
+
 # Preparing data ----
 df_wallacean_100 <- df_wallacean_100 %>%
   mutate(status = event + WallaceCompletude) %>%
   left_join(
-    adm_unit_shape, by = "name_en"
+    geographic_shape_data %>%
+      select(GlobalNorth, Georegion, name_en) %>%
+      st_drop_geometry(), by = "name_en"
   )
 
 df_amphibia_100 <- df_wallacean_100 %>%
@@ -715,24 +724,33 @@ save(
 
 # Results plots ----
 ## Cumulative hazard plots ----
-plot(tetrapods_terminal_100,
+tetrapods_100 <- recurrentMarginal(Event(t.start.year, t.stop.year, status==1)~
+                           strata(GlobalNorth)+
+                           cluster(speciesKey),
+                         data=df_wallacean_100,
+                         cause=1,
+                         death.code=2)
+
+plot(tetrapods_100,
      se = TRUE,
      legend = FALSE,
-     ylim = c(0, 0.35),
-     xlim = c(1850, 2025),
-     xlab = "",
+     ylim = c(0, 30),
+     xlim = c(1750, 2025),
+     xlab = "Year",
+     ylab = "Marginal mean",
      cex.main = 1.5,
-     col = c("#c40e3e", "#2DA5E8")) 
+     col = c("#c40e3e", "#2DA5E8"
+)) 
 # insert lines every 25 years
-axis(1, at = seq(1850, 2025, by = 25), las = 1)  
-abline(v = seq(1850, 2025, by = 25), 
+axis(1, at = seq(1750, 2025, by = 25), las = 1)  
+abline(v = seq(1750, 2025, by = 25), 
        col = "gray70",  # cor cinza clara
        lty = 3,         # linha tracejada
        lwd = 0.5)       # linha bem fina
 
-# Does the difference persist?
+# TODO: Does the difference persist?
 base <- mets:::basecumhaz(
-  tetrapods_terminal_100,
+  tetrapods_100,
   joint = 1,
   robust = FALSE,
   cumhaz = "cumhaz",
