@@ -364,15 +364,122 @@ save(
 )
 
 # Agregando temporalmente os dados ----
-# Obtain centroid each adm unit
-centroid_undadm <- geographic_shape_data %>% 
-  mutate(geometry = st_centroid(geometry)) %>%  # substitui geometria pelo centróide
-  mutate(
-    longitude = st_coordinates(geometry)[,1],
-    latitude  = st_coordinates(geometry)[,2]
-  ) %>%
-  mutate(
-    name_en = stri_trans_general(tolower(name_en), "Latin-ASCII")) %>%
-  st_drop_geometry() %>%
-  select(-adm0_a3) %>%
-  distinct(name_en, .keep_all = TRUE)
+occ_year <- data_wallacean_unnested %>%
+  filter(year > 1500) %>% 
+  # spp so pode ser encontrada depois de ja ter sido descrita
+  mutate(year_modified = if_else(year < YearOfDescription, YearOfDescription, year)) %>%
+  ungroup() %>%
+  distinct(name_en, year_modified) %>%
+  arrange(name_en, year_modified) %>%
+  rename(year = year_modified) %>%
+  left_join(geographic_shape_data %>%
+              select(ISO3, name_en) %>%
+              st_drop_geometry(), by = "name_en")
+
+View(occ_year)  
+
+region_data <- dose_data %>%
+  # removendo dados de moscow desagregados
+  filter(!region %in% c("Moscow city", "Moscow region")) %>%
+  # voltando dados de moscow agregados
+  bind_rows(df_moscow) %>%
+  filter(country %in% c("Brazil", "Russia", "China", 
+                        "Australia", "USA", "Canada")) %>%
+  distinct(region, year, .keep_all = TRUE) %>% 
+  mutate(region_tolower = tolower(region)) %>%
+  mutate(region_tolower = str_replace_all(region_tolower, map_names))
+
+View(region_data)
+
+teste <- left_join(occ_year %>%
+  mutate(region_tolower = tolower(name_en)) %>%
+    filter(region_tolower %in% unique(region_data$region_tolower)),
+  region_data, by = c("region_tolower", "year")) %>%
+  filter(year > 1950)
+
+maddinson_data_edit <- maddinson_data %>%
+  filter(!countrycode %in% c("BRA", "RUS", "CHN", "AUS", "CAN", "USA")) %>%
+  mutate(pop = pop * 1000)
+
+maddinson_data_edit |>
+  filter(!is.na(gdp_2011)) |>
+  group_by(country) |>
+  summarise(
+    first_year = min(year),
+    last_year  = max(year),
+    n_points   = n()
+  ) %>% View()
+
+first_year <- occ_year |>
+  mutate(region_tolower = tolower(name_en)) %>%
+  filter(!region_tolower %in% unique(region_data$region_tolower)) %>%
+  group_by(name_en) |>
+  summarise(
+    first_year = min(year),
+    last_year  = max(year),
+    n_points   = n()
+  )
+
+
+maddison_filtered <- maddinson_data_edit %>%
+  left_join(first_year, by = c("country" = "name_en")) %>%
+  filter(year >= first_year) %>%
+  mutate(log_gdp = log(gdp_2011)) %>%
+  select(-pop, -first_year, -last_year, -n_points)
+
+df_interp <- maddison_filtered %>%
+  group_by(country) %>%
+  group_modify(~{
+    
+    # cria sequência completa de anos para o país
+    years_full <- tibble(year = seq(min(.x$year), max(.x$year), by = 1))
+    
+    # junta com os dados originais
+    df_full <- years_full %>%
+      left_join(.x, by = "year") %>%
+      arrange(year)
+    
+    # interpolação log-linear
+    df_full %>%
+      mutate(
+        log_gdp_interp = approx(
+          x = year[!is.na(log_gdp)],
+          y = log_gdp[!is.na(log_gdp)],
+          xout = year
+        )$y,
+        gdp_pc_interp = exp(log_gdp_interp)
+      )
+  }) %>%
+  ungroup()
+
+teste <- left_join(
+  occ_year %>%
+    filter(!ISO3 %in% c("BRA", "RUS", "CHN", "AUS", "CAN", "USA")),
+  df_interp, by = c("name_en" = "country", "year")
+) 
+
+visdat::vis_miss(teste)
+
+View(teste)
+
+# Plot
+ggplot(df_interp %>% filter(country == "Algeria"), aes(x = year)) +
+  geom_point(aes(y = log_gdp), alpha = 0.6, color = "blue") + # pontos observados
+  # Intervalo da Primeira Guerra
+  geom_rect(aes(xmin = 1914, xmax = 1918, ymin = -Inf, ymax = Inf),
+            fill = "grey70", alpha = 0.3, inherit.aes = FALSE) +
+  
+  # Intervalo da Segunda Guerra
+  geom_rect(aes(xmin = 1939, xmax = 1945, ymin = -Inf, ymax = Inf),
+            fill = "grey50", alpha = 0.3, inherit.aes = FALSE) +
+  geom_line(aes(y = log_gdp_interp), color = "red", linewidth = 0.8) + # interpolação
+  theme_minimal() +
+  labs(
+    title = "Interpolação log-linear do PIB",
+    x = "Ano",
+    y = "log(PIB)",
+    color = "Legenda"
+  ) 
+
+View(df_interp)
+
