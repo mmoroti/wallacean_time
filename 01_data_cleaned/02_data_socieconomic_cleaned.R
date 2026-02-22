@@ -10,51 +10,69 @@ local_directory <- file.path("F:",
                              "wallacean_time")
 
 # preencher os anos intermediarios com base na variacao entre decadas
-fill_population_data <- function(df) {
-  # Ordena por UF e ano
-  df <- df %>%
-    arrange(UF, Year)
+adjust_country_years <- function(df_country){
   
-  # Criação de um novo dataframe para os anos preenchidos
-  df_filled <- df %>%
-    group_by(UF) %>%
-    # Para cada par de anos consecutivos com dados, cria os anos intermediários
-    do({
-      # Extrair o subdataframe para um grupo de UF específico
-      df_group <- .
-      
-      # Encontrar os pares de anos onde temos valores conhecidos
-      completed_years <- df_group %>% filter(!is.na(`pop_density(person/km2)`))
-      
-      # Lista para armazenar os dados preenchidos
-      filled_rows <- list()
-      
-      # Preencher para cada par de anos consecutivos com valores conhecidos
-      for(i in 1:(nrow(completed_years) - 1)) {
-        year_start <- completed_years$Year[i]
-        year_end <- completed_years$Year[i + 1]
-        pop_start <- completed_years$`pop_density(person/km2)`[i]
-        pop_end <- completed_years$`pop_density(person/km2)`[i + 1]
-        
-        # Calcular a variação de densidade por ano
-        diff_per_year <- (pop_end - pop_start) / (year_end - year_start)
-        
-        # Criar os anos intermediários
-        for(year in (year_start + 1):(year_end - 1)) {
-          pop_value <- pop_start + (year - year_start) * diff_per_year
-          filled_rows <- append(filled_rows, list(tibble(UF = completed_years$UF[i], 
-                                                          Year = year, 
-                                                          `pop_density(person/km2)` = pop_value)))
-        }
-      }
-      
-      # Retornar as linhas preenchidas, além das linhas originais
-      bind_rows(df_group, bind_rows(filled_rows)) %>%
-        arrange(Year)  # Ordenar as linhas por ano
-    })
+  first_year <- min(df_country$year, na.rm = TRUE)
   
-  # Retornar o dataframe preenchido
-  return(df_filled)
+  # ---------- PARTE 1: ajustar anos < 1820 ----------
+  if(first_year < 1820 & 1820 %in% df_country$year){
+    
+    ref_1820 <- df_country %>% 
+      filter(year == 1820)
+    
+    df_country <- df_country %>%
+      mutate(
+        log_gdp_final = if_else(
+          year < 1820,
+          ref_1820$log_gdp_final,
+          log_gdp_final
+        ),
+        gdp_pc_final = if_else(
+          year < 1820,
+          ref_1820$gdp_pc_final,
+          gdp_pc_final
+        )
+      )
+  }
+  
+  # ---------- PARTE 2: criar 2023–2025 ----------
+  if(2022 %in% df_country$year){
+    
+    ref_2022 <- df_country %>% 
+      filter(year == 2022)
+    
+    future_years <- setdiff(2023:2025, df_country$year)
+    
+    if(length(future_years) > 0){
+      
+      future_rows <- tibble(
+        year = future_years,
+        country = ref_2022$country,
+        countrycode = ref_2022$countrycode,
+        name_en = ref_2022$name_en,
+        macroregion = ref_2022$macroregion,
+        log_gdp_final = ref_2022$log_gdp_final,
+        gdp_pc_final = ref_2022$gdp_pc_final,
+        gdp_source = ref_2022$gdp_source,
+        gdp_uncertainty = NA_character_
+      )
+      
+      df_country <- bind_rows(df_country, future_rows)
+    }
+  }
+  
+  # ---------- PARTE 3: marcar edge_imputed ----------
+  df_country <- df_country %>%
+    mutate(
+      gdp_uncertainty = case_when(
+        year < 1820 ~ "edge_imputed",
+        year > 2022 ~ "edge_imputed",
+        TRUE ~ gdp_uncertainty
+      )
+    ) %>%
+    arrange(year)
+  
+  return(df_country)
 }
 
 # LOAD DATA ----
@@ -83,6 +101,7 @@ load(
 rm(list = setdiff(ls(), c("local_directory",
                           "dose_data",
                           "maddinson_data",
+                          "maddison_macroregion_data", 
                           "politic_data",
                           "qog_data",
                           "institutions",
@@ -363,7 +382,7 @@ save(
     "data_socieconomic_agregatte.RData")
 )
 
-# Agregando temporalmente os dados ----
+# AGGREGATING THE DATA OVER TIME ----
 occ_year <- data_wallacean_unnested %>%
   filter(year > 1500) %>% 
   # spp so pode ser encontrada depois de ja ter sido descrita
@@ -376,8 +395,310 @@ occ_year <- data_wallacean_unnested %>%
               select(ISO3, name_en) %>%
               st_drop_geometry(), by = "name_en")
 
-View(occ_year)  
+bigsix_occ <- occ_year %>%
+  filter(ISO3 %in% c("BRA", "RUS", "CHN", "AUS", "CAN", "USA")) %>%
+  select(-name_en) %>%
+  distinct() %>%
+  mutate(
+    name_en = recode(
+      ISO3,
+      "BRA" = "Brazil",
+      "RUS" = "Russian Federation",
+      "CHN" = "China",
+      "AUS" = "Australia",
+      "CAN" = "Canada",
+      "USA" = "United States"
+    )
+  ) %>%
+  select(-ISO3)
 
+first_year <- occ_year %>%
+  filter(!ISO3 %in% c("BRA", "RUS", "CHN", "AUS", "CAN", "USA")) %>%
+  bind_rows(bigsix_occ) %>%
+  group_by(name_en) %>%
+  summarise(
+    ISO3       = first(ISO3),
+    first_year = min(year),
+    last_year  = max(year),
+    n_points   = n(),
+  ) %>%
+  mutate(
+    ISO3 = case_when(
+      name_en == "Australia"           ~ "AUS",
+      name_en == "Brazil"              ~ "BRA",
+      name_en == "Canada"              ~ "CAN",
+      name_en == "China"               ~ "CHN",
+      name_en == "Russian Federation"  ~ "RUS",
+      name_en == "United States"       ~ "USA",
+      TRUE ~ ISO3   # mantem o valor original se não estiver na lista
+    )
+  )
+
+maddison_filtered <- maddinson_data %>%
+  mutate(pop = pop * 1000) %>%
+  left_join(first_year, by = c("countrycode" = "ISO3")) %>%
+  filter(year >= first_year) %>%
+  mutate(log_gdp = log(gdp_2011)) %>%
+  select(-pop, -first_year, -last_year, -n_points)
+
+df_interp <- maddison_filtered %>%
+  # Agrupa por país para interpolar cada série separadamente
+  group_by(country) %>%
+  group_modify(~{
+    
+    # Cria uma sequência completa de anos entre o mínimo e o máximo disponível
+    years_full <- tibble(
+      year = seq(min(.x$year), max(.x$year), by = 1)
+    )
+    
+    # Junta a sequência completa com os dados originais do país
+    # Isso garante que anos faltantes apareçam como NA
+    df_full <- years_full %>%
+      left_join(.x, by = "year") %>%
+      arrange(year)
+    
+    # Realiza interpolação log-linear:
+    # approx() usa apenas os anos onde log_gdp não é NA
+    interp_vals <- approx(
+      x = df_full$year[!is.na(df_full$log_gdp)],  # anos observados
+      y = df_full$log_gdp[!is.na(df_full$log_gdp)],  # valores observados
+      xout = df_full$year  # anos completos
+    )$y
+    
+    # Adiciona colunas interpoladas e indicador de interpolação
+    df_full %>%
+      mutate(
+        # log do PIB interpolado
+        log_gdp_interp = interp_vals,
+        
+        # PIB per capita interpolado (voltando do log)
+        gdp_pc_interp = exp(log_gdp_interp),
+        
+        # Indicador: 1 = interpolado, 0 = observado
+        # Baseado no valor original (antes da interpolação)
+        is_interpolated = if_else(is.na(log_gdp), 1, 0)
+      )
+  }) %>%
+  # Remove agrupamento
+  ungroup() #%>%
+
+# Plot
+ggplot(df_interp %>% filter(country == "Russian Federation"), aes(x = year)) +
+  geom_point(aes(y = log_gdp), alpha = 0.6, color = "blue") + # pontos observados
+  # Intervalo da Primeira Guerra
+  geom_rect(aes(xmin = 1914, xmax = 1918, ymin = -Inf, ymax = Inf),
+            fill = "grey70", alpha = 0.1, inherit.aes = FALSE) +
+  # Intervalo da Segunda Guerra
+  geom_rect(aes(xmin = 1939, xmax = 1945, ymin = -Inf, ymax = Inf),
+            fill = "grey50", alpha = 0.1, inherit.aes = FALSE) +
+  geom_line(aes(y = log_gdp_interp), color = "red", linewidth = 0.8) + # interpolação
+  theme_minimal() +
+  labs(
+    title = "Log-linear interpolation of GDP per capta",
+    x = "Year",
+    y = "log(GDP per capta)",
+    color = "Legenda"
+  ) 
+
+# Macroregioes
+head(maddison_macroregion_data)
+
+macro_long <- maddison_macroregion_data |>
+  pivot_longer(-year,
+               names_to = "macroregion",
+               values_to = "gdp_region")
+
+macro_interp <- macro_long %>% # Agrupa por país para interpolar cada série separadamente
+  mutate(log_gdp = log(gdp_region)) %>%
+  group_by(macroregion) %>%
+  group_modify(~{
+    # Cria uma sequência completa de anos entre o mínimo e o máximo disponível
+    years_full <- tibble(
+      year = seq(min(.x$year), max(.x$year), by = 1)
+    )
+    # Junta a sequência completa com os dados originais do país
+    # Isso garante que anos faltantes apareçam como NA
+    df_full <- years_full %>%
+      left_join(.x, by = "year") %>%
+      arrange(year)
+    # Realiza interpolação log-linear:
+    # approx() usa apenas os anos onde log_gdp não é NA
+    interp_vals <- approx(
+      x = df_full$year[!is.na(df_full$log_gdp)],  # anos observados
+      y = df_full$log_gdp[!is.na(df_full$log_gdp)],  # valores observados
+      xout = df_full$year  # anos completos
+    )$y
+    # Adiciona colunas interpoladas e indicador de interpolação
+    df_full %>%
+      mutate(
+        # log do PIB interpolado
+        log_gdp_interp_macro = interp_vals,
+        
+        # PIB per capita interpolado (voltando do log)
+        gdp_pc_interp_macro = exp(log_gdp_interp_macro),
+        
+        # Indicador: 1 = interpolado, 0 = observado
+        # Baseado no valor original (antes da interpolação)
+        is_interpolated_macro = if_else(is.na(log_gdp), 1, 0),
+        is_macroregion = 1,
+      )
+  }) %>%
+  # Remove agrupamento
+  ungroup() %>%
+  select(-gdp_region, -log_gdp)
+
+# Unindo os dados em ambas as escalas
+df_economy <- left_join(df_interp, macro_interp,
+                        by = c("macroregion", "year")) 
+
+# Paises da uniao sovietica que faziam parte do que era a Russia entre
+# a data de 1950 ate eles comecarem a ter os proprios dados. Entao vamos
+# lidar com eles separadamente
+ex_ussr <- c(
+  "Armenia", "Azerbaijan", "Belarus", "Georgia", 
+  "Kazakhstan", "Kyrgyzstan", "Latvia", "Lithuania", 
+  "Republic of Moldova", "Tajikistan", "Turkmenistan", 
+  "Ukraine", "Uzbekistan"
+)
+
+# Vamos colocar os dados macroeconomicos das regioes ate 1950 para
+# tornar as regioes todas comparadas. A maioria dos dados de PIB começam
+# em 1950, como vamos construir ranks anuais, precisamos que as medidas
+# de cada ano sejam comparaveis. Entao a comparacao justa seria
+# regiao vs regiao ate 1950
+# pais vs pais a partir de 1950
+df_rest <- df_economy %>% filter(!country %in% ex_ussr)
+
+df_rest_economy <- df_rest %>%
+  mutate(
+    # definir regime temporal primeiro
+    economic_regime = if_else(year <= 1949, "macro_period", "national_period"),
+    
+    # definir fonte do dado respeitando o regime
+    gdp_source = case_when(
+      economic_regime == "macro_period"   ~ "macroregion",
+      economic_regime == "national_period" & !is.na(log_gdp_interp) ~ "country",
+      economic_regime == "national_period" & is.na(log_gdp_interp)  ~ "macroregion_fallback",
+      TRUE ~ NA_character_
+    ),
+    
+    # série final respeitando o regime
+    log_gdp_final = case_when(
+      economic_regime == "macro_period"   ~ log_gdp_interp_macro,
+      economic_regime == "national_period" & !is.na(log_gdp_interp) ~ log_gdp_interp,
+      TRUE ~ log_gdp_interp_macro
+    ),
+    
+    gdp_pc_final = case_when(
+      economic_regime == "macro_period"   ~ gdp_pc_interp_macro,
+      economic_regime == "national_period" & !is.na(gdp_pc_interp) ~ gdp_pc_interp,
+      TRUE ~ gdp_pc_interp_macro
+    ),
+    
+    # incerteza agora fica interpretável historicamente
+    gdp_uncertainty = case_when(
+      economic_regime == "macro_period" ~ "regional_imputed",
+      gdp_source == "country" & is_interpolated == FALSE ~ "observed",
+      gdp_source == "country" & is_interpolated == TRUE  ~ "interpolated",
+      gdp_source == "macroregion_fallback"               ~ "missing_country_estimated",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  select(-gdp_2011, -log_gdp, -log_gdp_interp,
+         -is_interpolated_macro, -gdp_pc_interp, -is_interpolated,
+         -log_gdp_interp_macro, -gdp_pc_interp_macro, 
+         -is_macroregion, -economic_regime)
+
+# Aqui vamos preencher para paises que pertenciam a ex-uniao sovietica
+# dados da federacao russa para eles ate terem seus proprios indicadores
+first_year_df <- maddinson_data_edit %>%
+  filter(!is.na(gdp_2011)) |>
+  group_by(country) |>
+  summarise(
+    first_year = min(year),
+    last_year  = max(year),
+    n_points   = n()
+  ) %>% 
+  filter(first_year > 1950) %>%
+  select(country, first_year) %>%
+  filter(country %in% ex_ussr)
+
+# Pega só os anos e PIB da Rússia
+russia_gdp <- df_economy %>%
+  filter(country == "Russian Federation") %>%
+  select(year, log_gdp_interp, gdp_pc_interp)
+# Para os países ex-URSS
+df_ussr <- df_economy %>% 
+  filter(country %in% ex_ussr) %>%
+  left_join(first_year_df, by = "country") %>%
+  
+  # junta os dados da Rússia
+  left_join(russia_gdp, by = "year", suffix = c("", "_russia")) %>%
+  
+  mutate(
+    sovereign_economy = case_when(
+      year <= 1949 ~ "macroregion",
+      year >= 1950 & year < first_year ~ "Russia",
+      TRUE ~ country
+    ),
+    
+    log_gdp_final = case_when(
+      sovereign_economy == "macroregion" ~ log_gdp_interp_macro,
+      sovereign_economy == "Russia" ~ log_gdp_interp_russia,
+      TRUE ~ log_gdp_interp
+    ),
+    
+    gdp_pc_final = case_when(
+      sovereign_economy == "macroregion" ~ gdp_pc_interp_macro,
+      sovereign_economy == "Russia" ~ gdp_pc_interp_russia,
+      TRUE ~ gdp_pc_interp
+    ),
+    
+    gdp_source = sovereign_economy,
+    
+    gdp_uncertainty = case_when(
+      sovereign_economy == "macroregion" ~ "regional_imputed",
+      sovereign_economy == "Russia" ~ "sovereign_imputed",
+      sovereign_economy == country & is_interpolated == 1 ~ "interpolated",  # respeita interpolação original
+      sovereign_economy == country & is_interpolated == 0 ~ "observed"
+    )
+  ) %>%
+  select(-first_year, -log_gdp_interp_russia, -gdp_pc_interp_russia,
+         -gdp_2011, -log_gdp, -log_gdp_interp,
+         -gdp_pc_interp, -log_gdp_interp_macro, -gdp_pc_interp_macro,
+         -sovereign_economy, -is_interpolated, -is_interpolated_macro, 
+         -is_macroregion)
+
+names(df_ussr)
+names(df_rest_economy)
+
+df_economy_all <- bind_rows(
+  df_rest_economy,
+  df_ussr
+) %>%
+  group_by(country) %>%
+  group_modify(~ adjust_country_years(.x)) %>%
+  ungroup() %>%
+  arrange(country, year)
+
+View(df_economy_all)
+
+# edge_imputed: anos que nao tem dados e usamos os ultimos dados presentes 1820 < & 2022 >
+# interpolated sao dados que foram interpolados entre anos de dados observados ausentes
+# missing_country_estimated occ aparecia, mas o pais ainda nao tinha dados observados na epoca, usamos dados da regiao
+# observed dados observados no maddison
+# regional_imputed assumimos os dados regionais entre 1820 ate 1950
+# sovereign_imputed pais pertencia a URSS, entao usamos dados da Russia para eles
+
+# Vamos separar o que eh unidade administrativa do que eh paises, pois existem
+# tratamentos diferentes entre eles
+df_economy_bigsix <- df_economy_all %>%
+  filter(countrycode %in% c("BRA", "USA", "RUS", "CHN", "AUS", "CAN"))
+
+df_economy_countries <- df_economy_all %>%
+  filter(!countrycode %in% c("BRA", "USA", "RUS", "CHN", "AUS", "CAN"))
+
+# Region data
 region_data <- dose_data %>%
   # removendo dados de moscow desagregados
   filter(!region %in% c("Moscow city", "Moscow region")) %>%
@@ -387,99 +708,155 @@ region_data <- dose_data %>%
                         "Australia", "USA", "Canada")) %>%
   distinct(region, year, .keep_all = TRUE) %>% 
   mutate(region_tolower = tolower(region)) %>%
-  mutate(region_tolower = str_replace_all(region_tolower, map_names))
-
-View(region_data)
-
-teste <- left_join(occ_year %>%
-  mutate(region_tolower = tolower(name_en)) %>%
-    filter(region_tolower %in% unique(region_data$region_tolower)),
-  region_data, by = c("region_tolower", "year")) %>%
-  filter(year > 1950)
-
-maddinson_data_edit <- maddinson_data %>%
-  filter(!countrycode %in% c("BRA", "RUS", "CHN", "AUS", "CAN", "USA")) %>%
-  mutate(pop = pop * 1000)
-
-maddinson_data_edit |>
-  filter(!is.na(gdp_2011)) |>
-  group_by(country) |>
-  summarise(
-    first_year = min(year),
-    last_year  = max(year),
-    n_points   = n()
-  ) %>% View()
-
-first_year <- occ_year |>
-  mutate(region_tolower = tolower(name_en)) %>%
-  filter(!region_tolower %in% unique(region_data$region_tolower)) %>%
-  group_by(name_en) |>
-  summarise(
-    first_year = min(year),
-    last_year  = max(year),
-    n_points   = n()
+  mutate(region_tolower = str_replace_all(region_tolower, map_names)) %>%
+  mutate(
+    GID_0 = case_when(
+      region == "Moscow" ~ "RUS",
+      TRUE ~ GID_0
+    )
   )
 
+# Ajustes para as und. adm nos paises. 
 
-maddison_filtered <- maddinson_data_edit %>%
-  left_join(first_year, by = c("country" = "name_en")) %>%
-  filter(year >= first_year) %>%
-  mutate(log_gdp = log(gdp_2011)) %>%
-  select(-pop, -first_year, -last_year, -n_points)
+# Brazil
+# Os estados brasileiros passam a ter dados a partir de 1970
+# usar o valor de Goiás de 1970 ate 1984 para Tocantins
+# usar o valor de Mato Grosso de 1970 ate 1974 para Mato Grosso do Sul
+brazil_data <- region_data %>% 
+  filter(GID_0 == "BRA" & year >= 1970)
+# 1. Valores de referência
+goias_ref <- brazil_data %>%
+  filter(region == "Goiás", year >= 1970, year <= 1988) 
+mt_ref <- brazil_data %>%
+  filter(region == "Mato Grosso", year >= 1970, year <= 1974) 
+# 2. Criar linhas artificiais para Tocantins e MS
+tocantins_fill <- goias_ref %>%
+  mutate(region = "Tocantins")
+ms_fill <- mt_ref %>%
+  mutate(region = "Mato Grosso Do Sul")
+# 3. Unir tudo ao dataset original
+brazil_fixed <- brazil_data %>%
+  bind_rows(tocantins_fill, ms_fill) %>%
+  arrange(region, year)
 
-df_interp <- maddison_filtered %>%
-  group_by(country) %>%
+# Canada
+# Antes de 1º de abril de 1999, o que hoje conhecemos como Nunavut não existia 
+# como uma entidade administrativa separada. Ele fazia parte dos 
+# Northwest Territories (Territórios do Noroeste). No DOSE chama 
+# "Northwest Territories Including Nunavut" entao vamos usar os valores dessas
+# series para os estados ate eles terem dados proprios
+canada_edit_data <- region_data %>% 
+  filter(region == "Northwest Territories Including Nunavut" & year > 1983)
+nunavut_ref <- canada_edit_data %>%
+  mutate(region = "Nunavut") 
+northwest_ref <- canada_edit_data %>%
+  mutate(region = "Northwest Territories") 
+# Unir ao dataset original tirando o territorio 'Northwest Territories Including Nunavut'
+canada_fixed <- region_data %>%
+  filter(GID_0 == "CAN" & region != "Northwest Territories Including Nunavut") %>%
+  bind_rows(nunavut_ref, northwest_ref) %>%
+  arrange(region, year)
+
+# China
+# 1988 Hainan foi oficialmente separada de Guangdong e elevada à categoria 
+# de província independente e, simultaneamente
+china_edit_data <- region_data %>% 
+  filter(region == "Guangdong" & year < 1978)
+hainan_ref <- china_edit_data %>%
+  mutate(region = "Hainan") 
+china_fixed <- region_data %>%
+  filter(GID_0 == "CHN") %>%
+  bind_rows(hainan_ref) %>%
+  arrange(region, year)
+
+# Russia
+
+# Unindo os dados para as und adm.
+region_data_edit <- region_data %>%
+  filter(!GID_0 %in% c("BRA", "CAN", "CHN")) %>%
+  bind_rows(brazil_fixed, canada_fixed, china_fixed)
+
+region_data_edit %>%
+  group_by(region) %>%
+  summarise(
+    region       = first(region),
+    GID_0 = first(GID_0),
+    first_year = min(year),
+    last_year  = max(year),
+    n_points   = n(),
+  ) %>%
+  arrange(GID_0, region) %>% View()
+
+region_data_edit %>%
+  mutate(log_gdp = log(gdp_2015)) %>% 
+  # Agrupa por país para interpolar cada série separadamente
+  group_by(region) %>%
   group_modify(~{
     
-    # cria sequência completa de anos para o país
-    years_full <- tibble(year = seq(min(.x$year), max(.x$year), by = 1))
-    
-    # junta com os dados originais
+    # Cria uma sequência completa de anos entre o mínimo e o máximo disponível
+    years_full <- tibble(
+      year = seq(min(.x$year), max(.x$year), by = 1)
+    )
+    # Junta a sequência completa com os dados originais do país
+    # Isso garante que anos faltantes apareçam como NA
     df_full <- years_full %>%
       left_join(.x, by = "year") %>%
       arrange(year)
-    
-    # interpolação log-linear
+    # Realiza interpolação log-linear:
+    # approx() usa apenas os anos onde log_gdp não é NA
+    interp_vals <- approx(
+      x = df_full$year[!is.na(df_full$log_gdp)],  # anos observados
+      y = df_full$log_gdp[!is.na(df_full$log_gdp)],  # valores observados
+      xout = df_full$year  # anos completos
+    )$y
+    # Adiciona colunas interpoladas e indicador de interpolação
     df_full %>%
       mutate(
-        log_gdp_interp = approx(
-          x = year[!is.na(log_gdp)],
-          y = log_gdp[!is.na(log_gdp)],
-          xout = year
-        )$y,
-        gdp_pc_interp = exp(log_gdp_interp)
+        # log do PIB interpolado
+        log_gdp_interp = interp_vals,
+        # PIB per capita interpolado (voltando do log)
+        gdp_pc_interp = exp(log_gdp_interp),
+        # Indicador: 1 = interpolado, 0 = observado
+        # Baseado no valor original (antes da interpolação)
+        is_interpolated = if_else(is.na(log_gdp), 1, 0)
       )
   }) %>%
-  ungroup()
+  # Remove agrupamento
+  ungroup() %>%
+  View()
 
-teste <- left_join(
-  occ_year %>%
-    filter(!ISO3 %in% c("BRA", "RUS", "CHN", "AUS", "CAN", "USA")),
-  df_interp, by = c("name_en" = "country", "year")
-) 
+View(df_economy_bigsix)
+
+# Join with occ data
+teste <- left_join(occ_year %>%
+                     filter(!ISO3 %in% c("BRA", "USA", "RUS", "CHN", "AUS", "CAN")),
+                   df_economy_all, by = c("name_en" = "country", "year")) 
 
 visdat::vis_miss(teste)
+table(teste$gdp_uncertainty)
 
-View(teste)
+missing_country <- setdiff(
+  unique(occ_year$ISO3),
+  unique(df_economy_all$countrycode))
 
-# Plot
-ggplot(df_interp %>% filter(country == "Algeria"), aes(x = year)) +
-  geom_point(aes(y = log_gdp), alpha = 0.6, color = "blue") + # pontos observados
-  # Intervalo da Primeira Guerra
-  geom_rect(aes(xmin = 1914, xmax = 1918, ymin = -Inf, ymax = Inf),
-            fill = "grey70", alpha = 0.3, inherit.aes = FALSE) +
-  
-  # Intervalo da Segunda Guerra
-  geom_rect(aes(xmin = 1939, xmax = 1945, ymin = -Inf, ymax = Inf),
-            fill = "grey50", alpha = 0.3, inherit.aes = FALSE) +
-  geom_line(aes(y = log_gdp_interp), color = "red", linewidth = 0.8) + # interpolação
-  theme_minimal() +
-  labs(
-    title = "Interpolação log-linear do PIB",
-    x = "Ano",
-    y = "log(PIB)",
-    color = "Legenda"
-  ) 
+name_en_sem_dados <- occ_year %>%
+  filter(ISO3 %in% missing_country) %>%
+  distinct(name_en) %>%
+  pull()
 
-View(df_interp)
+intersect(unique(df_wallacean_100$name_en), name_en_sem_dados)
+
+# Missing data check
+df_economy_countries # restante dos paises fora dos bigsix
+df_economy_bigsix # paises do bigsix
+
+visdat::vis_miss(df_economy_all)
+
+View(df_economy)
+
+teste <- left_join(occ_year %>%
+                     mutate(region_tolower = tolower(name_en)) %>%
+                     filter(region_tolower %in% unique(region_data$region_tolower)),
+                   region_data, by = c("region_tolower", "year")) %>%
+  filter(year > 1950)
 
