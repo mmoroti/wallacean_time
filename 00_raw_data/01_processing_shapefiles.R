@@ -477,39 +477,48 @@ polygons_vect <- vect(tetrapods_polygons_key)
 polygons_vect <- terra::project(polygons_vect, "ESRI:54009") # Mollweide
 
 # Inicializar lista para resultados
-results_list <- vector("list", length(tif_files))
-# Loop principal: um raster por ano
+results_list <- list()
+# Barra de progresso: total de etapas = número de anos × número de espécies
+total_steps <- length(tif_files) * length(polygons_vect)
+pb <- progress_bar$new(
+  format = "  [:bar] :percent | Ano :year | Espécie :species/:total",
+  total = total_steps, clear = FALSE, width = 60
+)
+
+# Loop por ano
 for(i in seq_along(tif_files)) {
-  
-  cat("Extraindo ano:", years[i], "\n")
   
   r <- rast(tif_files[i])
   
-  # Extração ponderada por área, para todas as espécies de uma vez
-  ext <- terra::extract(
-    r,
-    polygons_vect,
-    fun = function(x, ...) {
-      c(
-        mean = mean(x, na.rm = TRUE),
-        median = median(x, na.rm = TRUE),
-        q90 = quantile(x, 0.9, na.rm = TRUE)
-      )
-    }
-  )
-  
-  # Montar tibble por ano
-  results_list[[i]] <- tibble(
-    speciesKey = polygons_vect[[2]],
-    year = years[i],
-    mean = ext[,2],
-    median = ext[,3],
-    q90 = ext[,4]
-  )
+  # Loop por espécie
+  for(j in seq_along(polygons_vect)) {
+    
+    # Extração raster
+    ext <- terra::extract(
+      r,
+      polygons_vect[j],
+      fun = function(x, ...) {
+        c(
+          mean = mean(x, na.rm = TRUE),
+          median = median(x, na.rm = TRUE),
+          q90 = quantile(x, 0.9, na.rm = TRUE)
+        )
+      }
+    )
+    
+    # Guardar resultado
+    results_list[[length(results_list) + 1]] <- tibble(
+      speciesKey = polygons_vect$speciesKey[j],
+      year = years[i],
+      mean = ext[,2],
+      median = ext[,3],
+      q90 = ext[,4]
+    )
+    
+    # Atualizar barra
+    pb$tick(tokens = list(year = years[i], species = j, total = length(polygons_vect)))
+  }
 }
 
-# Combinar todos os anos em um único dataframe longo
+# Combinar todos os resultados
 final_df <- bind_rows(results_list)
-
-# Visualizar
-glimpse(final_df)
