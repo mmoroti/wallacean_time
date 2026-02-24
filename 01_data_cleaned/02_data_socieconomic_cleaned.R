@@ -770,11 +770,27 @@ china_fixed <- region_data %>%
   arrange(region, year)
 
 # Russia
+# a Ingushetia só existe como unidade separada a partir de 1994, e a Chechênia 
+# a partir de 2005, antes disso o PIB das duas era computado junto em 
+# uma única unidade administrativa.
+russia_edit_data <- region_data %>% 
+  filter(region == "Ingushetia" & year < 2005)
+chechen_ref <- russia_edit_data %>%
+  mutate(region = "Chechen") 
+russia_fixed <- region_data %>%
+  filter(GID_0 == "RUS") %>%
+  bind_rows(chechen_ref) %>%
+  arrange(region, year)
+
+# Australia comeca a ter dados a partir de 1970 para PIB
+australia_fixed <- region_data %>%
+  filter(GID_0 == "AUS" & year > 1953)
 
 # Unindo os dados para as und adm.
+# AUS e EUA estao todos partindo do mesmo ano, nao precisam de ajustes
 region_data_edit <- region_data %>%
-  filter(!GID_0 %in% c("BRA", "CAN", "CHN")) %>%
-  bind_rows(brazil_fixed, canada_fixed, china_fixed)
+  filter(!GID_0 %in% c("BRA", "CAN", "CHN", "RUS", "AUS")) %>%
+  bind_rows(brazil_fixed, canada_fixed, china_fixed, russia_fixed, australia_fixed)
 
 region_data_edit %>%
   group_by(region) %>%
@@ -785,78 +801,212 @@ region_data_edit %>%
     last_year  = max(year),
     n_points   = n(),
   ) %>%
-  arrange(GID_0, region) %>% View()
+  arrange(GID_0, region) %>% head()
 
-region_data_edit %>%
-  mutate(log_gdp = log(gdp_2015)) %>% 
-  # Agrupa por país para interpolar cada série separadamente
+region_data_all <- region_data_edit %>%
+  mutate(log_gdp = log(gdp_2015)) %>%
   group_by(region) %>%
   group_modify(~{
     
-    # Cria uma sequência completa de anos entre o mínimo e o máximo disponível
-    years_full <- tibble(
-      year = seq(min(.x$year), max(.x$year), by = 1)
-    )
-    # Junta a sequência completa com os dados originais do país
-    # Isso garante que anos faltantes apareçam como NA
+    years_full <- tibble(year = seq(min(.x$year), max(.x$year), 1))
+    
     df_full <- years_full %>%
       left_join(.x, by = "year") %>%
       arrange(year)
-    # Realiza interpolação log-linear:
-    # approx() usa apenas os anos onde log_gdp não é NA
+    
     interp_vals <- approx(
-      x = df_full$year[!is.na(df_full$log_gdp)],  # anos observados
-      y = df_full$log_gdp[!is.na(df_full$log_gdp)],  # valores observados
-      xout = df_full$year  # anos completos
+      x = df_full$year[!is.na(df_full$log_gdp)],
+      y = df_full$log_gdp[!is.na(df_full$log_gdp)],
+      xout = df_full$year
     )$y
-    # Adiciona colunas interpoladas e indicador de interpolação
+    
     df_full %>%
       mutate(
-        # log do PIB interpolado
-        log_gdp_interp = interp_vals,
-        # PIB per capita interpolado (voltando do log)
-        gdp_pc_interp = exp(log_gdp_interp),
-        # Indicador: 1 = interpolado, 0 = observado
-        # Baseado no valor original (antes da interpolação)
-        is_interpolated = if_else(is.na(log_gdp), 1, 0)
+        log_gdp_final = interp_vals,
+        gdp_pc_final = exp(log_gdp_final),
+        is_interpolated = if_else(is.na(log_gdp), 1, 0),
+        # Copia metadados do grupo
+        countrycode    = .x$countrycode[1],
+        GID_0          = .x$GID_0[1],
+        #region_tolower = .x$region_tolower[1]
       )
   }) %>%
-  # Remove agrupamento
+  ungroup() %>% 
+  select(-country, -GID_1, -pop_abs,
+         -gdp_2015, -region_tolower, -log_gdp)
+
+# Unir os dois agora
+states <- region_data_all %>%
+  select(GID_0, region) %>%
+  distinct()
+
+min_year <- region_data_all %>%
+  group_by(GID_0) %>%
+  summarise(
+    min_year = first(year)
+  )
+
+df_economy_bigsix_all <- left_join(
+  states,
+  df_economy_bigsix,
+  by = c("GID_0" = "countrycode")
+) %>%
+  left_join(min_year, by = "GID_0") %>%
+  filter(year < min_year) %>% 
+  select(-min_year)
+
+# preechendo a macroregion
+ref_meta <- df_economy_bigsix_all %>%
+  select(GID_0, macroregion) %>% 
+  distinct()
+
+# Criando a serie do ultimo ano de cada und adm ate 2025
+last_rows_extended <- region_data_all %>%
+  group_by(GID_0) %>%
+  filter(year == max(year)) %>%      # pega a última linha de cada país
   ungroup() %>%
-  View()
+  rowwise() %>%
+  do({
+    last_row <- .
+    tibble(
+      GID_0 = last_row$GID_0,
+      region = last_row$region,
+      year = seq(last_row$year + 1, 2025, 1),
+      gdp_pc_final = last_row$gdp_pc_final,
+      log_gdp_final = last_row$log_gdp_final,
+      gdp_uncertainty = "edge_imputed",
+      gdp_source = "adm_unit"
+    )
+  }) %>%
+  ungroup() %>%
+  left_join(ref_meta, by = "GID_0")
 
-View(df_economy_bigsix)
+df_economy_admunit <- bind_rows(
+  last_rows_extended,
+  df_economy_bigsix_all,
+  region_data_all %>%
+    left_join(ref_meta, by = "GID_0") %>% 
+    mutate(
+      gdp_source = "adm_unit",
+      gdp_uncertainty = case_when(
+        is_interpolated == 1 ~ "interpolated",
+        is_interpolated == 0 ~ "observed",
+        TRUE ~ NA_character_)
+)) %>%
+  arrange(region, year) %>%
+  select(-is_interpolated, -country, -name_en) %>%
+  rename(
+    countrycode = GID_0,
+    name_en = region
+  )
 
-# Join with occ data
-teste <- left_join(occ_year %>%
-                     filter(!ISO3 %in% c("BRA", "USA", "RUS", "CHN", "AUS", "CAN")),
-                   df_economy_all, by = c("name_en" = "country", "year")) 
+names(df_economy_admunit)
+names(df_economy_countries)
 
-visdat::vis_miss(teste)
-table(teste$gdp_uncertainty)
+data_socieconomic_temporal <- bind_rows(
+  df_economy_admunit,
+  df_economy_countries
+) %>% 
+  mutate(
+    country = case_when(
+      countrycode == "AUS" ~ "Australia", 
+      countrycode == "BRA" ~ "Brazil",
+      countrycode == "CAN" ~ "Canada",
+      countrycode == "CHN" ~ "China",
+      countrycode == "RUS" ~ "Russian Federation",
+      countrycode == "USA" ~ "United States",
+      TRUE ~ country))
 
-missing_country <- setdiff(
-  unique(occ_year$ISO3),
-  unique(df_economy_all$countrycode))
+data_socieconomic_temporal %>%
+  group_by(name_en) %>%
+  summarise(
+    countrycode       = first(countrycode),
+    first_year = min(year),
+    last_year  = max(year),
+    n_points   = n(),
+  ) %>% View()
 
-name_en_sem_dados <- occ_year %>%
-  filter(ISO3 %in% missing_country) %>%
-  distinct(name_en) %>%
-  pull()
+# Precisamos harmonizar os nomes das unidades administrativas nas bases
+# de dados socieconomicos e na nossa base de ocorrencia
+setdiff(occ_year$name_en,
+        data_socieconomic_temporal$name_en)
 
-intersect(unique(df_wallacean_100$name_en), name_en_sem_dados)
+setdiff(data_socieconomic_temporal$name_en,
+        occ_year$name_en)
 
-# Missing data check
-df_economy_countries # restante dos paises fora dos bigsix
-df_economy_bigsix # paises do bigsix
+harmonize_names <- c(
+  # Rússia - abreviações / traduções
+  "Adygea" = "Republic of Adygea",
+  "Arhangelsk" = "Arkhangelsk",
+  "Buryatia" = "Republic of Buryatia",
+  "Chechen" = "Chechen Republic",
+  "Chukotka" = "Chukotka Autonomous Okrug",
+  "Chuvash" = "Chuvash Republic",
+  "Dagestan" = "Republic of Dagestan",
+  "Ingushetia" = "Republic of Ingushetia",
+  "Jewish Autonomous Region" = "Jewish",
+  "Kabardino-Balkar" = "Kabardino-Balkaria",
+  "Kalmykia" = "Republic of Kalmykia",
+  "Kamchatka" = "Kamchatka Krai",
+  "Karachay-Cherkess" = "Karachay-Cherkess Republic",
+  "Khabarovsk" = "Khabarovsk Krai",
+  "Khakassia" = "Republic of Khakassia",
+  "Komi" = "Komi Republic",
+  "Krasnodar" = "Krasnodar Krai",
+  "Krasnoyarsk" = "Krasnoyarsk Krai",
+  "Mari El" = "Mari El Republic",
+  "Mordovia" = "Republic of Mordovia",
+  "North Ossetia-Alania" = "Republic of North Ossetia-Alania",
+  "Primorsky" = "Primorsky Krai",
+  "Sakha" = "Sakha Republic",
+  "Stavropol" = "Stavropol Krai",
+  "Tatarstan" = "Republic of Tatarstan",
+  "Transbaikal" = "Zabaykalsky Krai",
+  "Tyva" = "Tuva Republic",
+  "Udmurt" = "Udmurt Republic",
+  
+  # Brasil - capitalização
+  "Mato Grosso Do Sul" = "Mato Grosso do Sul",
+  "Rio De Janeiro" = "Rio de Janeiro",
+  "Rio Grande Do Norte" = "Rio Grande do Norte",
+  "Rio Grande Do Sul" = "Rio Grande do Sul",
+  "Distrito Federal" = "Federal",
+  
+  # Canadá - capitalização
+  "Newfoundland And Labrador" = "Newfoundland and Labrador",
+  
+  # EUA - nome alternativo
+  "District of Columbia" = "Washington D.C."
+)
 
-visdat::vis_miss(df_economy_all)
+data_socieconomic_temporal <- data_socieconomic_temporal %>%
+  mutate(
+    name_en = recode(name_en, !!!harmonize_names)
+  ) %>%
+  group_by(year) %>%
+  mutate(gdp_rank = rank(log_gdp_final) / n(),
+         gdp_percentile = percent_rank(log_gdp_final))
 
-View(df_economy)
+setdiff(occ_year$name_en,
+        data_socieconomic_temporal$name_en)
+setdiff(teste$name_en,
+        data_socieconomic_temporal$name_en)
 
-teste <- left_join(occ_year %>%
-                     mutate(region_tolower = tolower(name_en)) %>%
-                     filter(region_tolower %in% unique(region_data$region_tolower)),
-                   region_data, by = c("region_tolower", "year")) %>%
-  filter(year > 1950)
+data <- left_join(
+  occ_year,
+  data_socieconomic_temporal,
+  by = c("name_en", "year")) 
 
+countries_without_gdp <- data %>%
+  filter(is.na(gdp_pc_final)) %>% 
+  distinct(name_en) 
+
+# Save temporal series
+save(
+  data_socieconomic_temporal,
+  countries_without_gdp,
+  file = file.path(
+    local_directory,
+    "01_data_cleaned",
+    "data_socieconomic_temporal.RData")
+)

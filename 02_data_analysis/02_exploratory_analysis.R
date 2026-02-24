@@ -10,6 +10,15 @@ library(car)
 library(broom)
 library(tidyr)
 
+rm(list=ls()); gc() # clean local enviroment
+
+# Set directory 
+local_directory <- file.path("F:",
+                             "datasets_centrais",
+                             "wallacean_time") 
+drive <- file.path("G:", "Meu Drive", "Artigos",
+                   "wallace_time", "Figures")
+
 ## Function ----
 plot_bivariate_map <- function(geographic_shape_data,
                                richness_completude_amphibia,
@@ -194,10 +203,9 @@ df_all <- left_join(
   richness_all,
   data_sociopolitic,
   by = "name_en") %>%
-  left_join(mobilization_effort, by = "name_en") %>%
   select(percent_wallace_prop, polygons_richness, democracy_index_mean,
          academic_freedom_mean, gdp_mean, pop, GlobalNorth, name_en, area_km2,
-         colonial_origin, n_institutions, mobilization_effort) %>%
+         colonial_origin, n_institutions) %>%
   remove_missing() %>%
   mutate(
     n_institutions_scale = scale(n_institutions),
@@ -205,11 +213,10 @@ df_all <- left_join(
     democracy_index_scaled = scale(log(as.numeric(democracy_index_mean))),
     academic_freedom_scaled = scale(as.numeric(academic_freedom_mean)),
     dens_pop_scaled = scale(log(as.numeric(pop/area_km2))),
-    mean_grp_scaled = scale(log(as.numeric(gdp_mean))),
-    mobilization_effort_scaled = scale(log(as.numeric(mobilization_effort)))
+    mean_grp_scaled = scale(log(as.numeric(gdp_mean)))
+    #mobilization_effort_scaled = scale(log(as.numeric(mobilization_effort)))
   ) 
 
-glimpse(df_all)
 # Amphibia
 richness_amphibia <- richness_completude_amphibia %>%
   select("name_en", "polygons_richness", "observed_richness") %>%
@@ -381,6 +388,9 @@ table(df_reptilia$GlobalNorth)
 table(df_aves$GlobalNorth)
 table(df_mammalia$GlobalNorth)
 
+names(df_all)
+names(species_admin_05perc)
+
 # Ajustar beta regression (percent_wallace já em proporção 0-1)
 modelo_beta <- betareg(percent_wallace_prop ~ 
                          polygons_richness_scaled + 
@@ -437,14 +447,13 @@ modelo_beta_mammalia <- betareg(percent_wallace_prop ~
 summary(modelo_beta_mammalia)
 car::vif(modelo_beta_mammalia)
 
-# Plot dos coeficientes 
-# Criar uma tabela de mapeamento para nomes mais legíveis
+# Forest plot ----
 new_names <- tibble::tribble(
   ~term, ~term_novo,
   "polygons_richness_scaled", "Species richness",
   "dens_pop_scaled", "Population density",
   "mean_grp_scaled", "GDP per capta",
-  "democracy_index_scaled", "Democracy index",
+  "democracy_index_scaled", "Liberal \ndemocracy index",
   "colonial_origin", "Colonial origin",
   "n_institutions_scale", "N. of research \ninstitutions"
 ) #  "mobilization_effort_scaled", "Mobilization effort"
@@ -452,51 +461,45 @@ map <- setNames(new_names$term_novo, new_names$term)
 
 coef_list <- tidy(modelo_beta) %>%
   filter(!term %in% c("(Intercept)", "(phi)", "Log(nu)"))  %>%
-  mutate(term = dplyr::recode(term, !!!map))
+  mutate(term = dplyr::recode(term, !!!map)) %>%
+  mutate(significant = factor(p.value < 0.05,
+                              levels = c(TRUE, FALSE)))
 
 ggplot(coef_list, aes(x = estimate, y = reorder(term, estimate))) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50", linewidth = 0.5) +
-  geom_point(size = 3, color = "black") +
   geom_errorbarh(
     aes(xmin = estimate - 1.96 * std.error, 
         xmax = estimate + 1.96 * std.error),
     height = 0.1, color = "black", linewidth = 1
   ) +
+  geom_point(aes(fill = significant),
+             size = 3,
+             shape = 21,
+             color = "black",
+             stroke = 1) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50",
+             linewidth = 0.5) +
+  scale_fill_manual(
+    values = c("FALSE" = "gray90", "TRUE" = "black")
+  ) +
   labs(
     x = "Model coefficients (CI 95%)",
-    y = "",
-    title = "",
-    subtitle = ""
+    y = ""
   ) +
   coord_cartesian(xlim = c(-1, 1)) +
-  # Alterações para aumentar e colocar em negrito as variáveis
   theme(
+    legend.position = "none",
     plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
     plot.subtitle = element_text(hjust = 0.5, size = 10),
-    axis.title = element_text(face = "bold", size = 12),  # Aumentar título do eixo X
-    axis.title.x = element_text(margin = margin(t = 10)),  # Espaçamento para o título
-    axis.text.y = element_text(
-      size = 11,          # Tamanho aumentado das variáveis
-      face = "bold",      # Texto em negrito
-      color = "black"     # Cor preta
-    ),
-    axis.text.x = element_text(
-      size = 10,          # Tamanho dos números no eixo X
-      color = "black"
-    ),
+    axis.title = element_text(face = "bold", size = 12),
+    axis.title.x = element_text(margin = margin(t = 10)),
+    axis.text.y = element_text(size = 11, face = "bold", color = "black"),
+    axis.text.x = element_text(size = 10, color = "black"),
     panel.grid.major.y = element_blank(),
     panel.grid.minor = element_blank(),
-    # Adicionar borda preta fina ao redor do painel
-    panel.border = element_rect(
-      color = "black",     # Cor da borda
-      fill = NA,           # Não preencher
-      linewidth = 0.5      # Espessura da borda
-    ),
-    # Ajustar margens se necessário
-    plot.margin = margin(10, 10, 10, 10)  # Topo, direita, baixo, esquerda
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+    plot.margin = margin(10, 10, 10, 10)
   )
 
-# Grupos combinados ----
 model_list <- list(
   "Terrestrial tetrapods" = modelo_beta,
   "Amphibia" = modelo_beta_amphibia,
@@ -560,7 +563,7 @@ p_label <- paste0(
   "\np = ", format.pval(wtest$p.value, digits = 2, eps = .001)
 )
 
-ggplot(df_all, aes(x = factor(GlobalNorth),
+boxplot <- ggplot(df_all, aes(x = factor(GlobalNorth),
                    y = percent_wallace_prop)) +
   # Fundo branco primeiro
   theme_minimal() +
@@ -600,37 +603,27 @@ ggplot(df_all, aes(x = factor(GlobalNorth),
   ) +
   # Tema personalizado
   theme(
-    # Fundo branco
     panel.background = element_rect(
       fill = "white",
-      color = "black",        # Borda preta
-      linewidth = 0.5         # Linha fina
+      color = "black",
+      linewidth = 0.5
     ),
     plot.background = element_rect(
       fill = "white",
-      color = "black",        # Borda preta ao redor de todo o gráfico
+      color = "black",
       linewidth = 0.5
     ),
-    # Remover grid de fundo (opcional - para deixar mais limpo)
     panel.grid.major = element_line(color = "gray90", linewidth = 0.2),
     panel.grid.minor = element_blank(),
-    # Eixos
     axis.line = element_line(color = "black", linewidth = 0.3),
     axis.text = element_text(color = "black", size = 10),
-    axis.text.x = element_text(
-      #face = "bold",          # Negrito nos rótulos
-      size = 15,
-      margin = margin(t = 5)  # Espaço acima
-    ),
+    axis.text.x = element_text(size = 15, margin = margin(t = 5)),
     axis.text.y = element_text(size = 15),
-    axis.title.y = element_text(
-      size = 15,
-      margin = margin(r = 10)  # Espaço à direita
-    ),
-    # Legenda (se quiser mantê-la, mas discreta)
-    legend.position = "none",  # Remove completamente a legenda
-    # Margens
-    plot.margin = margin(15, 15, 15, 15)  # Espaço interno da borda
+    axis.title.y = element_text(size = 15, margin = margin(r = 10)),
+    axis.ticks.y = element_line(color = "black", size = 0.5),   # aqui
+    axis.ticks.x = element_line(color = "black", size = 0.5),   # opcional
+    legend.position = "none",
+    plot.margin = margin(15, 15, 15, 15)
   ) +
   annotate(
     "text",
@@ -642,4 +635,372 @@ ggplot(df_all, aes(x = factor(GlobalNorth),
     size = 4.5,
     fontface = "italic"
   )
+
+# Plotando as curvas de acumulação + boxplot
+load(
+  file.path(
+    local_directory, "02_data_analysis", "tetrapods_model.RData")
+)
+
+par(cex.main = 2,   # título principal
+    cex.lab  = 1.5, # rótulos dos eixos
+    cex.axis = 1.3) # números dos eixos
+
+plot(tetrapods_100,
+     se = TRUE,
+     legend = FALSE,
+     ylim = c(0, 30),
+     xlim = c(1750, 2025),
+     xlab = "Year",
+     ylab = "Marginal mean",
+     col = c("#c40e3e", "#2DA5E8"),
+     xaxt = "n"
+) 
+
+anos <- c(1756, seq(1775, 2025, by = 25))
+axis(1, at = anos, labels = anos, las = 2)  # labels verticais
+abline(v = anos, 
+       col = "gray70",  
+       lty = 3,         
+       lwd = 0.5)
+# sobrepor boxplot
+vp <- grid::viewport(x = 0.28, y = 0.59, width = 0.43, height = 0.60)
+print(boxplot, vp = vp)
+# export 12x8 pdf
+
+# Countries and democracy index ----
+table(df_all$GlobalNorth)
+
+summary(df_all$percent_wallace_prop)
+summary(df_all$democracy_index_mean)
+
+# Criar o gráfico base
+plot <- ggplot(df_all, aes(x = democracy_index_mean, y = percent_wallace_prop)) +
+  
+  geom_point(aes(color = as.factor(GlobalNorth)),
+             size = 2,
+             alpha = 0.7) +
+  
+  geom_smooth(method = "lm",
+              se = TRUE,
+              color = "black",
+              linetype = "solid",
+              alpha = 0.2) +
+  
+  geom_text_repel(aes(label = name_en,
+                      color = as.factor(GlobalNorth)),
+                  size = 3,
+                  max.overlaps = 30,
+                  box.padding = 0.5,
+                  point.padding = 0.3,
+                  segment.color = "grey50",
+                  segment.size = 0.2,
+                  min.segment.length = 0.1,
+                  force = 1) +
+  
+  scale_color_manual(
+    name = "",
+    values = c("0" = "#c40e3e", "1" = "#2DA5E8"),
+    labels = c("0" = "Global south", "1" = "Global north")
+  ) +
+  
+  labs(
+    x = "Liberal Democracy index",
+    y = "Completeness (%)"
+  ) +
+  
+  theme_classic() +
+  theme(
+    legend.position = "bottom",
+    
+    # Aumentar títulos dos eixos
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    
+    # Aumentar labels dos eixos
+    axis.text.x  = element_text(size = 12),
+    axis.text.y  = element_text(size = 12),
+    
+    # Aumentar legenda
+    legend.text = element_text(size = 14)
+  ); plot
+
+ggsave(file.path(drive, "FigS3.tiff"), 
+       plot = plot, 
+       width = 12, 
+       height = 8, 
+       dpi = 300, 
+       bg = "white")
+
+# Sensitivity analysis ----
+load(file.path(
+  local_directory,
+  "00_raw_data",
+  "tetrapods_list_sensitivity.RData"
+))
+
+df_01perc <- left_join(
+  species_admin_01perc,
+  data_sociopolitic,
+  by = "name_en") %>%
+  select(completeness_all, expected_rich, democracy_index_mean,
+         academic_freedom_mean, gdp_mean, pop, GlobalNorth, name_en, area_km2,
+         colonial_origin, n_institutions) %>% 
+  remove_missing() %>%
+  ungroup() %>% 
+  mutate(
+    n_institutions_scale = scale(n_institutions),
+    polygons_richness_scaled = scale(log(as.numeric(expected_rich))),
+    democracy_index_scaled = scale(log(as.numeric(democracy_index_mean))),
+    academic_freedom_scaled = scale(as.numeric(academic_freedom_mean)),
+    dens_pop_scaled = scale(log(as.numeric(pop/area_km2))),
+    mean_grp_scaled = scale(log(as.numeric(gdp_mean)))
+  )
+
+df_05perc <- left_join(
+  species_admin_05perc,
+  data_sociopolitic,
+  by = "name_en") %>%
+  select(completeness_all, expected_rich, democracy_index_mean,
+         academic_freedom_mean, gdp_mean, pop, GlobalNorth, name_en, area_km2,
+         colonial_origin, n_institutions) %>% 
+  remove_missing() %>%
+  ungroup() %>% 
+  mutate(
+    n_institutions_scale = scale(n_institutions),
+    polygons_richness_scaled = scale(log(as.numeric(expected_rich))),
+    democracy_index_scaled = scale(log(as.numeric(democracy_index_mean))),
+    academic_freedom_scaled = scale(as.numeric(academic_freedom_mean)),
+    dens_pop_scaled = scale(log(as.numeric(pop/area_km2))),
+    mean_grp_scaled = scale(log(as.numeric(gdp_mean)))
+  )
+
+df_1perc <- left_join(
+  species_admin_1perc,
+  data_sociopolitic,
+  by = "name_en") %>%
+  select(completeness_all, expected_rich, democracy_index_mean,
+         academic_freedom_mean, gdp_mean, pop, GlobalNorth, name_en, area_km2,
+         colonial_origin, n_institutions) %>% 
+  remove_missing() %>%
+  ungroup() %>% 
+  mutate(
+    n_institutions_scale = scale(n_institutions),
+    polygons_richness_scaled = scale(log(as.numeric(expected_rich))),
+    democracy_index_scaled = scale(log(as.numeric(democracy_index_mean))),
+    academic_freedom_scaled = scale(as.numeric(academic_freedom_mean)),
+    dens_pop_scaled = scale(log(as.numeric(pop/area_km2))),
+    mean_grp_scaled = scale(log(as.numeric(gdp_mean)))
+  ) 
+
+df_occ_polygons <- left_join(
+  species_admin_occ_polygons,
+  data_sociopolitic,
+  by = "name_en") %>%
+  select(completeness_all, expected_rich, democracy_index_mean,
+         academic_freedom_mean, gdp_mean, pop, GlobalNorth, name_en, area_km2,
+         colonial_origin, n_institutions) %>% 
+  remove_missing() %>%
+  ungroup() %>% 
+  mutate(
+    n_institutions_scale = scale(n_institutions),
+    polygons_richness_scaled = scale(log(as.numeric(expected_rich))),
+    democracy_index_scaled = scale(log(as.numeric(democracy_index_mean))),
+    academic_freedom_scaled = scale(as.numeric(academic_freedom_mean)),
+    dens_pop_scaled = scale(log(as.numeric(pop/area_km2))),
+    mean_grp_scaled = scale(log(as.numeric(gdp_mean)))
+  ) 
+
+modelo_beta01 <- betareg(completeness_all ~ 
+                           polygons_richness_scaled + 
+                           dens_pop_scaled + 
+                           mean_grp_scaled +
+                           democracy_index_scaled +
+                           colonial_origin +
+                           n_institutions_scale,
+                         data = df_01perc)
+summary(modelo_beta01)
+
+modelo_beta05 <- betareg(completeness_all ~ 
+                           polygons_richness_scaled + 
+                           dens_pop_scaled + 
+                           mean_grp_scaled +
+                           democracy_index_scaled +
+                           colonial_origin +
+                           n_institutions_scale,
+                         data = df_05perc)
+summary(modelo_beta05)
+
+modelo_beta1 <- betareg(completeness_all ~ 
+                          polygons_richness_scaled + 
+                          dens_pop_scaled + 
+                          mean_grp_scaled +
+                          democracy_index_scaled +
+                          colonial_origin +
+                          n_institutions_scale,
+                        data = df_1perc)
+summary(modelo_beta1)
+
+modelo_betaocc <- betareg(completeness_all ~ 
+                            polygons_richness_scaled + 
+                            dens_pop_scaled + 
+                            mean_grp_scaled +
+                            democracy_index_scaled +
+                            colonial_origin +
+                            n_institutions_scale,
+                          data = df_occ_polygons)
+summary(modelo_betaocc)
+
+coef_beta01 <- tidy(modelo_beta01) %>%
+  filter(!term %in% c("(Intercept)", "(phi)", "Log(nu)"))  %>%
+  mutate(term = dplyr::recode(term, !!!map))
+
+coef_beta05 <- tidy(modelo_beta05) %>%
+  filter(!term %in% c("(Intercept)", "(phi)", "Log(nu)"))  %>%
+  mutate(term = dplyr::recode(term, !!!map))
+
+coef_beta1 <- tidy(modelo_beta1) %>%
+  filter(!term %in% c("(Intercept)", "(phi)", "Log(nu)"))  %>%
+  mutate(term = dplyr::recode(term, !!!map))
+
+coef_occ <- tidy(modelo_betaocc) %>%
+  filter(!term %in% c("(Intercept)", "(phi)", "Log(nu)"))  %>%
+  mutate(term = dplyr::recode(term, !!!map))
+
+coef_beta01$model  <- "Threshold = 0.01%"
+coef_beta05$model  <- "Threshold = 0.05%"
+coef_beta1$model   <- "Threshold = 1%"
+coef_occ$model     <- "Occurrence&Polygon"
+
+coef_list <- bind_rows(
+  coef_beta01,
+  coef_beta05,
+  coef_beta1,
+  coef_occ
+) %>%
+  mutate(significant = factor(p.value < 0.05,
+                              levels = c(TRUE, FALSE)))
+
+coef_list$model <- factor(
+  coef_list$model,
+  levels = c("Occurrence&Polygon",
+             "Threshold = 0.01%",
+             "Threshold = 0.05%",
+             "Threshold = 1%")
+)
+
+plot <- ggplot(coef_list, aes(x = estimate, 
+                      y = reorder(term, estimate))) +
+  geom_vline(xintercept = 0, 
+             linetype = "dashed", 
+             color = "gray50", 
+             linewidth = 0.5) +
+  geom_point(aes(fill = significant),
+             size = 3,
+             shape = 21,
+             color = "black",
+             stroke = 1) +
+  geom_errorbarh(
+    aes(xmin = estimate - 1.96 * std.error,
+        xmax = estimate + 1.96 * std.error),
+    height = 0.1,
+    color = "black",
+    linewidth = 1
+  ) +
+  facet_wrap(~ model, ncol = 2) +
+  labs(
+    x = "Model coefficients (CI 95%)",
+    y = ""
+  ) +
+  coord_cartesian(xlim = c(-1, 1)) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(face = "bold", size = 12),
+    axis.text.y = element_text(size = 12, face = "bold", color = "black"),
+    axis.text.x = element_text(size = 12, color = "black"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+    strip.text = element_text(face = "bold", size = 12),
+    plot.margin = margin(10, 10, 10, 10)
+  ) +
+  
+  scale_fill_manual(
+    values = c("TRUE" = "black",
+               "FALSE" = "white"),
+    guide = "none"
+  ); plot
+
+ggsave(file.path(drive, "FigS2.tiff"), 
+       plot = plot, 
+       width = 8, 
+       height = 12, 
+       dpi = 300, 
+       bg = "white")
+
+# Boxplot comparing units between north and south
+sp_north <- df_wallacean_100 %>%
+  filter(GlobalNorth == 1) %>%
+  distinct(speciesKey)
+nrow(sp_north)
+
+sp_south <- df_wallacean_100 %>%
+  filter(GlobalNorth == 0) %>%
+  distinct(speciesKey)
+nrow(sp_south)
+
+only_south <- sp_south %>%
+  anti_join(sp_north, by = "speciesKey") %>%
+  left_join(sp_count, by = "speciesKey") %>%
+  mutate(only_north = 0)
+nrow(only_south) # only south 10912
+
+only_north <- sp_north %>%
+  anti_join(sp_south, by = "speciesKey") %>%
+  left_join(sp_count, by = "speciesKey") %>%
+  mutate(only_north = 1)
+nrow(only_north) # only norte 1414
+
+both <- sp_north %>%
+  inner_join(sp_south, by = "speciesKey")
+nrow(both) # 2944 com occ no norte e no sul
+
+df <- bind_rows(
+  only_south,
+  only_north
+)
+
+hist(df$ua_total)
+
+plot <- ggplot(df, aes(
+  x = factor(only_north, labels = c("Global South", "Global North")),
+  y = ua_total,
+  fill = factor(only_north)
+)) +
+  geom_boxplot() +
+  labs(
+    x = "",
+    y = "N. of occupied \nadministrative units"
+  ) +
+  scale_fill_manual(
+    values = c("0" = "#c40e3e", "1" = "#2DA5E8"),
+    labels = c("0" = "Global South", "1" = "Global North")
+  ) +
+  theme_minimal() +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+    axis.ticks.y = element_line(color = "black"),
+    axis.ticks.x = element_blank(),
+    legend.position = "none",              # remove legenda
+    axis.text.x = element_text(size = 14), # aumenta fonte eixo X
+    axis.text.y = element_text(size = 14), # aumenta fonte eixo Y
+    axis.title.y = element_text(size = 16) # aumenta título do eixo Y
+  ); plot
+
+ggsave(file.path(drive, "FigS4.tiff"), 
+       plot = plot, 
+       width = 8, 
+       height = 7, 
+       dpi = 300, 
+       bg = "white")
 

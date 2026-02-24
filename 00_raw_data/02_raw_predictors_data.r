@@ -49,6 +49,17 @@ maddison_data <- readxl::read_xlsx(file.path(
     macroregion = region
   ) 
 
+maddison_macroregion_data <- readxl::read_xlsx(
+  path = file.path(local_directory, "00_raw_data", "Maddison", "mpd2023_web.xlsx"),
+  sheet = "Regional data",
+  skip = 1,        # pula a primeira linha
+  col_names = TRUE#, # usa a próxima linha como nome das colunas
+ # range = cellranger::cell_cols("A:I")
+) %>%
+  rename(year = 1) %>%
+  select(1:9) %>%
+  rename_with(~ gsub('\\.\\.\\.[0-9]+$', '', .x))
+
 # The Quality of Government Institute
 qog_data <- read.csv2(file.path(
   local_directory, "00_raw_data", "The_QoG_Institute",
@@ -67,6 +78,7 @@ save(
   maddinson_data,
   qog_data,
   institutions,
+  maddison_macroregion_data,
   file = file.path(
     local_directory,
     "00_raw_data",

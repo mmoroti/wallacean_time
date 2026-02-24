@@ -1,6 +1,7 @@
 library(sf)
 library(tidyverse)
 library(rgbif)
+library(terra)
 library(rnaturalearth)
 
 ## set your directory in this block
@@ -416,3 +417,99 @@ save(geographic_shape_data,
        "geographic_shape_data.RData"
      )
 )
+
+# Human density over time
+load(file = file.path(
+            local_directory,
+            "00_raw_data",
+            "tetrapods_polygons_key.RData"))
+
+# Projetando os rasters em equal area
+base_path <- file.path(
+  local_directory,
+  "00_raw_data",
+  "HYDE",
+  "HumanDensity"
+)
+
+dirs <- list.dirs(base_path, recursive = FALSE)
+# manter só AD
+dirs <- dirs[str_detect(dirs, "AD_pop$")]
+# extrair ano
+years <- str_extract(basename(dirs), "\\d{4}")
+years <- as.numeric(years)
+equal_area_crs <- "ESRI:54009"
+
+# Salvar em .TIFF e projecao equal-area
+for(i in seq_along(dirs)) {
+  
+  cat("Preprocessing year:", years[i], "\n")
+  
+  raster_path <- file.path(
+    dirs[i],
+    paste0("popd_", years[i], "AD.asc")
+  )
+  
+  r <- rast(raster_path)
+  
+  r_proj <- project(r, equal_area_crs) # default bilinear
+  
+  writeRaster(
+    r_proj,
+    file.path(local_directory, "00_raw_data", "HYDE", "HumanDensity",
+              "HYDE_equal_area", paste0("hyde_", years[i], ".tif")),
+    overwrite = TRUE
+  )
+}
+
+# agora extrair os valores dos TIFF reprojetados
+tif_dir <- file.path(local_directory,
+                     "00_raw_data",
+                     "HYDE",
+                     "HumanDensity",
+                     "HYDE_equal_area")
+
+# Listar todos os arquivos .tif
+tif_files <- list.files(tif_dir, pattern = "\\.tif$", full.names = TRUE)
+
+# Transformar todos os polígonos para vect terra
+polygons_vect <- vect(tetrapods_polygons_key)
+polygons_vect <- terra::project(polygons_vect, "ESRI:54009") # Mollweide
+
+# Inicializar lista para resultados
+results_list <- vector("list", length(tif_files))
+# Loop principal: um raster por ano
+for(i in seq_along(tif_files)) {
+  
+  cat("Extraindo ano:", years[i], "\n")
+  
+  r <- rast(tif_files[i])
+  
+  # Extração ponderada por área, para todas as espécies de uma vez
+  ext <- terra::extract(
+    r,
+    polygons_vect,
+    fun = function(x, ...) {
+      c(
+        mean = mean(x, na.rm = TRUE),
+        median = median(x, na.rm = TRUE),
+        q90 = quantile(x, 0.9, na.rm = TRUE)
+      )
+    }
+  )
+  
+  # Montar tibble por ano
+  results_list[[i]] <- tibble(
+    speciesKey = polygons_vect[[2]],
+    year = years[i],
+    mean = ext[,2],
+    median = ext[,3],
+    q90 = ext[,4]
+  )
+}
+
+# Combinar todos os anos em um único dataframe longo
+final_df <- bind_rows(results_list)
+
+# Visualizar
+glimpse(final_df)

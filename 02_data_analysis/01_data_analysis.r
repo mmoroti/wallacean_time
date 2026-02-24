@@ -279,10 +279,10 @@ load(file = file.path(
   "data_wallacean_time.RData")
 )
 
-load(file = file.path(
-  "00_raw_data",
-  "adm_unit_global.RData")
-)
+#load(file = file.path(
+#  "00_raw_data",
+#  "adm_unit_global.RData")
+#)
 
 # shapefile to crop adm unit
 load(file.path(
@@ -296,11 +296,12 @@ df_wallacean_100 <- df_wallacean_100 %>%
   left_join(
     geographic_shape_data %>%
       select(GlobalNorth, Georegion, name_en) %>%
-      st_drop_geometry(), by = "name_en"
+      sf::st_drop_geometry(), by = "name_en"
   )
 
 df_amphibia_100 <- df_wallacean_100 %>%
   mutate(status = event + WallaceCompletude) %>%
+  filter(year(date) < 1950) %>%
   filter(Class == "Amphibia") %>%
   mutate(BodyLength_mm = scale(log(BodyLength_mm)),
          Verticality = scale(Verticality^2),
@@ -308,7 +309,10 @@ df_amphibia_100 <- df_wallacean_100 %>%
          HumanDensity = scale(log(HumanDensity+1)),
          Latitude = scale(abs(Latitude)),
          RangeSize = scale(log(RangeSize)),
-         Elevation = scale(log(Elevation))) 
+         Elevation = scale(log(Elevation)),
+         gdp_rank_z = scale(gdp_rank),
+         gdp_percentile_z = scale(gdp_percentile),
+         gdp = scale(log_gdp_final))
 
 df_reptilia_100 <- df_wallacean_100 %>%
   mutate(status = event + WallaceCompletude) %>%
@@ -319,7 +323,10 @@ df_reptilia_100 <- df_wallacean_100 %>%
          HumanDensity = scale(log(HumanDensity+1)),
          Latitude = scale(abs(Latitude)),
          RangeSize = scale(log(RangeSize)),
-         Elevation = scale(log(Elevation))) 
+         Elevation = scale(log(Elevation)),
+         gdp_rank_z = scale(gdp_rank),
+         gdp_percentile_z = scale(gdp_percentile),
+         gdp = scale(log_gdp_final))
 
 df_aves_100 <- df_wallacean_100 %>%
   mutate(status = event + WallaceCompletude) %>%
@@ -330,7 +337,10 @@ df_aves_100 <- df_wallacean_100 %>%
          HumanDensity = scale(log(HumanDensity+1)),
          Latitude = scale(abs(Latitude)),
          RangeSize = scale(log(RangeSize)),
-         Elevation = scale(log(Elevation)))  
+         Elevation = scale(log(Elevation)),
+         gdp_rank_z = scale(gdp_rank),
+         gdp_percentile_z = scale(gdp_percentile),
+         gdp = scale(log_gdp_final))
 
 df_mammalia_100 <- df_wallacean_100 %>%
   mutate(status = event + WallaceCompletude) %>%
@@ -340,22 +350,23 @@ df_mammalia_100 <- df_wallacean_100 %>%
          Nocturnality = scale(Nocturnality^2),
          HumanDensity = scale(log(HumanDensity+1)),
          Latitude = scale(abs(Latitude)),
-         RangeSize = scale(log(RangeSize))) 
+         RangeSize = scale(log(RangeSize)),
+         gdp_rank_z = scale(gdp_rank),
+         gdp_percentile_z = scale(gdp_percentile),
+         gdp = scale(log_gdp_final))
 
 # Recurrent event model ----
-tetrapods_event_100 <- phreg(Surv(t.start.year, t.stop.year, status==1)~
-                              cluster(speciesKey)+
-                              strata(GlobalNorth),
-                            data= df_wallacean_100)
-plot(tetrapods_event_100, se = TRUE)
-
-tetrapods_terminal_100 <- phreg(Surv(t.start.year,
-                                    t.stop.year,
-                                    status==2)~
-                                 cluster(speciesKey)+
-                                 strata(GlobalNorth),
-                               data=df_wallacean_100)
-plot(tetrapods_terminal_100, se = TRUE)
+tetrapods_100 <- recurrentMarginal(Event(t.start.year, t.stop.year, status==1)~
+                                     strata(GlobalNorth)+
+                                     cluster(speciesKey),
+                                   data=df_wallacean_100,
+                                   cause=1,
+                                   death.code=2)
+save(
+  tetrapods_100,
+  file = file.path(
+    local_directory, "02_data_analysis", "tetrapods_model.RData")
+) # plot in script "02_exploratory_analysis.R"
 
 ## Amphibia ----
 # Cox model
@@ -365,9 +376,10 @@ amphibia_event_100 <- phreg(Surv(t.start.year, t.stop.year, status==1)~
                               Nocturnality +
                               BodyLength_mm +
                               Latitude +
-                              HumanDensity +
+                              #HumanDensity +
                               Elevation +
-                              RangeSize,
+                              RangeSize +
+                              gdp_percentile_z,
                             data=df_amphibia_100)
 
 summary(amphibia_event_100)
@@ -385,7 +397,8 @@ amphibia_terminal_100 <- phreg(Surv(t.start.year,
                                  Latitude +
                                  HumanDensity +
                                  Elevation +
-                                 RangeSize,
+                                 RangeSize +
+                                 gdp_percentile_z,
                                data=df_amphibia_100)
 summary(amphibia_terminal_100)
 gof.terminal.amphibia <- gof(amphibia_terminal_100)
@@ -400,6 +413,7 @@ fit.amphibia.surv <- aalen(
     Latitude +
     Elevation +
     RangeSize +
+    gdp_percentile_z +
     cluster(speciesKey),
   data= df_amphibia_100,
   start.time = 1760,
@@ -409,6 +423,7 @@ fit.amphibia.surv <- aalen(
   n.sim        = 100,     # número de simulações para CI
   resample.iid = 1       # para funções de residuais/CI i.i.d.
 )
+plot(fit.amphibia.surv)
 
 fit.amphibia.completeness <- aalen(
   formula = Surv(t.start.year, t.stop.year, status == 2) ~
@@ -419,15 +434,17 @@ fit.amphibia.completeness <- aalen(
     Latitude +
     Elevation +
     RangeSize +
+    gdp_percentile_z +
     cluster(speciesKey),
   data= df_amphibia_100,
   start.time = 1850,
   max.time     = 2025,
   #residuals = 1,
   robust       = 1,       # variância robusta
-  n.sim        = 1000,     # número de simulações para CI
+  n.sim        = 100,     # número de simulações para CI
   resample.iid = 1       # para funções de residuais/CI i.i.d.
 )
+plot(fit.amphibia.completeness)
 
 fit.amphibia <- recurrent.marginal.mean(
   fit.amphibia.surv, 
@@ -446,7 +463,8 @@ reptilia_event_100 <- phreg(Surv(t.start.year,
                               Latitude +
                               HumanDensity +
                               Elevation +
-                              RangeSize,
+                              RangeSize +
+                              gdp_percentile_z,
                             data=df_reptilia_100)
 summary(reptilia_event_100)
 gof.reptilia <- gof(reptilia_event_100)
@@ -461,7 +479,8 @@ reptilia_terminal_100 <- phreg(Surv(t.start.year,
                                  Latitude +
                                  HumanDensity +
                                  Elevation +
-                                 RangeSize,
+                                 RangeSize +
+                                 gdp_percentile_z,
                                data=df_reptilia_100)
 summary(reptilia_terminal_100)
 gof.terminal.reptilia <- gof(reptilia_terminal_100)
@@ -476,6 +495,7 @@ fit.reptilia.surv <- aalen(
     Latitude +
     Elevation +
     RangeSize +
+    gdp_percentile_z + 
     cluster(speciesKey),
   data= df_reptilia_100,
   start.time = 1760,
@@ -495,6 +515,7 @@ fit.reptilia.completeness <- aalen(
     Latitude +
     Elevation +
     RangeSize +
+    gdp_percentile_z +
     cluster(speciesKey),
   data= df_reptilia_100,
   start.time = 1760,
@@ -521,7 +542,8 @@ aves_event_100 <- phreg(Surv(t.start.year,
                           Latitude +
                           HumanDensity +
                           Elevation +
-                          RangeSize,
+                          RangeSize +
+                          gdp_percentile_z,
                         data=df_aves_100)
 summary(aves_event_100)
 gof.aves <- gof(aves_event_100)
@@ -536,8 +558,8 @@ aves_terminal_100 <- phreg(Surv(t.start.year,
                              Latitude +
                              HumanDensity +
                              Elevation +
-                             RangeSize+
-                             strata(GlobalNorth),
+                             RangeSize +
+                             gdp_percentile_z,
                            data=df_aves_100)
 summary(aves_terminal_100)
 gof.terminal.aves <- gof(aves_terminal_100)
@@ -552,6 +574,7 @@ fit.aves.surv <- aalen(
     Latitude +
     Elevation +
     RangeSize +
+    gdp_percentile_z +
     cluster(speciesKey),
   data= df_aves_100,
   start.time = 1760,
@@ -573,6 +596,7 @@ fit.aves.completeness <- aalen(
     Latitude +
     Elevation +
     RangeSize +
+    gdp_percentile_z +
     cluster(speciesKey),
   data= df_aves_100,
   start.time = 1760,
@@ -601,8 +625,8 @@ mammalia_event_100 <- phreg(Surv(t.start.year,
                               Latitude +
                               HumanDensity +
                               Elevation +
-                              RangeSize+
-                              strata(GlobalNorth),
+                              RangeSize +
+                              gdp_percentile_z,
                             data=df_mammalia_100)
 summary(mammalia_event_100)
 gof.mammalia <- gof(mammalia_event_100)
@@ -617,8 +641,8 @@ mammalia_terminal_100 <- phreg(Surv(t.start.year,
                                  Latitude +
                                  HumanDensity +
                                  Elevation +
-                                 RangeSize+
-                                 strata(GlobalNorth),
+                                 RangeSize +
+                                 gdp_percentile_z,
                                data=df_mammalia_100)
 summary(mammalia_terminal_100)
 gof.terminal.mammalia <- gof(mammalia_terminal_100)
@@ -633,6 +657,7 @@ fit.mammalia.surv <- aalen(
     Latitude +
     Elevation +
     RangeSize +
+    gdp_percentile_z +
     cluster(speciesKey),
   data= df_mammalia_100,
   start.time = 1760,
@@ -652,9 +677,10 @@ fit.mammalia.completeness <- aalen(
     Latitude +
     Elevation +
     RangeSize +
+    gdp_percentile_z +
     cluster(speciesKey),
   data= df_mammalia_100,
-  start.time = 1760,
+  start.time = 1756,
   max.time     = 2025,
   #residuals = 1,
   robust       = 1,       # variância robusta
@@ -704,7 +730,7 @@ save(
 save(
   fit.amphibia.surv,
   fit.reptilia.surv,
-  fit.aves.surv,
+  #fit.aves.surv,
   fit.mammalia.surv,
   file = file.path(
     local_directory,
@@ -714,7 +740,7 @@ save(
 save(
   fit.amphibia.completeness,
   fit.reptilia.completeness,
-  fit.aves.completeness,
+  #fit.aves.completeness,
   fit.mammalia.completeness, 
   file = file.path(
     local_directory,
@@ -724,30 +750,6 @@ save(
 
 # Results plots ----
 ## Cumulative hazard plots ----
-tetrapods_100 <- recurrentMarginal(Event(t.start.year, t.stop.year, status==1)~
-                           strata(GlobalNorth)+
-                           cluster(speciesKey),
-                         data=df_wallacean_100,
-                         cause=1,
-                         death.code=2)
-
-plot(tetrapods_100,
-     se = TRUE,
-     legend = FALSE,
-     ylim = c(0, 30),
-     xlim = c(1750, 2025),
-     xlab = "Year",
-     ylab = "Marginal mean",
-     cex.main = 1.5,
-     col = c("#c40e3e", "#2DA5E8"
-)) 
-# insert lines every 25 years
-axis(1, at = seq(1750, 2025, by = 25), las = 1)  
-abline(v = seq(1750, 2025, by = 25), 
-       col = "gray70",  # cor cinza clara
-       lty = 3,         # linha tracejada
-       lwd = 0.5)       # linha bem fina
-
 # TODO: Does the difference persist?
 base <- mets:::basecumhaz(
   tetrapods_100,

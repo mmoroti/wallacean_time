@@ -29,12 +29,12 @@ load(file.path(
 )
 
 # socieconomic data
-#load(
-#  file = file.path(
-#    local_directory,
-#    "01_data_cleaned",
-#    "data_socieconomic_agregatte.RData")
-#)
+load(
+  file = file.path(
+    local_directory,
+    "01_data_cleaned",
+    "data_socieconomic_temporal.RData")
+)
 
 # species list
 load(
@@ -45,6 +45,7 @@ load(
     )
   )
 
+# Completeness list ----
 # Amphibia
 rich_admunit_expected_amphibia <- species_admin_all %>%
   select(name_en, all_species) %>%
@@ -157,6 +158,7 @@ save(
 # poligonos & ocorrencias, para os cenarios de completeness, vamos incluir as 
 # especies que nao tem ocorrencia...
 list_per_admunit <- species_admin_all %>%
+  filter(!name_en %in% countries_without_gdp$name_en) %>%
   select(name_en, all_species) %>%
   unnest(all_species)
 
@@ -168,15 +170,17 @@ sp_count <- list_per_admunit %>%
 any(is.na(data_wallacean_unnested$year))
 
 # Mobilization effort
-mobilization_effort <- data_wallacean_unnested %>%
-  group_by(name_en) %>%
-  summarise(mobilization_effort = n())
+#mobilization_effort <- data_wallacean_unnested %>%
+#  group_by(name_en) %>%
+#  summarise(mobilization_effort = n())
 
 # Create time-to-event table ----
 data_wallacean_unnested_modified <- data_wallacean_unnested %>%
   #filter(speciesKey %in% c("2426805")) %>%
   #filter(speciesKey %in% c("2433011", "2423581", "2472164","2426805")) %>% 
   filter(year > 1500) %>% 
+  # filter only adm unit with GDP information
+  filter(!name_en %in% countries_without_gdp$name_en) %>%
   # spp so pode ser encontrada depois de ja ter sido descrita
   mutate(year_modified = if_else(year < YearOfDescription, YearOfDescription, year)) %>%
   distinct(speciesKey, year_modified, name_en, .keep_all = TRUE) %>%
@@ -193,9 +197,13 @@ data_wallacean_unnested_modified <- data_wallacean_unnested %>%
   ) %>%
   left_join(sp_count, by = "speciesKey") %>% # adm. unit count
   # Join socieconomic data with occurences
-  #left_join(dados_socieconomic_merge, by = c("sigla_admu", "year")) %>%
+  # TODO: aqui tem um detalhe, nao necessariamente a ocorrencia
+  # representa o ano que o registro aconteceu. devido a colocarmos o ano de ocorrencia
+  # sempre depois da descricao. entao se usarmos "year", teremos NA's porque
+  # mudamos o ano de ocorrencia para ser sempre depois da descricao (year_modified).
+  left_join(data_socieconomic_temporal, by = c("name_en", "year_modified" = "year")) %>%
   select(speciesKey, scientificName, Class, Order, Family, 
-         name_en, date, year_modified,
+         name_en, date, year_modified, log_gdp_final, gdp_rank, gdp_percentile,
          BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
          HumanDensity, Latitude, Elevation, ETA50K, AssessedStatus,
          ua_total, YearOfDescription, RangeSize, origin_of_data)
@@ -209,7 +217,7 @@ data_wallacean_unnested_modified <- data_wallacean_unnested_modified %>%
   # Adiciona secundos sequenciais (0, 1, 2...) para cada data repetida
   # TODO uma premissa chatinha porque algo pode ter vindo antes,
   # como a escala da analise é em anos, acho que acabara ficando diluido
-  # mudar a escala em dias!
+  # ao diferenciar as ocorrencias em segundos!
   mutate(
     date_corrigida = {
       datas <- date
@@ -283,10 +291,10 @@ df_wallacean_100 <- df_wallacean_time %>%
   ungroup() %>%
   select(speciesKey, Class, Order, Family, scientificName, name_en, date,
          t.start.date, t.stop.date, t.start, t.stop, t.start.year, t.stop.year,
-         event, WallaceCompletude,
+         event, WallaceCompletude, log_gdp_final, gdp_rank, gdp_percentile,
          BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
          HumanDensity, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
-         ua_total, origin_of_data, YearOfDescription) 
+         ua_total, origin_of_data, YearOfDescription)
 
 df_wallacean_75 <- df_wallacean_time %>%
   # remove todos eventos apos completude 
@@ -298,7 +306,7 @@ df_wallacean_75 <- df_wallacean_time %>%
   ungroup() %>%
   select(speciesKey, Class, Order, Family, scientificName, name_en, 
          date, t.start.date, t.stop.date, t.start,t.stop, t.start.year, t.stop.year,
-         event, Wallace75,
+         event, Wallace75, log_gdp_final, gdp_rank, gdp_percentile,
          BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
          HumanDensity, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
          ua_total, origin_of_data, YearOfDescription) 
@@ -313,7 +321,7 @@ df_wallacean_50 <- df_wallacean_time %>%
   ungroup() %>%
   select(speciesKey, Class, Order, Family, scientificName, name_en, date, 
          t.start.date, t.stop.date, t.start,t.stop, t.start.year, t.stop.year,
-         event, Wallace50,
+         event, Wallace50, log_gdp_final, gdp_rank, gdp_percentile,
          BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
          HumanDensity, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
          ua_total, origin_of_data, YearOfDescription) 
@@ -336,7 +344,6 @@ table(df_wallacean_time$WallaceCompletude)
 save(df_wallacean_100,
      df_wallacean_75,
      df_wallacean_50,
-     mobilization_effort,
     file = file.path(
       local_directory,
       "02_data_analysis",

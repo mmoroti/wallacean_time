@@ -60,7 +60,7 @@ species_list_tetrapods_key <- species_list_tetrapods %>%
   filter(!matchType == "NONE" & !matchType == "HIGHERRANK") %>%
   filter(confidence >= 95) %>%
   pull(speciesKey)
-length(species_list_tetrapods_key) # 32.013 spp. 
+length(unique(species_list_tetrapods_key)) # 32.013 spp. 
 # 213 spp without speciesKey or confidence < 95 
 
 # information about gbif backbone
@@ -189,15 +189,17 @@ load(file.path(
 
 # if you need to rerun backbone, use this
 species_list_biotime <- biotime_data_raw %>% 
-  filter(taxon == "Amphibians & reptiles" | taxon == "Birds" | taxon == "Mammals" ) %>%
+  filter(taxon == "Amphibians & reptiles" |
+           taxon == "Birds" |
+           taxon == "Mammals" ) %>%
   distinct(valid_name, .keep_all = TRUE) %>%
   mutate(valid_name = as.character(valid_name)) %>%
   pull(valid_name) %>% 
-  name_backbone_checklist()
+  name_backbone_checklist() # 3360 names
 
 species_list_biotime_key <- species_list_biotime %>%
   dplyr::filter(!matchType == "NONE" & !matchType == "HIGHERRANK") %>%
-  dplyr::filter(!is.na(speciesKey)) 
+  dplyr::filter(!is.na(speciesKey)) # 2925 names
 
 # aqui temos especies que aparecem com 'aff.' 'cf.' '?' e tambem serao removidas
 # para evitar adicionar dados com imprecisão taxonômica
@@ -208,11 +210,11 @@ species_list_biotime_key_precleaned <- species_list_biotime_key %>%
   dplyr::filter(!grepl("\\?", verbatim_name)) %>% # remove qualquer interrogacao
   dplyr::filter(!grepl("\\baff\\b", verbatim_name)) %>% # remove aff separado do txt
   dplyr::filter(!grepl("\\bsp\\b", verbatim_name)) %>% # remove cf separado do txt
-  dplyr::filter(confidence > 95) 
+  dplyr::filter(confidence > 95) #2912 
 
 glue::glue("Quantidade de nomes dúbios, com intervalo de confianca de >0.95 \\
 ou sem correspondência com o backbone: { \\
-nrow(species_list_biotime_key)-nrow(species_list_biotime_key_precleaned)}")
+nrow(species_list_biotime)-nrow(species_list_biotime_key_precleaned)}")
 
 biotime_data_key_precleaned <- right_join(
   biotime_data_raw,
@@ -259,6 +261,13 @@ splink_data <- splink_data_raw %>%
 table(splink_data$basisofrecord)
 table(splink_data$kingdom)
 nrow(splink_data) # 4.224.316
+
+# if you don't needs to rerun backbone, use this
+load(file.path(
+  local_directory,
+  "00_raw_data",
+  "splinks_data.RData")
+)
 
 # if you need rerun name_backbone_checklist, use this
 species_list_splink <- splink_data %>% 

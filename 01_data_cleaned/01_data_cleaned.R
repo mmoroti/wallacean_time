@@ -976,7 +976,7 @@ write.table(chaves_perdidas_combinadas, file.path(
   local_directory, "chaves_perdidas.txt"))
 
 # REMOVE DUPLICATES ----
-rm(list=ls()); gc() # clean local enviroment
+rm(list = setdiff(ls(), c("local_directory"))); gc()
 
 # occurences data
 data_occurences_precleaned <- open_dataset(
@@ -985,6 +985,11 @@ data_occurences_precleaned <- open_dataset(
     "01_data_cleaned",
     "data_occurences_filtered.parquet")
 )
+
+#data_occurences_precleaned %>%
+#  count(origin_of_data) %>%
+#  compute() %>% 
+#  collect()
 
 data_occurences_precleaned <- data_occurences_precleaned %>%
   mutate(
@@ -1429,6 +1434,16 @@ length(lost_occurences)
 # para essas especies nao podemos considerar no completeness pq tem dados delas
 # no GBIF, mas por algum motivo, as ocorrencias delas tem mismatch espacial com
 # os poligonos. 
+count_loss_class <- left_join(data.frame(speciesKey = lost_occurences),
+                              tetrapods_key_species, by = "speciesKey")
+table(count_loss_class$Class)
+# Quem sao as 3124 especies que temos poligono, mas nao temos ocorrencia
+count_withoutocc_class <- left_join(
+  data.frame(speciesKey = setdiff(keys_without_occ, lost_occurences)),
+  tetrapods_key_species, by = "speciesKey")
+table(count_withoutocc_class$Class)
+
+
 
 tetrapods_polygons_completeness <- tetrapods_polygons_key %>%
   filter(!speciesKey %in% lost_occurences) %>% 
