@@ -309,7 +309,134 @@ geographic_shape_data %>%
   group_by(name_en) %>%
   filter(n() > 1) %>%
   ungroup()
+
+# ROAD DATA ----
+# https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/NEXOVP
+# shapefile to crop adm unit
+roads <- st_read(file.path(
+  local_directory, 
+  "00_raw_data",
+  "gROADSv1",
+  "groads-v1-global-gdb",
+  "groads-v1-global-gdb",
+  "gROADS_v1.gdb"
+))
+
+# equal-area projection
+roads_proj <- st_transform(roads, st_crs(geographic_shape_data)) %>%
+  mutate(length_km_geom = as.numeric(st_length(Shape)) / 1000)
+
+roads_admin <- st_intersection(
+  roads_proj[, "length_km_geom"],
+  geographic_shape_data
+)
+
+road_length_by_admin <- roads_admin %>%
+  st_drop_geometry() %>%
+  group_by(name_en) %>%
+  summarise(total_road_km = sum(length_km_geom, na.rm = TRUE))
+
+geographic_shape_data <- left_join(
+  geographic_shape_data,
+  road_length_by_admin,
+  by = "name_en"
+)
+
+# HUMAN DENSITY OVER TIME ----
+base_path <- file.path(
+  local_directory,
+  "00_raw_data",
+  "HYDE",
+  "HumanDensity"
+)
+
+dirs <- list.dirs(base_path, recursive = FALSE)
+dirs <- dirs[str_detect(dirs, "AD_pop$")]
+# extrair ano
+years <- str_extract(basename(dirs), "\\d{4}")
+years <- as.numeric(years)
+equal_area_crs <- "ESRI:54009"
+
+# Projetando e salvando os rasters em equal area
+for(i in seq_along(dirs)) {
   
+  cat("Preprocessing year:", years[i], "\n")
+  
+  raster_path <- file.path(
+    dirs[i],
+    paste0("popd_", years[i], "AD.asc")
+  )
+  
+  r <- rast(raster_path)
+  
+  r_proj <- project(r, equal_area_crs) # default bilinear
+  
+  writeRaster(
+    r_proj,
+    file.path(local_directory, "00_raw_data", "HYDE", "HumanDensity",
+              "HYDE_equal_area", paste0("hyde_", years[i], ".tif")),
+    overwrite = TRUE
+  )
+}
+
+# agora extrair os valores dos TIFF reprojetados
+tif_dir <- file.path(local_directory,
+                     "00_raw_data",
+                     "HYDE",
+                     "HumanDensity",
+                     "HYDE_equal_area")
+
+# Listar todos os arquivos .tif
+tif_files <- list.files(tif_dir, pattern = "\\.tif$", full.names = TRUE)
+polygons_vect <- vect(tetrapods_polygons_key)
+polygons_vect <- terra::project(polygons_vect, "ESRI:54009") # Mollweide
+
+# Inicializar lista para resultados
+results_list <- list()
+# Barra de progresso: total de etapas = número de anos × número de espécies
+total_steps <- length(tif_files) * length(polygons_vect)
+pb <- progress_bar$new(
+  format = "  [:bar] :percent | Ano :year | Espécie :species/:total",
+  total = total_steps, clear = FALSE, width = 60
+)
+
+# Loop por ano
+for(i in seq_along(tif_files)) {
+  
+  r <- rast(tif_files[i])
+  
+  # Loop por espécie
+  for(j in seq_along(polygons_vect)) {
+    
+    # Extração raster
+    ext <- terra::extract(
+      r,
+      polygons_vect[j],
+      fun = function(x, ...) {
+        c(
+          mean = mean(x, na.rm = TRUE),
+          median = median(x, na.rm = TRUE),
+          q90 = quantile(x, 0.9, na.rm = TRUE)
+        )
+      }
+    )
+    
+    # Guardar resultado
+    results_list[[length(results_list) + 1]] <- tibble(
+      speciesKey = polygons_vect$speciesKey[j],
+      year = years[i],
+      mean = ext[,2],
+      median = ext[,3],
+      q90 = ext[,4]
+    )
+    
+    # Atualizar barra
+    pb$tick(tokens = list(year = years[i],
+                          species = j,
+                          total = length(polygons_vect)))
+  }
+}
+df_humandensity <- bind_rows(results_list)
 
 # SENSITIVITY ANALYSIS ----
 ## Expanded polygons ----
@@ -401,7 +528,7 @@ save(tetrapods_polygons_key,
 )
 
 # Sensitivity analysis expanded 110km and 220km
-save(tetrapods_polygons_key,
+save(tetrapods_polygons_sensitivity,
      file = file.path(
        local_directory,
        "00_raw_data",
@@ -419,106 +546,9 @@ save(geographic_shape_data,
 )
 
 # Human density over time
-load(file = file.path(
-            local_directory,
-            "00_raw_data",
-            "tetrapods_polygons_key.RData"))
-
-# Projetando os rasters em equal area
-base_path <- file.path(
-  local_directory,
-  "00_raw_data",
-  "HYDE",
-  "HumanDensity"
+save(
+  df_humandensity,
+  file = file.path(local_directory,
+                   "00_raw_data",
+                   "df_humandensity.RData")
 )
-
-dirs <- list.dirs(base_path, recursive = FALSE)
-# manter só AD
-dirs <- dirs[str_detect(dirs, "AD_pop$")]
-# extrair ano
-years <- str_extract(basename(dirs), "\\d{4}")
-years <- as.numeric(years)
-equal_area_crs <- "ESRI:54009"
-
-# Salvar em .TIFF e projecao equal-area
-for(i in seq_along(dirs)) {
-  
-  cat("Preprocessing year:", years[i], "\n")
-  
-  raster_path <- file.path(
-    dirs[i],
-    paste0("popd_", years[i], "AD.asc")
-  )
-  
-  r <- rast(raster_path)
-  
-  r_proj <- project(r, equal_area_crs) # default bilinear
-  
-  writeRaster(
-    r_proj,
-    file.path(local_directory, "00_raw_data", "HYDE", "HumanDensity",
-              "HYDE_equal_area", paste0("hyde_", years[i], ".tif")),
-    overwrite = TRUE
-  )
-}
-
-# agora extrair os valores dos TIFF reprojetados
-tif_dir <- file.path(local_directory,
-                     "00_raw_data",
-                     "HYDE",
-                     "HumanDensity",
-                     "HYDE_equal_area")
-
-# Listar todos os arquivos .tif
-tif_files <- list.files(tif_dir, pattern = "\\.tif$", full.names = TRUE)
-
-# Transformar todos os polígonos para vect terra
-polygons_vect <- vect(tetrapods_polygons_key)
-polygons_vect <- terra::project(polygons_vect, "ESRI:54009") # Mollweide
-
-# Inicializar lista para resultados
-results_list <- list()
-# Barra de progresso: total de etapas = número de anos × número de espécies
-total_steps <- length(tif_files) * length(polygons_vect)
-pb <- progress_bar$new(
-  format = "  [:bar] :percent | Ano :year | Espécie :species/:total",
-  total = total_steps, clear = FALSE, width = 60
-)
-
-# Loop por ano
-for(i in seq_along(tif_files)) {
-  
-  r <- rast(tif_files[i])
-  
-  # Loop por espécie
-  for(j in seq_along(polygons_vect)) {
-    
-    # Extração raster
-    ext <- terra::extract(
-      r,
-      polygons_vect[j],
-      fun = function(x, ...) {
-        c(
-          mean = mean(x, na.rm = TRUE),
-          median = median(x, na.rm = TRUE),
-          q90 = quantile(x, 0.9, na.rm = TRUE)
-        )
-      }
-    )
-    
-    # Guardar resultado
-    results_list[[length(results_list) + 1]] <- tibble(
-      speciesKey = polygons_vect$speciesKey[j],
-      year = years[i],
-      mean = ext[,2],
-      median = ext[,3],
-      q90 = ext[,4]
-    )
-    
-    # Atualizar barra
-    pb$tick(tokens = list(year = years[i], species = j, total = length(polygons_vect)))
-  }
-}
-
-# Combinar todos os resultados
-final_df <- bind_rows(results_list)

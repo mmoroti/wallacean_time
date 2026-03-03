@@ -14,7 +14,7 @@ adjust_country_years <- function(df_country){
   
   first_year <- min(df_country$year, na.rm = TRUE)
   
-  # ---------- PARTE 1: ajustar anos < 1820 ----------
+  # PARTE 1: ajustar anos < 1820
   if(first_year < 1820 & 1820 %in% df_country$year){
     
     ref_1820 <- df_country %>% 
@@ -35,7 +35,7 @@ adjust_country_years <- function(df_country){
       )
   }
   
-  # ---------- PARTE 2: criar 2023–2025 ----------
+  # PARTE 2: criar 2023–2025
   if(2022 %in% df_country$year){
     
     ref_2022 <- df_country %>% 
@@ -61,7 +61,7 @@ adjust_country_years <- function(df_country){
     }
   }
   
-  # ---------- PARTE 3: marcar edge_imputed ----------
+  # PARTE 3: marcar edge_imputed
   df_country <- df_country %>%
     mutate(
       gdp_uncertainty = case_when(
@@ -383,6 +383,7 @@ save(
 )
 
 # AGGREGATING THE DATA OVER TIME ----
+## GDP over time ----
 occ_year <- data_wallacean_unnested %>%
   filter(year > 1500) %>% 
   # spp so pode ser encontrada depois de ja ter sido descrita
@@ -1009,4 +1010,83 @@ save(
     local_directory,
     "01_data_cleaned",
     "data_socieconomic_temporal.RData")
+)
+
+## Human density over time ----
+load(
+  file.path(
+    local_directory,
+    "00_raw_data",
+    "df_humandensity.RData"
+  )
+)
+
+# Agregar os dados de densidade humana por espécie e ano (mediana dos polígonos)
+df_humandensity_agg <- df_humandensity %>%
+  # Primeiro, substitui NA por 0 onde sabemos que são zeros verdadeiros
+  mutate(median = ifelse(is.na(median), 0, median),
+         mean = ifelse(is.na(mean), 0, mean)) %>%
+  group_by(speciesKey, year) %>%
+  summarise(
+    median = median(median, na.rm = TRUE),
+    mean = mean(mean, na.rm = TRUE),  # se algum foi interpolado
+    n_polygons = n(),  # opcional: contar quantos polígonos
+    .groups = "drop"
+  )
+
+data_humandensity_temporal <- df_humandensity_agg %>%
+  group_by(speciesKey) %>%
+  group_modify(~{
+    
+    # Cria sequência completa de anos (incluindo até 2025)
+    years_full <- tibble(
+      year = seq(min(.x$year), 2025, by = 1)  # vai até 2025
+    )
+    
+    # Junta com dados originais
+    df_full <- years_full %>%
+      left_join(.x, by = "year") %>%
+      arrange(year)
+    
+    # Pega o valor de 2017 (ou o último disponível antes de 2017)
+    valor_2017 <- df_full %>%
+      filter(year <= 2017, !is.na(median)) %>%
+      arrange(desc(year)) %>%
+      slice(1) %>%
+      pull(median)
+    
+    if(length(valor_2017) > 0) {
+      # Preenche 2017-2025 com o valor de 2017
+      df_full <- df_full %>%
+        mutate(
+          median = case_when(
+            year >= 2017 & is.na(median) ~ valor_2017,
+            TRUE ~ median
+          )
+        )
+    }
+    
+    # Agora faz a interpolação para os anos restantes
+    interp_vals <- approx(
+      x = df_full$year[!is.na(df_full$median)],
+      y = df_full$median[!is.na(df_full$median)],
+      xout = df_full$year
+    )$y
+    
+    df_full %>%
+      mutate(
+        median_interp = interp_vals,
+        is_interpolated = if_else(is.na(median), 1, 0)
+      )
+  }) %>%
+  ungroup() %>%
+  rename(HumanDensityTime = median_interp)
+# 5217144 bom exemplo para checar problemas
+
+save(
+  data_humandensity_temporal,
+  file = file.path(
+    local_directory,
+    "01_data_cleaned",
+    "data_humandensity_temporal.RData")
 )

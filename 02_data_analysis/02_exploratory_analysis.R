@@ -203,9 +203,10 @@ df_all <- left_join(
   richness_all,
   data_sociopolitic,
   by = "name_en") %>%
+  left_join(road_length_by_admin, by = "name_en") %>% 
   select(percent_wallace_prop, polygons_richness, democracy_index_mean,
          academic_freedom_mean, gdp_mean, pop, GlobalNorth, name_en, area_km2,
-         colonial_origin, n_institutions) %>%
+         colonial_origin, n_institutions, total_km) %>%
   remove_missing() %>%
   mutate(
     n_institutions_scale = scale(n_institutions),
@@ -213,6 +214,7 @@ df_all <- left_join(
     democracy_index_scaled = scale(log(as.numeric(democracy_index_mean))),
     academic_freedom_scaled = scale(as.numeric(academic_freedom_mean)),
     dens_pop_scaled = scale(log(as.numeric(pop/area_km2))),
+    road_dens_scaled = scale(log(as.numeric(total_km/area_km2))),
     mean_grp_scaled = scale(log(as.numeric(gdp_mean)))
     #mobilization_effort_scaled = scale(log(as.numeric(mobilization_effort)))
   ) 
@@ -398,7 +400,8 @@ modelo_beta <- betareg(percent_wallace_prop ~
                          mean_grp_scaled +
                          democracy_index_scaled +
                          colonial_origin +
-                         n_institutions_scale,
+                         n_institutions_scale +
+                         road_dens_scaled,
                        data = df_all)
 summary(modelo_beta)
 car::vif(modelo_beta)
@@ -455,7 +458,8 @@ new_names <- tibble::tribble(
   "mean_grp_scaled", "GDP per capta",
   "democracy_index_scaled", "Liberal \ndemocracy index",
   "colonial_origin", "Colonial origin",
-  "n_institutions_scale", "N. of research \ninstitutions"
+  "n_institutions_scale", "N. of research \ninstitutions",
+  "road_dens_scaled", "Accessibility"
 ) #  "mobilization_effort_scaled", "Mobilization effort"
 map <- setNames(new_names$term_novo, new_names$term)
 

@@ -1443,8 +1443,6 @@ count_withoutocc_class <- left_join(
   tetrapods_key_species, by = "speciesKey")
 table(count_withoutocc_class$Class)
 
-
-
 tetrapods_polygons_completeness <- tetrapods_polygons_key %>%
   filter(!speciesKey %in% lost_occurences) %>% 
   group_by(speciesKey) %>% 

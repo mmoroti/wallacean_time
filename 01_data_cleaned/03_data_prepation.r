@@ -35,6 +35,12 @@ load(
     "01_data_cleaned",
     "data_socieconomic_temporal.RData")
 )
+load(
+  file = file.path(
+    local_directory,
+    "01_data_cleaned",
+    "data_humandensity_temporal.RData")
+)
 
 # species list
 load(
@@ -202,10 +208,14 @@ data_wallacean_unnested_modified <- data_wallacean_unnested %>%
   # sempre depois da descricao. entao se usarmos "year", teremos NA's porque
   # mudamos o ano de ocorrencia para ser sempre depois da descricao (year_modified).
   left_join(data_socieconomic_temporal, by = c("name_en", "year_modified" = "year")) %>%
+  # join human density over time
+  left_join(data_humandensity_temporal %>%
+              select(speciesKey, year, HumanDensityTime),
+            by = c("speciesKey", "year_modified" = "year")) %>%
   select(speciesKey, scientificName, Class, Order, Family, 
          name_en, date, year_modified, log_gdp_final, gdp_rank, gdp_percentile,
          BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
-         HumanDensity, Latitude, Elevation, ETA50K, AssessedStatus,
+         HumanDensityTime, Latitude, Elevation, ETA50K, AssessedStatus,
          ua_total, YearOfDescription, RangeSize, origin_of_data)
 
 data_wallacean_unnested_modified <- data_wallacean_unnested_modified %>%
@@ -293,7 +303,7 @@ df_wallacean_100 <- df_wallacean_time %>%
          t.start.date, t.stop.date, t.start, t.stop, t.start.year, t.stop.year,
          event, WallaceCompletude, log_gdp_final, gdp_rank, gdp_percentile,
          BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
-         HumanDensity, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
+         HumanDensityTime, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
          ua_total, origin_of_data, YearOfDescription)
 
 df_wallacean_75 <- df_wallacean_time %>%
@@ -304,12 +314,12 @@ df_wallacean_75 <- df_wallacean_time %>%
   ) %>%
   filter(linha <= pos_completude) %>%
   ungroup() %>%
-  select(speciesKey, Class, Order, Family, scientificName, name_en, 
-         date, t.start.date, t.stop.date, t.start,t.stop, t.start.year, t.stop.year,
-         event, Wallace75, log_gdp_final, gdp_rank, gdp_percentile,
+  select(speciesKey, Class, Order, Family, scientificName, name_en, date,
+         t.start.date, t.stop.date, t.start, t.stop, t.start.year, t.stop.year,
+         event, WallaceCompletude, log_gdp_final, gdp_rank, gdp_percentile,
          BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
-         HumanDensity, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
-         ua_total, origin_of_data, YearOfDescription) 
+         HumanDensityTime, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
+         ua_total, origin_of_data, YearOfDescription)
 
 df_wallacean_50 <- df_wallacean_time %>%
   # remove todos eventos apos completude 
@@ -323,7 +333,7 @@ df_wallacean_50 <- df_wallacean_time %>%
          t.start.date, t.stop.date, t.start,t.stop, t.start.year, t.stop.year,
          event, Wallace50, log_gdp_final, gdp_rank, gdp_percentile,
          BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
-         HumanDensity, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
+         HumanDensityTime, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
          ua_total, origin_of_data, YearOfDescription) 
 
 # TODO Precisa pensar em validacoes para atender o modelo de evento

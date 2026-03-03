@@ -157,118 +157,37 @@ plot_gof_custom <- function(x,
   }
 }
 
-summary_aalen <- function(fit, Class, Type) {
-  # Captura a saída do summary
-  summary_lines <- capture.output(summary(fit))
+plot_surv_panel <- function(fit_object,
+                            comps = 2:9,
+                            show_main = TRUE,
+                            show_xlab = TRUE,
+                            show_ylab = TRUE,
+                            year_seq = seq(1750, 2025, by = 25)) {
   
-  # Encontra o início da seção de termos paramétricos
-  start_idx <- grep("Parametric terms", summary_lines)
-  if (length(start_idx) == 0) stop("Seção 'Parametric terms' não encontrada.")
-  
-  # Cabeçalho da tabela
-  header_line <- summary_lines[start_idx + 1]
-  
-  # Encontra o fim da tabela (linha em branco ou início do "Call")
-  table_start <- start_idx + 2
-  call_idx <- grep("^\\s*Call", summary_lines)
-  table_end <- if (length(call_idx) > 0) call_idx[1] - 2 else which(summary_lines == "")[1] - 2
-  table_lines <- summary_lines[table_start:table_end]
-  
-  # Junta cabeçalho e dados
-  table_text <- c(header_line, table_lines)
-  
-  # Separa os termos (primeira palavra de cada linha, exceto o cabeçalho)
-  term_names <- sub("^\\s*(\\S+).*", "\\1", table_text[-1])  # ignora a primeira linha (header)
-  # Remove o termo da linha antes de ler a tabela
-  clean_lines <- gsub("^\\s*\\S+\\s+", "", table_text[-1])
-  # Junta novamente: header + linhas limpas
-  table_clean <- c(table_text[1], clean_lines)
-  
-  # Lê a tabela
-  param_df <- read.table(text = table_text,
-                         header = FALSE,
-                         fill = TRUE,
-                         check.names = FALSE)
-  
-  param_df <- param_df %>%
-    rename(term = V1,
-           coef = V2,
-           SE = V3,
-           'Robust SE' = V4,
-           z = V5,
-           'P-val' = V6) %>%
-           #'lower2.5%' = V7
-           #'upper97.5%' = V8
-    filter(term != 'Coef.') %>%
-    mutate(Class = Class,
-           Type = Type)
-  
-  return(param_df)
-}
-
-plot_cumulative_events <- function(fits, 
-                                   cores = NULL,
-                                   title = NULL,
-                                   legend = TRUE,
-                                   xlab = NULL, 
-                                   ylab = NULL) {
-  # 2. Extrai times, mu e se.mu
-  times_list <- lapply(fits, function(f) f$times)
-  mu_list    <- lapply(fits, function(f) f$mu)
-  se_list    <- lapply(fits, function(f) f$se.mu)
-  
-  # 3. xlim unificado
-  xrange <- range(unlist(times_list))
-  
-  # 4. ylim unificado
-  all_lower <- unlist(mapply(function(mu, se) mu - 1.96*se, mu_list, se_list))
-  all_upper <- unlist(mapply(function(mu, se) mu + 1.96*se, mu_list, se_list))
-  yrange    <- range(all_lower, all_upper, na.rm = TRUE)
-  
-  # 5. Define cores padrão se não fornecidas
-  if (is.null(cores)) {
-    cores <- c("#4FCFF5", "#A8896A", "#F58C25", "#F54952")
-  }
-  
-  # 6. Abre o gráfico vazio
-  par(cex.axis = 1.5, cex.lab = 1.5)
-  
-  first_grp <- names(fits)[1]
-  plot(times_list[[first_grp]], mu_list[[first_grp]], type = "n",
-       xlim = xrange, ylim = yrange,
-       xlab = xlab, ylab = ylab, main = title)
-
-  # 7. Desenha cada curva com sombra de IC
-  i <- 1
-  for(g in names(fits)) {
-    col     <- cores[(i-1) %% length(cores) + 1]  # Recycle colors if needed
-    t       <- times_list[[g]]
-    mu      <- mu_list[[g]]
-    se      <- se_list[[g]]
-    lower   <- mu - 1.96*se
-    upper   <- mu + 1.96*se
+  for(i in seq_along(comps)) {
     
-    # desenha a sombra (polígono) do IC
-    polygon(
-      x = c(t, rev(t)),
-      y = c(upper, rev(lower)),
-      col = adjustcolor(col, alpha.f = 0.2),
-      border = NA
-    )
+    extra_args <- list()
     
-    # desenha a linha central
-    lines(t, mu, type="s", col=col, lty=1, lwd=2)
-    i <- i + 1
-  }
-  
-  # 8. Adiciona legenda se solicitado
-  if (legend) {
-    legend("topleft",
-           legend = names(fits),
-           col    = cores[1:length(fits)],
-           lty    = 1,
-           lwd    = 2,
-           bty    = "n")
+    if(!show_main) extra_args$main <- ""
+    if(!show_xlab) extra_args$xlab <- ""
+    if(!show_ylab) extra_args$ylab <- ""
+    
+    do.call(plot,
+            c(list(fit_object,
+                   specific.comps = comps[i],
+                   xaxt = "n"),
+              extra_args))
+    
+    abline(v = year_seq,
+           col = "gray80",
+           lty = 3,
+           lwd = 0.5)
+    
+    axis(1,
+         at = year_seq,
+         labels = year_seq,
+         las = 2,
+         cex.axis = 0.7)
   }
 }
 
@@ -278,11 +197,6 @@ load(file = file.path(
   "02_data_analysis",
   "data_wallacean_time.RData")
 )
-
-#load(file = file.path(
-#  "00_raw_data",
-#  "adm_unit_global.RData")
-#)
 
 # shapefile to crop adm unit
 load(file.path(
@@ -301,12 +215,11 @@ df_wallacean_100 <- df_wallacean_100 %>%
 
 df_amphibia_100 <- df_wallacean_100 %>%
   mutate(status = event + WallaceCompletude) %>%
-  filter(year(date) < 1950) %>%
   filter(Class == "Amphibia") %>%
-  mutate(BodyLength_mm = scale(log(BodyLength_mm)),
+  mutate(BodySize = scale(log(BodyLength_mm)),
          Verticality = scale(Verticality^2),
          Nocturnality = scale(Nocturnality^2),
-         HumanDensity = scale(log(HumanDensity+1)),
+         HumanDensity = scale(log(HumanDensityTime+1)),
          Latitude = scale(abs(Latitude)),
          RangeSize = scale(log(RangeSize)),
          Elevation = scale(log(Elevation)),
@@ -317,10 +230,10 @@ df_amphibia_100 <- df_wallacean_100 %>%
 df_reptilia_100 <- df_wallacean_100 %>%
   mutate(status = event + WallaceCompletude) %>%
   filter(Class == "Reptilia") %>%
-  mutate(BodyLength_mm = scale(log(BodyLength_mm)),
+  mutate(BodySize = scale(log(BodyLength_mm)),
          Verticality = scale(Verticality^2),
          Nocturnality = scale(Nocturnality^2),
-         HumanDensity = scale(log(HumanDensity+1)),
+         HumanDensity = scale(log(HumanDensityTime+1)),
          Latitude = scale(abs(Latitude)),
          RangeSize = scale(log(RangeSize)),
          Elevation = scale(log(Elevation)),
@@ -331,10 +244,10 @@ df_reptilia_100 <- df_wallacean_100 %>%
 df_aves_100 <- df_wallacean_100 %>%
   mutate(status = event + WallaceCompletude) %>%
   filter(Class == "Aves") %>%
-  mutate(BodyLength_mm = scale(log(BodyLength_mm)),
+  mutate(BodySize = scale(log(BodyMass_g)),
          Verticality = scale(Verticality^2),
          Nocturnality = scale(Nocturnality^2),
-         HumanDensity = scale(log(HumanDensity+1)),
+         HumanDensity = scale(log(HumanDensityTime+1)),
          Latitude = scale(abs(Latitude)),
          RangeSize = scale(log(RangeSize)),
          Elevation = scale(log(Elevation)),
@@ -345,12 +258,13 @@ df_aves_100 <- df_wallacean_100 %>%
 df_mammalia_100 <- df_wallacean_100 %>%
   mutate(status = event + WallaceCompletude) %>%
   filter(Class == "Mammalia") %>%
-  mutate(BodyMass_g = scale(log(BodyMass_g)),
+  mutate(BodySize = scale(log(BodyMass_g)),
          Verticality = scale(Verticality^2),
          Nocturnality = scale(Nocturnality^2),
-         HumanDensity = scale(log(HumanDensity+1)),
+         HumanDensity = scale(log(HumanDensityTime+1)),
          Latitude = scale(abs(Latitude)),
          RangeSize = scale(log(RangeSize)),
+         Elevation = scale(log(Elevation)),
          gdp_rank_z = scale(gdp_rank),
          gdp_percentile_z = scale(gdp_percentile),
          gdp = scale(log_gdp_final))
@@ -371,34 +285,33 @@ save(
 ## Amphibia ----
 # Cox model
 amphibia_event_100 <- phreg(Surv(t.start.year, t.stop.year, status==1)~
-                              cluster(speciesKey)+
+                              BodySize +
                               Verticality +
                               Nocturnality +
-                              BodyLength_mm +
-                              Latitude +
-                              #HumanDensity +
-                              Elevation +
                               RangeSize +
-                              gdp_percentile_z,
+                              Elevation +
+                              HumanDensity +
+                              Latitude +
+                              gdp_percentile_z +
+                              cluster(speciesKey),
                             data=df_amphibia_100)
 
 summary(amphibia_event_100)
-plot(amphibia_event_100, se = TRUE)
 
 gof.amphibia <- gof(amphibia_event_100)
 
 amphibia_terminal_100 <- phreg(Surv(t.start.year,
                                     t.stop.year,
                                     status==2)~
-                                 cluster(speciesKey)+
+                                 BodySize +
                                  Verticality +
                                  Nocturnality +
-                                 BodyLength_mm +
-                                 Latitude +
-                                 HumanDensity +
-                                 Elevation +
                                  RangeSize +
-                                 gdp_percentile_z,
+                                 Elevation +
+                                 HumanDensity +
+                                 Latitude +
+                                 gdp_percentile_z +
+                                 cluster(speciesKey),
                                data=df_amphibia_100)
 summary(amphibia_terminal_100)
 gof.terminal.amphibia <- gof(amphibia_terminal_100)
@@ -406,13 +319,13 @@ gof.terminal.amphibia <- gof(amphibia_terminal_100)
 # Aalen model
 fit.amphibia.surv <- aalen(
   formula = Surv(t.start.year, t.stop.year, status == 1) ~
+    BodySize +
     Verticality +
     Nocturnality +
-    BodyLength_mm +
+    RangeSize +
+    Elevation +
     HumanDensity +
     Latitude +
-    Elevation +
-    RangeSize +
     gdp_percentile_z +
     cluster(speciesKey),
   data= df_amphibia_100,
@@ -427,13 +340,13 @@ plot(fit.amphibia.surv)
 
 fit.amphibia.completeness <- aalen(
   formula = Surv(t.start.year, t.stop.year, status == 2) ~
+    BodySize +
     Verticality +
     Nocturnality +
-    BodyLength_mm +
+    RangeSize +
+    Elevation +
     HumanDensity +
     Latitude +
-    Elevation +
-    RangeSize +
     gdp_percentile_z +
     cluster(speciesKey),
   data= df_amphibia_100,
@@ -456,15 +369,15 @@ fit.amphibia <- recurrent.marginal.mean(
 reptilia_event_100 <- phreg(Surv(t.start.year,
                                  t.stop.year,
                                  status==1)~
-                              cluster(speciesKey)+
+                              BodySize +
                               Verticality +
                               Nocturnality +
-                              BodyLength_mm +
-                              Latitude +
-                              HumanDensity +
-                              Elevation +
                               RangeSize +
-                              gdp_percentile_z,
+                              Elevation +
+                              HumanDensity +
+                              Latitude +
+                              gdp_percentile_z +
+                              cluster(speciesKey),
                             data=df_reptilia_100)
 summary(reptilia_event_100)
 gof.reptilia <- gof(reptilia_event_100)
@@ -472,15 +385,15 @@ gof.reptilia <- gof(reptilia_event_100)
 reptilia_terminal_100 <- phreg(Surv(t.start.year,
                                     t.stop.year,
                                     status==2)~
-                                 cluster(speciesKey)+
+                                 BodySize +
                                  Verticality +
                                  Nocturnality +
-                                 BodyLength_mm +
-                                 Latitude +
-                                 HumanDensity +
-                                 Elevation +
                                  RangeSize +
-                                 gdp_percentile_z,
+                                 Elevation +
+                                 HumanDensity +
+                                 Latitude +
+                                 gdp_percentile_z +
+                                 cluster(speciesKey),
                                data=df_reptilia_100)
 summary(reptilia_terminal_100)
 gof.terminal.reptilia <- gof(reptilia_terminal_100)
@@ -488,14 +401,14 @@ gof.terminal.reptilia <- gof(reptilia_terminal_100)
 # Aalen model
 fit.reptilia.surv <- aalen(
   formula = Surv(t.start.year, t.stop.year, status == 1) ~
+    BodySize +
     Verticality +
     Nocturnality +
-    BodyLength_mm +
+    RangeSize +
+    Elevation +
     HumanDensity +
     Latitude +
-    Elevation +
-    RangeSize +
-    gdp_percentile_z + 
+    gdp_percentile_z +
     cluster(speciesKey),
   data= df_reptilia_100,
   start.time = 1760,
@@ -508,13 +421,13 @@ fit.reptilia.surv <- aalen(
 
 fit.reptilia.completeness <- aalen(
   formula = Surv(t.start.year, t.stop.year, status == 2) ~
+    BodySize +
     Verticality +
     Nocturnality +
-    BodyLength_mm +
+    RangeSize +
+    Elevation +
     HumanDensity +
     Latitude +
-    Elevation +
-    RangeSize +
     gdp_percentile_z +
     cluster(speciesKey),
   data= df_reptilia_100,
@@ -528,22 +441,22 @@ fit.reptilia.completeness <- aalen(
 
 fit.reptilia <- recurrent.marginal.mean(
   fit.reptilia.surv,
-  fit.reptilia.death
+  fit.reptilia.completeness
 )
 
 ## Aves ----
 aves_event_100 <- phreg(Surv(t.start.year,
                              t.stop.year,
                              status==1)~
-                          cluster(speciesKey)+
+                          BodySize +
                           Verticality +
                           Nocturnality +
-                          BodyLength_mm +
-                          Latitude +
-                          HumanDensity +
-                          Elevation +
                           RangeSize +
-                          gdp_percentile_z,
+                          Elevation +
+                          HumanDensity +
+                          Latitude +
+                          gdp_percentile_z +
+                          cluster(speciesKey),
                         data=df_aves_100)
 summary(aves_event_100)
 gof.aves <- gof(aves_event_100)
@@ -551,15 +464,15 @@ gof.aves <- gof(aves_event_100)
 aves_terminal_100 <- phreg(Surv(t.start.year,
                                 t.stop.year,
                                 status==2)~
-                             cluster(speciesKey)+
+                             BodySize +
                              Verticality +
                              Nocturnality +
-                             BodyLength_mm +
-                             Latitude +
-                             HumanDensity +
-                             Elevation +
                              RangeSize +
-                             gdp_percentile_z,
+                             Elevation +
+                             HumanDensity +
+                             Latitude +
+                             gdp_percentile_z +
+                             cluster(speciesKey),
                            data=df_aves_100)
 summary(aves_terminal_100)
 gof.terminal.aves <- gof(aves_terminal_100)
@@ -567,13 +480,13 @@ gof.terminal.aves <- gof(aves_terminal_100)
 # Aalen model
 fit.aves.surv <- aalen(
   formula = Surv(t.start.year, t.stop.year, status == 1) ~
+    BodySize +
     Verticality +
     Nocturnality +
-    BodyLength_mm +
+    RangeSize +
+    Elevation +
     HumanDensity +
     Latitude +
-    Elevation +
-    RangeSize +
     gdp_percentile_z +
     cluster(speciesKey),
   data= df_aves_100,
@@ -584,18 +497,16 @@ fit.aves.surv <- aalen(
   n.sim        = 100,     # número de simulações para CI
   resample.iid = 1       # para funções de residuais/CI i.i.d.
 )
-par(mfrow=c(2,4))
-plot(fit.aves.surv)
 
 fit.aves.completeness <- aalen(
   formula = Surv(t.start.year, t.stop.year, status == 2) ~
+    BodySize +
     Verticality +
     Nocturnality +
-    BodyLength_mm +
+    RangeSize +
+    Elevation +
     HumanDensity +
     Latitude +
-    Elevation +
-    RangeSize +
     gdp_percentile_z +
     cluster(speciesKey),
   data= df_aves_100,
@@ -606,8 +517,6 @@ fit.aves.completeness <- aalen(
   n.sim        = 100,     # número de simulações para CI
   resample.iid = 1       # para funções de residuais/CI i.i.d.
 )
-par(mfrow=c(2,4))
-plot(fit.aves.completeness)
 
 fit.aves <- recurrent.marginal.mean(
   fit.aves.surv,
@@ -618,15 +527,15 @@ fit.aves <- recurrent.marginal.mean(
 mammalia_event_100 <- phreg(Surv(t.start.year,
                                  t.stop.year,
                                  status==1)~
-                              cluster(speciesKey)+
+                              BodySize +
                               Verticality +
                               Nocturnality +
-                              BodyLength_mm +
-                              Latitude +
-                              HumanDensity +
-                              Elevation +
                               RangeSize +
-                              gdp_percentile_z,
+                              Elevation +
+                              HumanDensity +
+                              Latitude +
+                              gdp_percentile_z +
+                              cluster(speciesKey),
                             data=df_mammalia_100)
 summary(mammalia_event_100)
 gof.mammalia <- gof(mammalia_event_100)
@@ -634,15 +543,15 @@ gof.mammalia <- gof(mammalia_event_100)
 mammalia_terminal_100 <- phreg(Surv(t.start.year,
                                     t.stop.year,
                                     status==2)~                              
-                                 cluster(speciesKey)+
+                                 BodySize +
                                  Verticality +
                                  Nocturnality +
-                                 BodyLength_mm +
-                                 Latitude +
-                                 HumanDensity +
-                                 Elevation +
                                  RangeSize +
-                                 gdp_percentile_z,
+                                 Elevation +
+                                 HumanDensity +
+                                 Latitude +
+                                 gdp_percentile_z +
+                                 cluster(speciesKey),
                                data=df_mammalia_100)
 summary(mammalia_terminal_100)
 gof.terminal.mammalia <- gof(mammalia_terminal_100)
@@ -650,16 +559,16 @@ gof.terminal.mammalia <- gof(mammalia_terminal_100)
 # Aalen model
 fit.mammalia.surv <- aalen(
   formula = Surv(t.start.year, t.stop.year, status == 1) ~
+    BodySize +
     Verticality +
     Nocturnality +
-    BodyLength_mm +
+    RangeSize +
+    Elevation +
     HumanDensity +
     Latitude +
-    Elevation +
-    RangeSize +
     gdp_percentile_z +
     cluster(speciesKey),
-  data= df_mammalia_100,
+  data= df_mammalia_100 %>% filter(!Order %in% c("Chiroptera")),
   start.time = 1760,
   max.time     = 2025,
   #residuals = 1,
@@ -667,20 +576,21 @@ fit.mammalia.surv <- aalen(
   n.sim        = 100,     # número de simulações para CI
   resample.iid = 1       # para funções de residuais/CI i.i.d.
 )
+plot(fit.mammalia.surv)
 
 fit.mammalia.completeness <- aalen(
   formula = Surv(t.start.year, t.stop.year, status == 2) ~
+    BodySize +
     Verticality +
     Nocturnality +
-    BodyLength_mm +
+    RangeSize +
+    Elevation +
     HumanDensity +
     Latitude +
-    Elevation +
-    RangeSize +
     gdp_percentile_z +
     cluster(speciesKey),
   data= df_mammalia_100,
-  start.time = 1756,
+  start.time = 1760,
   max.time     = 2025,
   #residuals = 1,
   robust       = 1,       # variância robusta
@@ -730,7 +640,7 @@ save(
 save(
   fit.amphibia.surv,
   fit.reptilia.surv,
-  #fit.aves.surv,
+  fit.aves.surv,
   fit.mammalia.surv,
   file = file.path(
     local_directory,
@@ -740,7 +650,7 @@ save(
 save(
   fit.amphibia.completeness,
   fit.reptilia.completeness,
-  #fit.aves.completeness,
+  fit.aves.completeness,
   fit.mammalia.completeness, 
   file = file.path(
     local_directory,
@@ -1073,15 +983,58 @@ plot_gof_custom(gof.mammalia, titles = TRUE, bg.col = "#D66FFF",
 
 ## Time varying effects ----
 dev.off()
+par(mfrow = c(4, 8),
+    mar = c(2, 1.5, 1, 0.5),  
+    oma = c(3, 3, 2, 1))      
 
-par(mfrow=c(2,4))
-plot(fit.amphibia.completeness)
-for(i in 1:8) {
-  par(mfg = c(ceiling(i/4), (i-1)%%4 + 1))  # posição na matriz 2x4
-  
-  # Adicionar as linhas
-  abline(v = seq(1750, 2025, by = 25), 
-         col = "gray70", 
-         lty = 3, 
-         lwd = 0.5)
-}
+plot_surv_panel(fit.amphibia.surv,
+                show_main = TRUE,
+                show_xlab = FALSE,
+                show_ylab = FALSE)
+
+plot_surv_panel(fit.reptilia.surv,
+                show_main = FALSE,
+                show_xlab = FALSE,
+                show_ylab = FALSE)
+
+plot_surv_panel(fit.aves.surv,
+                show_main = FALSE,
+                show_xlab = FALSE,
+                show_ylab = FALSE)
+
+plot_surv_panel(fit.mammalia.surv,
+                show_main = FALSE,
+                show_ylab = FALSE)
+
+# Completeness
+dev.off()
+par(mfrow = c(4, 8),
+    mar = c(2, 1.5, 1, 0.5),  
+    oma = c(3, 3, 2, 1))      
+
+plot_surv_panel(fit.amphibia.completeness,
+                show_main = TRUE,
+                show_xlab = FALSE,
+                show_ylab = FALSE)
+
+plot_surv_panel(fit.reptilia.completeness,
+                show_main = FALSE,
+                show_xlab = FALSE,
+                show_ylab = FALSE)
+
+plot_surv_panel(fit.aves.completeness,
+                show_main = FALSE,
+                show_xlab = FALSE,
+                show_ylab = FALSE)
+
+plot_surv_panel(fit.mammalia.completeness,
+                show_main = FALSE,
+                show_ylab = FALSE)
+
+# Hist plot events
+df_mammalia_100 %>% 
+  filter(status == 1) %>%  # só eventos
+  ggplot(aes(x = year(date))) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  labs(x = "Year", y = "Event frequency") +
+  theme_minimal()
