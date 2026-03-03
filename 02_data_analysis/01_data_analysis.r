@@ -656,7 +656,7 @@ save(
     local_directory,
     "02_data_analysis",
     "results",
-    "aalen_completeness_models.RData"))
+    "aalen_terminal_models.RData"))
 
 # Results plots ----
 ## Cumulative hazard plots ----
