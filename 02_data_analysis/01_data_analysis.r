@@ -67,127 +67,185 @@ plot_gof_custom <- function(x,
                             type = NULL,
                             titles = TRUE,
                             bg.col = NULL,
-                            xlab = "",          # label do eixo X
-                            ylab = "",          # label do eixo Y
-                            cex.lab = 1,        # tamanho dos labels
-                            cex.axis = 1,       # tamanho dos números dos eixos
-                            show.xlab = TRUE,   # mostrar label do eixo X?
-                            show.ylab = TRUE,   # mostrar label do eixo Y?
-                            show.xaxis = TRUE,  # mostrar números do eixo X?
-                            show.yaxis = TRUE,  # mostrar números do eixo Y?
-                            show.xticks = TRUE, # mostrar ticks do eixo X?
-                            show.yticks = TRUE, # mostrar ticks do eixo Y?
+                            xlab = "",
+                            ylab = "",
+                            cex.lab = 1,
+                            cex.axis = 1,
+                            show.xlab = TRUE,
+                            show.ylab = TRUE,
+                            show.xaxis = TRUE,
+                            show.yaxis = TRUE,
+                            show.xticks = TRUE,
+                            show.yticks = TRUE,
+                            year_seq = seq(1750, 2025, by = 25),  # <<< NOVO
                             ...) {
+  
   if (is.null(type)) {
     if (x$type == "prop") type <- "time"
     if (x$type == "modelmatrix") type <- "modelmatrix"
     if (x$type == "Zmodelmatrix") type <- "z"
   }
   
-  # Preparar parâmetros dos eixos
   xlab_final <- if (show.xlab) xlab else ""
   ylab_final <- if (show.ylab) ylab else ""
   
   if (type == "time" || type == "modelmatrix") {
+    
     p <- ncol(x$score)
+    
     for (i in 1:p) {
+      
       simU <- x$simUt[, (0:49) * p + i]
       rsU <- max(abs(simU))
       rsU <- max(rsU, abs(x$score[, i]))
       
-      # Plotar sem números/ticks primeiro
-      plot(x$jumptimes, x$score[, i], type = "n", ylim = c(-rsU, rsU),
-           xlab = xlab_final, ylab = ylab_final,
-           cex.lab = cex.lab, cex.axis = cex.axis,
-           xaxt = "n", yaxt = "n",  # Sem eixos inicialmente
+      # FIXAR LIMITES DO EIXO X
+      plot(x$jumptimes, x$score[, i],
+           type = "n",
+           ylim = c(-rsU, rsU),
+           xlim = range(year_seq),   # <<< garante mesmo eixo
+           xlab = xlab_final,
+           ylab = ylab_final,
+           cex.lab = cex.lab,
+           cex.axis = cex.axis,
+           xaxt = "n",
+           yaxt = "n",
            ...)
-      
-      # Adicionar eixos customizados
+    
       if (show.xaxis || show.xticks) {
-        axis(1, labels = show.xaxis, tick = show.xticks, cex.axis = cex.axis)
+        axis(1,
+             at = year_seq,
+             labels = if (show.xaxis) year_seq else rep("", length(year_seq)),
+             tick = show.xticks,
+             cex.axis = cex.axis)
       }
-      
+
       if (show.yaxis || show.yticks) {
-        axis(2, labels = show.yaxis, tick = show.yticks, cex.axis = cex.axis)
+        axis(2,
+             labels = show.yaxis,
+             tick = show.yticks,
+             cex.axis = cex.axis)
       }
       
-      # Adicionar grade (opcional)
       box()
       
       if (titles) title(main = rownames(x$res)[i])
       
-      # Adicionar as linhas
-      matlines(x$jumptimes, simU, type = "s", lwd = 0.3,
+      matlines(x$jumptimes, simU,
+               type = "s",
+               lwd = 0.3,
                col = if (!is.null(bg.col)) bg.col else col)
-      lines(x$jumptimes, x$score[, i], type = "s", lwd = 1.5)
+      
+      lines(x$jumptimes, x$score[, i],
+            type = "s",
+            lwd = 1.5)
     }
+    
   } else {
+    
     for (i in 1:length(x$Zres)) {
+      
       xr <- x$Zres[[i]]
       obsz <- c(tail(xr$score, 1))
       times <- xr$xaxs
-      rsU <- max(max(abs(obsz)), max(abs(xr$simUtlast[1:50, ])))
       
-      # Plotar sem eixos inicialmente
-      plot(times, obsz, type = "n", ylim = c(-rsU, rsU),
-           xlab = xlab_final, ylab = ylab_final,
+      rsU <- max(max(abs(obsz)),
+                 max(abs(xr$simUtlast[1:50, ])))
+      
+      plot(times, obsz,
+           type = "n",
+           ylim = c(-rsU, rsU),
+           xlim = range(year_seq),   # <<< garante mesmo eixo
+           xlab = xlab_final,
+           ylab = ylab_final,
            cex.lab = cex.lab,
-           xaxt = "n", yaxt = "n",  # Sem eixos inicialmente
+           xaxt = "n",
+           yaxt = "n",
            ...)
       
-      # Adicionar eixos customizados
       if (show.xaxis || show.xticks) {
-        axis(1, labels = show.xaxis, tick = show.xticks, cex.axis = cex.axis)
+        axis(1,
+             at = year_seq,
+             labels = if (show.xaxis) year_seq else rep("", length(year_seq)),
+             tick = show.xticks,
+             cex.axis = cex.axis)
       }
       
       if (show.yaxis || show.yticks) {
-        axis(2, labels = show.yaxis, tick = show.yticks, cex.axis = cex.axis)
+        axis(2,
+             labels = show.yaxis,
+             tick = show.yticks,
+             cex.axis = cex.axis)
       }
       
-      # Adicionar grade
       box()
       
       if (titles) title(main = rownames(x$res)[i])
       
-      # Adicionar as linhas
-      matlines(times, t(xr$simUtlast[1:50, ]), type = "l", lwd = 0.3,
+      matlines(times,
+               t(xr$simUtlast[1:50, ]),
+               type = "l",
+               lwd = 0.3,
                col = if (!is.null(bg.col)) bg.col else col)
-      lines(times, obsz, lwd = 2, col = 1)
+      
+      lines(times,
+            obsz,
+            lwd = 2,
+            col = 1)
     }
   }
 }
 
 plot_surv_panel <- function(fit_object,
-                            comps = 2:9,
+                            comps = 3:10,
                             show_main = TRUE,
                             show_xlab = TRUE,
                             show_ylab = TRUE,
-                            year_seq = seq(1750, 2025, by = 25)) {
+                            show_years = TRUE,       # controla labels, não ticks
+                            year_seq = seq(1750, 2025, by = 50),
+                            coef_col = "blue",
+                            coef_lwd = 2,
+                            shade_alpha = 0.15) {
   
   for(i in seq_along(comps)) {
+    comp <- comps[i]
     
-    extra_args <- list()
+    # extrai dados do componente
+    time <- fit_object$cum[, 1]
+    est <- fit_object$cum[, comp]
+    sd <- sqrt(fit_object$robvar.cum[, comp])
+    upper <- est + 2*sd
+    lower <- est - 2*sd
     
-    if(!show_main) extra_args$main <- ""
-    if(!show_xlab) extra_args$xlab <- ""
-    if(!show_ylab) extra_args$ylab <- ""
+    # labels
+    xlab <- ifelse(show_xlab, "Year", "")
+    ylab <- ifelse(show_ylab, paste0("Coef ", colnames(fit_object$cum)[comp]), "")
+    main <- ifelse(show_main, colnames(fit_object$cum)[comp], "")
     
-    do.call(plot,
-            c(list(fit_object,
-                   specific.comps = comps[i],
-                   xaxt = "n"),
-              extra_args))
+    # plot vazio com limites
+    ylim <- range(c(lower, upper, 0))
+    plot(time, est, type = "n", xlab = xlab, ylab = ylab,
+         main = main, ylim = ylim, xaxt = "n")
     
-    abline(v = year_seq,
-           col = "gray80",
-           lty = 3,
-           lwd = 0.5)
+    # linha no zero
+    abline(h = 0, col = "gray50", lty = 2)
     
-    axis(1,
-         at = year_seq,
-         labels = year_seq,
-         las = 2,
-         cex.axis = 0.7)
+    # shade
+    polygon(c(time, rev(time)),
+            c(upper, rev(lower)),
+            col = adjustcolor(coef_col, alpha.f = shade_alpha),
+            border = NA)
+    
+    # linha central
+    lines(time, est, col = coef_col, lwd = coef_lwd)
+    
+    # grid
+    abline(v = year_seq, col = "gray80", lty = 3, lwd = 0.5)
+    
+    # eixo X: controla só os labels
+    axis(1, at = year_seq,
+         labels = if(show_years) year_seq else rep("", length(year_seq)),
+         las = 2, cex.axis = 1.0)
   }
 }
 
@@ -350,7 +408,7 @@ fit.amphibia.completeness <- aalen(
     gdp_percentile_z +
     cluster(speciesKey),
   data= df_amphibia_100,
-  start.time = 1850,
+  start.time = 1760,
   max.time     = 2025,
   #residuals = 1,
   robust       = 1,       # variância robusta
@@ -659,72 +717,39 @@ save(
     "aalen_terminal_models.RData"))
 
 # Results plots ----
+# Exploratory data
+length(unique(df_amphibia_100$speciesKey)) # 1955 spp
+length(unique(df_reptilia_100$speciesKey)) # 3401 spp
+length(unique(df_aves_100$speciesKey))     # 6073 spp
+length(unique(df_mammalia_100$speciesKey)) # 2954 spp
+
+table(df_amphibia_100$event)
+table(df_reptilia_100$event)
+table(df_aves_100$event)
+table(df_mammalia_100$event)
+
 ## Cumulative hazard plots ----
-# TODO: Does the difference persist?
-base <- mets:::basecumhaz(
-  tetrapods_100,
-  joint = 1,
-  robust = FALSE,
-  cumhaz = "cumhaz",
-  se.cumhaz = "se.cumhaz"
+load(file.path(
+  local_directory,
+  "02_data_analysis",
+  "results",
+  "cox_event_models.RData")
 )
 
-H0 <- as.data.frame(base[[1]]$cumhaz)
-H1 <- as.data.frame(base[[2]]$cumhaz)
+load(file.path(
+  local_directory,
+  "02_data_analysis",
+  "results",
+  "cox_terminal_models.RData")
+)
 
-H0 <- H0[, c("time", "cumhaz")]
-H1 <- H1[, c("time", "cumhaz")]
-
-H <- full_join(H0, H1, by = "time",
-               suffix = c("_0", "_1")) |>
-  arrange(time) |>
-  fill(cumhaz_0, cumhaz_1, .direction = "down") 
-
-# absolute difference
-H_abs <- H |>
-  mutate(delta_cumhaz = cumhaz_1 - cumhaz_0) |>
-  filter(!is.na(delta_cumhaz))
-
-plot(H_abs$time, H_abs$delta_cumhaz,
-     type = "s",
-     lwd = 2,
-     ylim = c(0, 0.2),
-     xlim = c(1875, 2025),
-     col = "purple",
-     xlab = "Ano",
-     ylab = expression(Delta~(t)))
-abline(h = 0, lty = 2)
-axis(1, at = seq(1850, 2025, by = 25), las = 1)  
-abline(v = seq(1850, 2025, by = 25), 
-       col = "gray70",  # cor cinza clara
-       lty = 3,         # linha tracejada
-       lwd = 0.5)       # linha bem fina
-
-# ratio difference
-H_raz <- H |> mutate(ratio_cumhaz = cumhaz_1 / cumhaz_0)
-
-plot(H_raz$time, H_raz$ratio_cumhaz, 
-     type = "l",
-     col = "darkgreen",
-     ylim = c(0, 15),
-     xlim = c(1875, 2025),
-     lwd = 2,
-     xlab = "Ano",
-     ylab = "North/South Ratio")
-abline(h = 1, lty = 2)
-axis(1, at = seq(1850, 2025, by = 25), las = 1)  
-abline(v = seq(1850, 2025, by = 25), 
-       col = "gray70",  # cor cinza clara
-       lty = 3,         # linha tracejada
-       lwd = 0.5)       # linha bem fina
-
-# Each group
 cores <- c("Amphibia" = "#75C6FF",
            "Reptilia" = "#86A94D",
            "Aves" = "#7F5C3B",
            "Mammalia" = "#D66FFF")
 
-par(mfrow=c(1,3),
+dev.off()
+par(mfrow=c(1,2),
     cex.lab = 1.5, 
     cex.axis = 1.3)  # Aumentar tamanho dos labels dos eixos
 
@@ -742,6 +767,9 @@ title(main = "Geodiscovery", line = 0.5, cex.main = 1.5)  # Ajustar posição do
 legend("topleft", legend = names(cores), col = unname(cores), 
        lwd = 2, bty = "n", title = "", cex = 1.2)  # Aumentar tamanho da legenda
 
+anos <- seq(1750, 2025, by = 50)
+abline(v = anos, col = "gray70", lty = 2, lwd = 1)
+
 # Terminal event
 plot(amphibia_terminal_100, se = TRUE, col = cores["Amphibia"], 
      legend = FALSE,
@@ -753,6 +781,9 @@ plot(reptilia_terminal_100, se = TRUE, add = TRUE, col = cores["Reptilia"])
 plot(aves_terminal_100, se = TRUE, add = TRUE, col = cores["Aves"])
 plot(mammalia_terminal_100, se = TRUE, add = TRUE, col = cores["Mammalia"])
 title(main = "Completeness", line = 0.5, cex.main = 1.5)
+
+anos <- seq(1750, 2025, by = 50)
+abline(v = anos, col = "gray70", lty = 2, lwd = 1)
 
 # Mean events
 amphibia_rm <- recurrentMarginalPhreg(amphibia_event_100,
@@ -818,13 +849,14 @@ coef_plot <- bind_rows(
 
 # Definir a ordem desejada das variáveis
 ordem_variaveis <- c(
-  "BodyLength_mm",
-  "Nocturnality", 
+  "BodySize",
   "Verticality",
+  "Nocturnality", 
   "RangeSize",
   "Elevation",
   "HumanDensity",
-  "Latitude"
+  "Latitude",
+  "gdp_percentile_z"
 )
 
 # Definir a ordem desejada dos grupos (classes)
@@ -901,7 +933,7 @@ coefplot <- ggplot(coef_plot_ordenado,
     # Texto
     plot.title = element_text(face = "bold", hjust = 0.5, size = 18),
     axis.title.x = element_text(size = 15, face = "bold", margin = margin(t = 10)),
-    axis.text.x = element_text(size = 15),
+    axis.text.x = element_text(size = 13),
     axis.text.y = element_text(size = 15, color = "black"),
     
     # Legendas
@@ -950,91 +982,233 @@ coefplot <- ggplot(coef_plot_ordenado,
     linetype = "solid"
   ); coefplot
 
-ggsave("Figures/ModelPlot.pdf",
+ggsave(file.path("G:", "Meu Drive", "Artigos", "wallace_time", "Figures",
+                 "Fig2.CoefPlot.pdf"),
        plot=coefplot, width=15, height=8, units="in",
        dpi = 'print', cairo_pdf)
 
 ## GOF plot ----
+# Event
 dev.off()
-par(mfrow=c(4,7),
-    mar=c(2.5,2.5,2,1),
-    mgp=c(1.7,0.7,0),
-    cex.axis=1.0,     # números menores
-    cex.lab=1.2)      # labels menores
-par(las=2)  # coloca labels na vertical
+par(mfrow=c(4,8),
+    mar=c(2.5, 3, 1.5, 0.5),
+    oma=c(0,0,0,0),
+    mgp=c(1.7,0.6,0),
+    xaxs="i",
+    yaxs="i",
+    cex.axis=1,
+    cex.lab=5)
+par(las=2)
 
-plot_gof_custom(gof.terminal.amphibia, titles = TRUE, bg.col = "#75C6FF")
-plot_gof_custom(gof.terminal.reptilia, titles = FALSE, bg.col = "#86A94D")
-plot_gof_custom(gof.terminal.aves, titles = FALSE, bg.col = "#7F5C3B")
-plot_gof_custom(gof.terminal.mammalia, titles = FALSE, bg.col = "#D66FFF")
+plot_gof_custom(gof.amphibia, 
+                titles = TRUE,
+                bg.col = "#75C6FF",
+                year_seq = seq(1750, 2025, by = 25),
+                show.xaxis = TRUE,
+                show.yaxis = TRUE,
+                show.xticks = TRUE,
+                show.yticks = TRUE)
+plot_gof_custom(gof.reptilia,
+                titles = FALSE,
+                bg.col = "#86A94D",
+                year_seq = seq(1750, 2025, by = 25),
+                show.xaxis = TRUE,
+                show.yaxis = TRUE,
+                show.xticks = TRUE,
+                show.yticks = TRUE)
+plot_gof_custom(gof.aves,
+                titles = FALSE,
+                bg.col = "#7F5C3B",
+                year_seq = seq(1750, 2025, by = 25),
+                show.xaxis = TRUE,
+                show.yaxis = TRUE,
+                show.xticks = TRUE,
+                show.yticks = TRUE)
+plot_gof_custom(gof.mammalia,
+                titles = FALSE,
+                bg.col = "#D66FFF",
+                year_seq = seq(1750, 2025, by = 25),
+                show.xaxis = TRUE,
+                show.yaxis = TRUE,
+                show.xticks = TRUE,
+                show.yticks = TRUE)
 
-plot_gof_custom(gof.amphibia, titles = TRUE, bg.col = "#75C6FF",
-                show.xaxis = TRUE, show.yaxis = TRUE,
-                show.xticks = TRUE, show.yticks = TRUE)
-plot_gof_custom(gof.reptilia, titles = TRUE, bg.col = "#86A94D",
-                show.xaxis = TRUE, show.yaxis = TRUE,
-                show.xticks = TRUE, show.yticks = TRUE)
-plot_gof_custom(gof.aves, titles = TRUE, bg.col = "#7F5C3B",
-                show.xaxis = TRUE, show.yaxis = TRUE,
-                show.xticks = TRUE, show.yticks = TRUE)
-plot_gof_custom(gof.mammalia, titles = TRUE, bg.col = "#D66FFF",
-                show.xaxis = TRUE, show.yaxis = TRUE,
-                show.xticks = TRUE, show.yticks = TRUE)
+# Terminal 
+dev.off()
+par(mfrow=c(4,8),
+    mar=c(2.5,2,1.5,0.5),
+    oma=c(0,0,0,0),
+    mgp=c(1.7,0.6,0),
+    xaxs="i",
+    yaxs="i",
+    cex.axis=1,
+    cex.lab=5)
+par(las=2)
+
+plot_gof_custom(gof.terminal.amphibia,
+                titles = TRUE,
+                year_seq = seq(1900, 2025, by = 25),
+                bg.col = "#75C6FF")
+plot_gof_custom(gof.terminal.reptilia,
+                titles = FALSE,
+                year_seq = seq(1900, 2025, by = 25),
+                bg.col = "#86A94D")
+plot_gof_custom(gof.terminal.aves,
+                titles = FALSE,
+                year_seq = seq(1850, 2025, by = 25),
+                bg.col = "#7F5C3B")
+plot_gof_custom(gof.terminal.mammalia, 
+                titles = FALSE,
+                year_seq = seq(1900, 2025, by = 25),
+                bg.col = "#D66FFF")
 
 ## Time varying effects ----
+load(
+  file.path(
+    local_directory,
+    "02_data_analysis",
+    "results",
+    "aalen_event_models.RData")
+  )
+
+load(
+  file.path(
+    local_directory,
+    "02_data_analysis",
+    "results",
+    "aalen_terminal_models.RData")
+  )
+
 dev.off()
-par(mfrow = c(4, 8),
-    mar = c(2, 1.5, 1, 0.5),  
-    oma = c(3, 3, 2, 1))      
+par(mfrow=c(4,8),
+    mar=c(2.5,2,1.5,0.5),
+    oma=c(0,0,0,0),
+    mgp=c(1.7,0.6,0),
+    xaxs="i",
+    yaxs="i",
+    cex.axis=1,
+    cex.lab=5)
 
 plot_surv_panel(fit.amphibia.surv,
                 show_main = TRUE,
                 show_xlab = FALSE,
-                show_ylab = FALSE)
+                show_ylab = FALSE,
+                show_years = TRUE,
+                coef_col = "#2DA5E8",
+                shade_alpha = 0.2)
 
 plot_surv_panel(fit.reptilia.surv,
                 show_main = FALSE,
                 show_xlab = FALSE,
-                show_ylab = FALSE)
+                show_ylab = FALSE,
+                show_years = TRUE,
+                coef_col = "#86A94D",
+                shade_alpha = 0.2)
 
 plot_surv_panel(fit.aves.surv,
                 show_main = FALSE,
                 show_xlab = FALSE,
-                show_ylab = FALSE)
+                show_ylab = FALSE,
+                show_years = TRUE,
+                coef_col = "#7F5C3B",
+                shade_alpha = 0.2)
 
 plot_surv_panel(fit.mammalia.surv,
                 show_main = FALSE,
-                show_ylab = FALSE)
+                show_xlab = FALSE,
+                show_ylab = FALSE,
+                show_years = TRUE,
+                coef_col = "#D66FFF",
+                shade_alpha = 0.2) 
 
 # Completeness
 dev.off()
-par(mfrow = c(4, 8),
-    mar = c(2, 1.5, 1, 0.5),  
-    oma = c(3, 3, 2, 1))      
+par(mfrow=c(4,8),
+    mar=c(2.5,2,1.5,0.5),
+    oma=c(0,0,0,0),
+    mgp=c(1.7,0.6,0),
+    xaxs="i",
+    yaxs="i",
+    cex.axis=1,
+    cex.lab=5)      
 
 plot_surv_panel(fit.amphibia.completeness,
                 show_main = TRUE,
                 show_xlab = FALSE,
-                show_ylab = FALSE)
+                show_ylab = FALSE,
+                show_years = TRUE,
+                coef_col = "#2DA5E8",
+                shade_alpha = 0.2)
 
 plot_surv_panel(fit.reptilia.completeness,
                 show_main = FALSE,
                 show_xlab = FALSE,
-                show_ylab = FALSE)
+                show_ylab = FALSE,
+                show_years = TRUE,
+                coef_col = "#86A94D",
+                shade_alpha = 0.2)
 
 plot_surv_panel(fit.aves.completeness,
                 show_main = FALSE,
                 show_xlab = FALSE,
-                show_ylab = FALSE)
+                show_ylab = FALSE,
+                show_years = TRUE,
+                coef_col = "#7F5C3B",
+                shade_alpha = 0.2)
 
 plot_surv_panel(fit.mammalia.completeness,
                 show_main = FALSE,
-                show_ylab = FALSE)
+                show_xlab = FALSE,
+                show_ylab = FALSE,
+                show_years = TRUE,
+                coef_col = "#D66FFF",
+                shade_alpha = 0.2) 
 
 # Hist plot events
-df_mammalia_100 %>% 
+df_wallacean_100 %>%
   filter(status == 1) %>%  # só eventos
-  ggplot(aes(x = year(date))) +
-  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  ggplot(aes(x = year(date), fill = factor(GlobalNorth))) +
+  geom_histogram(binwidth = 1, color = "white",
+                 alpha = 0.6) +
+  # Linhas históricas
+  geom_vline(xintercept = 1914, linetype = "dashed", size = 0.7) +
+  geom_vline(xintercept = 1939, linetype = "dashed", size = 0.7) +
+  geom_vline(xintercept = 2002, linetype = "dashed", size = 0.7) +
+  geom_vline(xintercept = 2008, linetype = "dashed", size = 0.7) +
+  scale_fill_manual(
+    values = c("0" = "#c40e3e", "1" = "#2DA5E8"),
+    labels = c("0" = "Global South", "1" = "Global North"),
+    name = ""
+  ) +
   labs(x = "Year", y = "Event frequency") +
-  theme_minimal()
+  theme_bw()
+
+# Define a ordem desejada para sobreposição
+class_order <- c("Aves", "Mammalia", "Reptilia", "Amphibia")
+
+df_wallacean_100 %>% 
+  filter(status == 1) %>%  # só eventos
+  mutate(Class = factor(Class, levels = class_order)) %>%
+  ggplot(aes(x = year(date), fill = factor(Class))) +
+  geom_histogram(binwidth = 1, color = "white", alpha = 1) +
+  scale_fill_manual(
+    values = c("Amphibia" = "#75C6FF", "Reptilia" = "#86A94D",
+               "Aves" = "#7F5C3B", "Mammalia" = "#D66FFF"),
+    name = ""
+  ) +
+  labs(x = "Year", y = "Geodiscovery frequency") +
+  theme_bw()
+
+df_wallacean_100 %>% 
+  filter(status == 2) %>%  # só eventos
+  mutate(Class = factor(Class, levels = class_order)) %>%
+  ggplot(aes(x = year(date), fill = factor(Class))) +
+  geom_histogram(binwidth = 1, color = "white", alpha = 1) +
+  scale_fill_manual(
+    values = c("Amphibia" = "#75C6FF", "Reptilia" = "#86A94D",
+               "Aves" = "#7F5C3B", "Mammalia" = "#D66FFF"),
+    name = ""
+  ) +
+  labs(x = "Year", y = "Completeness frequency") +
+  theme_bw()
+

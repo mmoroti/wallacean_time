@@ -161,8 +161,7 @@ save(
 # de unidades esperadas para cada especie mesmo com uma pequena bordinha delas
 # chegando as vezes aonde elas não estão! então aqui talvez precisamos considerar
 # diferentes cenários de 'completeness'. Também aqui só temos as espécies que tem
-# poligonos & ocorrencias, para os cenarios de completeness, vamos incluir as 
-# especies que nao tem ocorrencia...
+# poligonos & ocorrencias.
 list_per_admunit <- species_admin_all %>%
   filter(!name_en %in% countries_without_gdp$name_en) %>%
   select(name_en, all_species) %>%
@@ -342,9 +341,9 @@ df_wallacean_time %>%
 
 table(df_wallacean_time$WallaceCompletude) 
 # 1988 completeness sem threshold
-# 2322 completeness com 0.1%
-# 2828 completeness com 0.5%
-# 3123 completeness com 1%
+# 2546 completeness com 0.1%
+# 3000 completeness com 0.5%
+# 3294 completeness com 1%
 
 # bons exemplos para checar problemas
 # 2433011
