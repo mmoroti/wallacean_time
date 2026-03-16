@@ -99,9 +99,11 @@ load(
 )
 
 rm(list = setdiff(ls(), c("local_directory",
+                          "adjust_country_years",
                           "dose_data",
                           "maddinson_data",
                           "maddison_macroregion_data", 
+                          "maddison_ppp_data",
                           "politic_data",
                           "qog_data",
                           "institutions",
@@ -130,7 +132,7 @@ politic_data_summary <- politic_data %>%
   ) %>%
   ungroup() %>%
   mutate(
-    country_text_id = recode(
+    country_text_id = recode_factor(
       country_text_id,
       "XKX" = "KOS",
       "PSB" = "PSX",
@@ -193,8 +195,9 @@ df_moscow <- dose_data %>%
     region = "Moscow",
     gdp_2015 = sum(gdp_2015, na.rm = TRUE),
     pop_abs = sum(pop_abs, na.rm = TRUE),
-    country = "Russia"
-  )
+    country = "Russia",
+    GID_0 = "RUS"
+  ) 
 
 # Regional data
 region_data <- dose_data %>%
@@ -205,6 +208,9 @@ region_data <- dose_data %>%
   filter(country %in% c("Brazil", "Russia", "China", 
                         "Australia", "USA", "Canada")) %>%
   distinct(region, year, .keep_all = TRUE) %>% 
+  # Conversao do GDP per capita para dolares PPP 
+  left_join(maddison_ppp_data, by = c("GID_0" = "countrycode", "year")) %>%
+  mutate(gdp_ppp_2015 = gdp_2015 / pl_gdpo) %>%
   mutate(region_tolower = tolower(region)) %>%
   mutate(region_tolower = str_replace_all(region_tolower, map_names)) %>%
   group_by(region_tolower) %>%
@@ -401,7 +407,7 @@ bigsix_occ <- occ_year %>%
   select(-name_en) %>%
   distinct() %>%
   mutate(
-    name_en = recode(
+    name_en = recode_factor(
       ISO3,
       "BRA" = "Brazil",
       "RUS" = "Russian Federation",
@@ -612,7 +618,7 @@ df_rest_economy <- df_rest %>%
 
 # Aqui vamos preencher para paises que pertenciam a ex-uniao sovietica
 # dados da federacao russa para eles ate terem seus proprios indicadores
-first_year_df <- maddinson_data_edit %>%
+first_year_df <- maddinson_data %>%
   filter(!is.na(gdp_2011)) |>
   group_by(country) |>
   summarise(
@@ -682,8 +688,6 @@ df_economy_all <- bind_rows(
   ungroup() %>%
   arrange(country, year)
 
-View(df_economy_all)
-
 # edge_imputed: anos que nao tem dados e usamos os ultimos dados presentes 1820 < & 2022 >
 # interpolated sao dados que foram interpolados entre anos de dados observados ausentes
 # missing_country_estimated occ aparecia, mas o pais ainda nao tinha dados observados na epoca, usamos dados da regiao
@@ -708,6 +712,9 @@ region_data <- dose_data %>%
   filter(country %in% c("Brazil", "Russia", "China", 
                         "Australia", "USA", "Canada")) %>%
   distinct(region, year, .keep_all = TRUE) %>% 
+  # Conversao do GDP per capita para dolares PPP 
+  left_join(maddison_ppp_data, by = c("GID_0" = "countrycode", "year")) %>%
+  mutate(gdp_ppp_2015 = gdp_2015 / pl_gdpo) %>%
   mutate(region_tolower = tolower(region)) %>%
   mutate(region_tolower = str_replace_all(region_tolower, map_names)) %>%
   mutate(
@@ -805,7 +812,7 @@ region_data_edit %>%
   arrange(GID_0, region) %>% head()
 
 region_data_all <- region_data_edit %>%
-  mutate(log_gdp = log(gdp_2015)) %>%
+  mutate(log_gdp = log(gdp_ppp_2015)) %>%
   group_by(region) %>%
   group_modify(~{
     
@@ -982,15 +989,13 @@ harmonize_names <- c(
 
 data_socieconomic_temporal <- data_socieconomic_temporal %>%
   mutate(
-    name_en = recode(name_en, !!!harmonize_names)
+    name_en = recode_factor(name_en, !!!harmonize_names)
   ) %>%
   group_by(year) %>%
   mutate(gdp_rank = rank(log_gdp_final) / n(),
          gdp_percentile = percent_rank(log_gdp_final))
 
 setdiff(occ_year$name_en,
-        data_socieconomic_temporal$name_en)
-setdiff(teste$name_en,
         data_socieconomic_temporal$name_en)
 
 data <- left_join(

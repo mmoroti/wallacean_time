@@ -60,6 +60,24 @@ maddison_macroregion_data <- readxl::read_xlsx(
   select(1:9) %>%
   rename_with(~ gsub('\\.\\.\\.[0-9]+$', '', .x))
 
+# A variável grp_pc_usd_2015 do DOSE representa o produto regional bruto (GRP)
+# per capita convertido para dólares utilizando taxas de câmbio de mercado (XR).
+# Como taxas de câmbio de mercado tendem a distorcer comparações internacionais
+# de renda — especialmente entre economias com diferentes níveis de preços —
+# aplicamos uma correção utilizando o nível de preços do PIB (pl_gdpo) do
+# Penn World Table (PWT).
+# A variável pl_gdpo corresponde ao price level do PIB, definido como a razão
+# entre a taxa de câmbio em paridade de poder de compra (PPP) e a taxa de câmbio
+# de mercado (PPP/XR). Assim, ao dividir o GRP per capita regional por pl_gdpo,
+# convertemos valores originalmente expressos em dólares de câmbio de mercado
+# para dólares internacionais ajustados por PPP.
+maddison_ppp_data <- readxl::read_xlsx(
+  path = file.path(local_directory, "00_raw_data", "Maddison", "pwt110.xlsx"),
+  sheet = "Data"
+) %>%
+  select(countrycode, year, pl_gdpo) %>%
+  filter(countrycode %in% c("AUS", "BRA", "CAN", "CHN", "RUS", "USA"))
+  
 # The Quality of Government Institute
 qog_data <- read.csv2(file.path(
   local_directory, "00_raw_data", "The_QoG_Institute",
@@ -79,6 +97,7 @@ save(
   qog_data,
   institutions,
   maddison_macroregion_data,
+  maddison_ppp_data,
   file = file.path(
     local_directory,
     "00_raw_data",
