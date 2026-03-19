@@ -246,7 +246,7 @@ data_wallacean_unnested_modified <- data_wallacean_unnested_modified %>%
 
 # Create time to event table 
 df_wallacean_time <- data_wallacean_unnested_modified %>%
-  filter(ua_total > 2) %>% # pelo menos tres unidades administrativas
+  #filter(ua_total > 2) %>% # pelo menos tres unidades administrativas
   group_by(speciesKey) %>%
   arrange(date, .by_group = TRUE) %>%
   mutate(
