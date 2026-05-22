@@ -349,6 +349,18 @@ df_institutions <- institutions %>%
   ungroup() %>%
   select(name_en, n_institutions)
 
+# Add ONU Alignment
+onu_alignment <- onu_alignment_data %>%
+  group_by(iso3c) %>%
+  # se quiser pegar os 10 ultimos anos
+  slice_tail(n = 10) %>%
+  summarise(
+    #min_year_politic = min(year, na.rm = TRUE),
+    #max_year_politic = max(year, na.rm = TRUE),
+    IdealPointFP_mean = mean(IdealPointFP, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
 # Obtain 
 data_sociopolitic <- bind_rows(
   country_sociopolitic,
@@ -378,7 +390,8 @@ data_sociopolitic <- bind_rows(
   left_join(df_institutions, by = "name_en")  %>%
   mutate(
     n_institutions = ifelse(is.na(n_institutions), 0, n_institutions)
-  )
+  ) %>%
+  left_join(onu_alignment, by = c("ISO3" = "iso3c")) 
 
 save(
   data_sociopolitic,

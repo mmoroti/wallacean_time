@@ -89,6 +89,19 @@ qog_data <- read.csv2(file.path(
 # university collections. 'institutions' data from CoordinateCleaner
 data(institutions)
 
+# A variável IdealPointFP do dataset de Voeten (Bailey et al. 2017) estima a
+# posição ideológica de cada país a partir de seus votos na ONU, com valores
+# mais altos indicando maior alinhamento com EUA e democracias ocidentais.
+# Calculamos a média por país no período 2000-2020 como proxy do alinhamento
+# geopolítico com sistemas científicos ocidentais e suas plataformas de dados.
+onu_alignment_data <- read_delim(file.path(
+  local_directory,
+  "00_raw_data",
+  "dataverse_files",
+  "Idealpointestimates1946-2025.csv"
+)
+)
+
 # Save socieconomic dataset
 save(
   politic_data,
@@ -98,6 +111,7 @@ save(
   institutions,
   maddison_macroregion_data,
   maddison_ppp_data,
+  onu_alignment_data,
   file = file.path(
     local_directory,
     "00_raw_data",

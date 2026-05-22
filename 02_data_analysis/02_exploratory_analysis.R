@@ -14,6 +14,7 @@ library(marginaleffects)
 library(broom.helpers)
 library(tidyr)
 library(GGally)
+library(patchwork)
 
 rm(list=ls()); gc() # clean local enviroment
 
@@ -242,8 +243,10 @@ richness_all <- richness_completude_amphibia %>%
   left_join(richness_completude_aves, by = "name_en") %>%
   left_join(richness_completude_mammalia, by = "name_en") %>%
   mutate(
-    polygons_richness = rowSums(select(., starts_with("polygons_richness")), na.rm = TRUE),
-    observed_richness = rowSums(select(., starts_with("observed_richness")), na.rm = TRUE)
+    polygons_richness = rowSums(select(., starts_with("polygons_richness")),
+                                na.rm = TRUE),
+    observed_richness = rowSums(select(., starts_with("observed_richness")),
+                                na.rm = TRUE)
   ) %>%
   select("name_en", "polygons_richness", "observed_richness") %>%
   mutate(
@@ -270,8 +273,8 @@ df_all <- left_join(
     dens_pop_scaled = scale(log(as.numeric(pop/area_km2))),
     road_dens_scaled = scale(log(as.numeric(total_road_km/area_km2))),
     #area_km2_scale = scale(log(as.numeric(area_km2))),
-    mean_grp_scaled = scale(log(as.numeric(gdp_mean)))
-    #mobilization_effort_scaled = scale(log(as.numeric(mobilization_effort)))
+    mean_grp_scaled = scale(log(as.numeric(gdp_mean)))#,
+    #IdealPointFP_scaled = scale(as.numeric(IdealPointFP_mean))
   ) %>%
   # sensitivity analysis
   left_join(species_admin_01perc %>% 
@@ -886,6 +889,11 @@ par(
   xaxs = "r",
   yaxs = "r"
 )
+
+load(
+  file = file.path(
+    local_directory, "02_data_analysis", "tetrapods_model.RData")
+)
 plot(tetrapods_100,
      se = TRUE,
      legend = FALSE,
@@ -899,6 +907,8 @@ plot(tetrapods_100,
 )
 
 # eixo X fino
+anos_25 <- seq(1750, 2025, by = 25)
+anos_50 <- seq(1750, 2025, by = 50)
 axis(1,
      at = anos_25,
      labels = ifelse(anos_25 %in% anos_50, anos_25, ""),
@@ -967,12 +977,15 @@ summary(df_all$democracy_index_mean)
 states_ref <- rnaturalearth::ne_states(returnclass = "sf") %>%
   st_drop_geometry() %>%
   filter(adm0_a3 %in% c("BRA", "RUS", "CHN", "USA", "CAN", "AUS")) %>%
-  select(name_en, iso_3166_2) 
+  select(name_en, iso_3166_2, adm0_a3) 
 
 df_all_abs <- df_all %>%
   left_join(states_ref, by = "name_en") %>%
+  left_join(data_sociopolitic %>%
+  select(name_en, IdealPointFP_mean), by = "name_en") %>%
   mutate(
-    ID = coalesce(iso_3166_2, ISO3)
+    ID = coalesce(iso_3166_2, ISO3),
+    IdealPointFP_scale = scale(IdealPointFP_mean)
   ) %>%
   mutate(
     ID = ifelse(
@@ -1056,6 +1069,92 @@ ggsave(filename= "FigS3CompletenessLDI.pdf",
        bg="white", 
        limitsize=F,
        device = cairo_pdf) 
+
+# Liberal Democracy Index vs ONU alignment 
+t <- df_all_abs %>%
+  distinct(ISO3, .keep_all = TRUE) %>%
+  select(ISO3, democracy_index_mean, IdealPointFP_scale, GlobalNorth) %>%
+  remove_missing()
+
+cor.test(t$democracy_index_mean,
+    t$IdealPointFP_scale, method = "spearman")
+hist(t$democracy_index_mean)
+hist(t$IdealPointFP_scale)
+
+plot <- ggplot(t, aes(x = democracy_index_mean,
+                               y = IdealPointFP_scale)) +
+  
+  geom_point(aes(color = as.factor(GlobalNorth)),
+             size = 2,
+             alpha = 0.7) +
+  
+  geom_smooth(method = "lm",
+              se = TRUE,
+              level = 0.95,
+              color = "black",
+              linetype = "solid",
+              alpha = 0.2) +
+  
+  geom_label_repel(
+    aes(label = ISO3,
+        color = as.factor(GlobalNorth)),
+    size = 2,
+    max.overlaps = 65,
+    box.padding = 0.3,
+    point.padding = 0.3,
+    segment.color = "grey50",
+    segment.size = 0.2,
+    min.segment.length = 0.1,
+    force = 1,
+    fill = "white",      # fundo branco
+    label.size = 0.2     # borda fina
+  ) +
+  
+  scale_color_manual(
+    name = "",
+    values = c("0" = "#c40e3e", "1" = "#2DA5E8"),
+    labels = c("0" = "Global South", "1" = "Global North")
+  ) +
+  #scale_y_continuous(
+  #  limits = c(0, NA),  # começa em 0, máximo automático
+  #  expand = expansion(mult = c(0, 0.05))  # remove espaço extra na base
+  #) +
+  
+  labs(
+    x = "Liberal Democracy index",
+    y = "Geopolitical alignment Index"
+  ) +
+  
+  theme_classic() +
+  theme(
+    legend.direction = "horizontal", 
+    legend.position = c(1, 0.01), 
+    legend.justification = c(1, 0),    
+    legend.background = element_blank(),
+    axis.title.x = element_text(size = base_size),
+    axis.title.y = element_text(size = base_size),
+    axis.text.x  = element_text(size = base_size),
+    axis.text.y  = element_text(size = base_size),
+    axis.ticks = element_line(color = "black", linewidth = tick_size),
+    axis.ticks.length = tick_length,
+    axis.ticks.y = element_line(),
+    axis.ticks.x = element_line(),
+    axis.line = element_blank(),  # Remove linha do eixo (usamos panel.border)
+    legend.text = element_blank(),
+    panel.border = element_rect(color = "black",
+                                fill = NA,
+                                linewidth = border_size)
+  ); plot
+
+ggsave(filename= "FigS4ONULDI.pdf", 
+       plot= plot,
+       width=180, 
+       height=130, 
+       units="mm",
+       dpi = 300,
+       bg="white", 
+       limitsize=F,
+       device = cairo_pdf)
 
 # Sensitivity analysis ----
 load(file.path(
