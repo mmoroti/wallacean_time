@@ -249,6 +249,181 @@ plot_surv_panel <- function(fit_object,
   }
 }
 
+plot_bivariate_map <- function(geo_plot,
+                               var_x,
+                               var_y,
+                               title = NULL,
+                               x_label = var_x,
+                               y_label = var_y) {
+  
+  # 1) transforma no CRS desejado
+  dados_join <- geo_plot %>%
+    st_transform(6933)
+  
+  # garantir que as colunas existem
+  if (!var_x %in% names(dados_join)) {
+    stop(paste("A coluna", var_x, "não existe no dataframe."))
+  }
+  if (!var_y %in% names(dados_join)) {
+    stop(paste("A coluna", var_y, "não existe no dataframe."))
+  }
+  
+  x_vals <- dados_join[[var_x]]
+  y_vals <- dados_join[[var_y]]
+  
+  # 2) quantis da variável X
+  x_valid <- x_vals[!is.na(x_vals) & x_vals > 0]
+  
+  if (length(x_valid) < 2) {
+    stop(paste("A coluna", var_x, "não tem valores suficientes maiores que zero."))
+  }
+  
+  x_q_raw <- quantile(x_valid, probs = seq(0, 1, length.out = 5), na.rm = TRUE)
+  x_breaks <- as.integer(floor(x_q_raw))
+  
+  for(i in 2:length(x_breaks)){
+    if(x_breaks[i] <= x_breaks[i-1]){
+      x_breaks[i] <- x_breaks[i-1] + 1
+    }
+  }
+  
+  x_breaks[1] <- min(x_valid)
+  x_breaks[length(x_breaks)] <- max(x_valid)
+  
+  # 3) quantis da variável Y
+  y_valid <- y_vals[!is.na(y_vals)]
+  
+  if (length(y_valid) < 2) {
+    stop(paste("A coluna", var_y, "não tem valores suficientes não-NA."))
+  }
+  
+  y_breaks <- quantile(y_valid, probs = seq(0, 1, length.out = 5), na.rm = TRUE)
+  
+  # 4) funções de label - SEM CASAS DECIMAIS
+  make_labels_int <- function(breaks, suffix = "") {
+    paste0(
+      round(breaks[-length(breaks)], 0),  # arredonda para inteiro
+      "–",
+      round(breaks[-1], 0),               # arredonda para inteiro
+      suffix
+    )
+  }
+  
+  make_labels_pct <- function(breaks, suffix = "") {
+    paste0(
+      round(breaks[-length(breaks)], 0),  # arredonda para inteiro
+      "–",
+      round(breaks[-1], 0),               # arredonda para inteiro
+      suffix
+    )
+  }
+  
+  x_labs <- make_labels_int(x_breaks, "")
+  y_labs <- make_labels_pct(y_breaks, "")
+  
+  # 5) categorias
+  dados_bi <- dados_join %>%
+    mutate(
+      x_cat = case_when(
+        is.na(.data[[var_x]]) | .data[[var_x]] == 0 ~ NA_character_,
+        TRUE ~ as.character(cut(.data[[var_x]],
+                                breaks = x_breaks,
+                                include.lowest = TRUE,
+                                labels = x_labs))
+      ),
+      y_cat = case_when(
+        is.na(.data[[var_y]]) ~ NA_character_,
+        TRUE ~ as.character(cut(.data[[var_y]],
+                                breaks = y_breaks,
+                                include.lowest = TRUE,
+                                labels = y_labs))
+      ),
+      bi_class = ifelse(is.na(x_cat) | is.na(y_cat),
+                        NA_character_,
+                        paste0(x_cat, " | ", y_cat))
+    )
+  
+  # 6) paleta 4x4
+  x_labs_factor <- factor(x_labs, levels = x_labs, ordered = TRUE)
+  y_labs_factor <- factor(y_labs, levels = y_labs, ordered = TRUE)
+  
+  bi_pal <- expand.grid(
+    x_cat = x_labs_factor,
+    y_cat = y_labs_factor,
+    stringsAsFactors = FALSE
+  ) %>%
+    arrange(x_cat, y_cat) %>%
+    mutate(
+      bi_class = paste0(x_cat, " | ", y_cat),
+      fill = c(
+        "#4e3d43", "#535e68", "#577e8b", "#5b9cad",
+        "#724448", "#786970", "#7e8d96", "#84afba",
+        "#944b4d", "#9c7478", "#a59ba0", "#acc1c6",
+        "#b65252", "#c07f7f", "#caaaaa", "#d3d3d3"
+      )
+    )
+  
+  # 7) juntar cor
+  dados_bi <- dados_bi %>%
+    left_join(bi_pal %>% select(bi_class, fill), by = "bi_class") %>%
+    mutate(fill = ifelse(is.na(fill), "#ffffff", fill))
+  
+  # 8) mapa
+  bbox <- st_bbox(dados_bi)
+  bbox_poly <- st_as_sfc(bbox)
+  
+  map_plot <- ggplot(dados_bi) +
+    geom_sf(aes(fill = fill), color = "black", size = 0.15) +
+    geom_sf(data = bbox_poly, fill = NA, color = "black", linewidth = 0.3) +
+    scale_fill_identity() +
+    coord_sf(
+      xlim = c(bbox["xmin"], bbox["xmax"]),
+      ylim = c(bbox["ymin"], bbox["ymax"]),
+      expand = FALSE
+    ) +
+    theme_minimal() +
+    theme(
+      text = element_text(color = "black"),
+      legend.position = "none",
+      panel.border = element_blank(),
+      axis.text = element_text(size = 6, color = "black"),
+      axis.ticks = element_line(color = "black", linewidth = 0.2),
+      axis.ticks.length = unit(2, "mm"),
+      panel.grid = element_line(color = "grey80", linewidth = 0.2),
+      plot.margin = margin(5, 15, 5, 5)
+    )
+  
+  # 9) legenda
+  legend_data <- bi_pal
+  
+  legend_plot <- ggplot(legend_data,
+                        aes(x = y_cat,
+                            y = x_cat,
+                            fill = fill)) +
+    geom_tile() +
+    scale_fill_identity() +
+    labs(
+      x = y_label,
+      y = x_label
+    ) +
+    theme_minimal() +
+    theme(
+      axis.title = element_text(size = 5, color = "black"),
+      axis.text.x = element_text(size = 5, angle = 45, hjust = 0.8, color = "black"),
+      axis.text.y = element_text(size = 5, color = "black"),
+      panel.grid = element_blank()
+    )
+  
+  # 10) combinar
+  final_plot <- ggdraw() +
+    draw_plot(map_plot) +
+    draw_plot(legend_plot,
+              x = 0.065, y = 0.28,
+              width = 0.20, height = 0.30)
+  
+  return(final_plot)
+}
+
 # Load data ----
 load(file = file.path(
   local_directory,
@@ -261,6 +436,12 @@ load(file.path(
   local_directory,
   "00_raw_data",
   "geographic_shape_data.RData"))
+
+# Richness completeness
+load(file.path(
+  local_directory,
+  "02_data_analysis",
+  "richness_completude.RData"))
 
 # Preparing data ----
 df_wallacean_100 <- df_wallacean_100 %>%
@@ -389,12 +570,29 @@ fit.amphibia.surv <- aalen(
   data= df_amphibia_100,
   start.time = 1760,
   max.time     = 2025,
-  #residuals = 1,
+  residuals = 1,
   robust       = 1,       # variância robusta
   n.sim        = 100,     # número de simulações para CI
   resample.iid = 1       # para funções de residuais/CI i.i.d.
 )
 plot(fit.amphibia.surv)
+
+# Extrair a lista de resíduos
+residuos_do_modelo <- fit.amphibia.surv$residuals
+# Ver a estrutura da lista
+str(residuos_do_modelo)
+
+# 2. Passar o objeto diretamente para a função de validação
+resultado_validacao <- cum.residuals(fit.amphibia.surv,
+                                     data = df_amphibia_100,
+                                     cum.resid = 1,
+                                     n.sim = 100)
+
+# 3. Visualizar os resultados
+plot(resultado_validacao, score = 2)
+# A lista geralmente contém:
+# - dM: os incrementos do martingale estimados (resíduos)
+# - time: o vetor de tempo correspondente a cada incremento
 
 fit.amphibia.completeness <- aalen(
   formula = Surv(t.start.year, t.stop.year, status == 2) ~
@@ -1212,3 +1410,99 @@ df_wallacean_100 %>%
   labs(x = "Year", y = "Completeness frequency") +
   theme_bw()
 
+
+
+## Temporal-spatial map ----
+richness_all <- richness_completude_amphibia %>%
+  left_join(richness_completude_reptilia, by = "name_en") %>%
+  left_join(richness_completude_aves, by = "name_en") %>%
+  left_join(richness_completude_mammalia, by = "name_en") %>%
+  mutate(
+    polygons_richness = rowSums(select(., starts_with("polygons_richness")),
+                                na.rm = TRUE),
+    observed_richness = rowSums(select(., starts_with("observed_richness")),
+                                na.rm = TRUE)
+  ) %>%
+  select("name_en", "polygons_richness", "observed_richness") %>%
+  mutate(
+    percent_wallace = observed_richness * 100 / polygons_richness,
+    percent_wallace_prop = percent_wallace / 100
+  ) 
+
+event_total <- df_wallacean_100 %>%
+  filter(event == 1) %>%
+  count(name_en, name = "n_events")
+
+df_geo <- df_wallacean_100 %>%
+  select(date, event, name_en, GlobalNorth) %>%
+  filter(event == 1) %>%
+  mutate(year = year(date)) %>%
+  arrange(name_en, year) %>%
+  left_join(event_total, by = "name_en") %>%
+  left_join(richness_all, by = "name_en") %>%
+  group_by(name_en) %>%
+  mutate(
+    GlobalNorth = first(GlobalNorth),
+    event_order = cumsum(event),
+    prop = event_order / n_events
+  )
+
+milestones <- df_geo %>%
+  group_by(name_en) %>%
+  summarise(
+    GlobalNorth = first(GlobalNorth),
+    PercentWallace = first(percent_wallace),
+    year25 = min(year[prop >= 0.25]),
+    year50 = min(year[prop >= 0.50]),
+    year75 = min(year[prop >= 0.75]),
+    year90 = min(year[prop >= 0.90])
+  ) 
+
+geo_plot <- geographic_shape_data %>%
+  left_join(milestones %>%
+              mutate(
+                IQR = year75 - year25
+              ), by = "name_en")
+
+# a acumulação foi rápida?
+# Quando 75% das geodescobertas ja haviam ocorrido?
+plot_time <- plot_bivariate_map(geo_plot,
+                           "IQR",
+                           "year75",
+                           title = NULL,
+                           x_label = "Interquartile Range of Geodiscoveries",
+                           y_label = "Year when 75% of\ngeodiscoveries were accumulated"); plot_time
+
+plot_spatialtime <- plot_bivariate_map(geo_plot,
+                           "PercentWallace",
+                           "year75",
+                           title = NULL,
+                           x_label = "Inventory completeness (%)",
+                           y_label = "Year when 75% of\ngeodiscoveries were accumulated"); plot_spatialtime
+
+#plot_spatialtime <- plot_bivariate_map(geo_plot,
+#                                       "PercentWallace",
+#                                       "IQR",
+#                                       title = NULL,
+#                                       x_label = "Inventory completeness (%)",
+#                                       y_label = "Interquartile range of geodiscoveries (years)"); plot_spatialtime
+
+ggsave(filename= "FigureS1.pdf",
+       plot= plot_time,
+       width=7.09,
+       height=4.73,
+       units="in",
+       dpi = 300,
+       bg="white", 
+       limitsize=F,
+       device = cairo_pdf)
+
+ggsave(filename= "FigureS2.pdf",
+       plot= plot_spatialtime,
+       width=7.09,
+       height=4.73,
+       units="in",
+       dpi = 300,
+       bg="white", 
+       limitsize=F,
+       device = cairo_pdf)
