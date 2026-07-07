@@ -2,6 +2,8 @@
 library(tidyverse)
 library(mets)
 library(timereg)
+library(sf)
+library(cowplot)
 
 rm(list=ls()); gc() # clean local enviroment
 
@@ -1466,26 +1468,29 @@ geo_plot <- geographic_shape_data %>%
 
 # a acumulação foi rápida?
 # Quando 75% das geodescobertas ja haviam ocorrido?
-plot_time <- plot_bivariate_map(geo_plot,
-                           "IQR",
-                           "year75",
-                           title = NULL,
-                           x_label = "Interquartile Range of Geodiscoveries",
-                           y_label = "Year when 75% of\ngeodiscoveries were accumulated"); plot_time
+plot_time <- plot_bivariate_map(
+  geo_plot,
+  "IQR",
+  "year75",
+  title = NULL,
+  x_label = "Interquartile range\nof Geodiscoveries",
+  y_label = "Year when 75% of\ngeodiscoveries were accumulated"); plot_time
 
-plot_spatialtime <- plot_bivariate_map(geo_plot,
-                           "PercentWallace",
-                           "year75",
-                           title = NULL,
-                           x_label = "Inventory completeness (%)",
-                           y_label = "Year when 75% of\ngeodiscoveries were accumulated"); plot_spatialtime
+plot_spatialtime <- plot_bivariate_map(
+  geo_plot,
+  "PercentWallace",
+  "year75",
+  title = NULL,
+  x_label = "Inventory completeness (%)",
+  y_label = "Year when 75% of\ngeodiscoveries were accumulated"); plot_spatialtime
 
-#plot_spatialtime <- plot_bivariate_map(geo_plot,
-#                                       "PercentWallace",
-#                                       "IQR",
-#                                       title = NULL,
-#                                       x_label = "Inventory completeness (%)",
-#                                       y_label = "Interquartile range of geodiscoveries (years)"); plot_spatialtime
+plot_spatialiqr <- plot_bivariate_map(
+  geo_plot,
+  "PercentWallace",
+  "IQR",
+  title = NULL,
+  x_label = "Inventory completeness (%)",
+  y_label = "Interquartile range of geodiscoveries (years)"); plot_spatialtime
 
 ggsave(filename= "FigureS1.pdf",
        plot= plot_time,
@@ -1499,6 +1504,16 @@ ggsave(filename= "FigureS1.pdf",
 
 ggsave(filename= "FigureS2.pdf",
        plot= plot_spatialtime,
+       width=7.09,
+       height=4.73,
+       units="in",
+       dpi = 300,
+       bg="white", 
+       limitsize=F,
+       device = cairo_pdf)
+
+ggsave(filename= "FigureS3.pdf",
+       plot= plot_spatialiqr,
        width=7.09,
        height=4.73,
        units="in",

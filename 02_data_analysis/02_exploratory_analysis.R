@@ -995,6 +995,15 @@ df_all_abs <- df_all %>%
     )
   )
 
+cor_res <- cor.test(df_all_abs$democracy_index_mean,
+                    df_all_abs$percent_wallace_prop,
+                    method = "spearman")
+rho  <- round(cor_res$estimate, 3)
+pval <- c("<0.001")
+
+cor_text <- paste0("rs =", rho, " ",
+                   "Bonferroni p = ", pval)
+
 plot <- ggplot(df_all_abs, aes(x = democracy_index_mean,
                            y = percent_wallace_prop)) +
   
@@ -1038,17 +1047,22 @@ plot <- ggplot(df_all_abs, aes(x = democracy_index_mean,
     x = "Liberal Democracy index",
     y = "Geographic knowledge completeness (%)"
   ) +
-  
+  annotate("text",
+           x = -Inf, y = Inf,          # canto superior esquerdo
+           hjust = -0.1, vjust = 1.1,  # pequenos ajustes
+           label = cor_text,
+           size = 3.5,
+           color = "black") +
   theme_classic() +
   theme(
     legend.direction = "horizontal", 
     legend.position = c(1, 0.01), 
     legend.justification = c(1, 0),    
     legend.background = element_blank(),
-    axis.title.x = element_text(size = base_size),
-    axis.title.y = element_text(size = base_size),
-    axis.text.x  = element_text(size = base_size),
-    axis.text.y  = element_text(size = base_size),
+    axis.title.x = element_text(size = 10),
+    axis.title.y = element_text(size = 10),
+    axis.text.x  = element_text(size = 10),
+    axis.text.y  = element_text(size = 10),
     axis.ticks = element_line(color = "black", linewidth = tick_size),
     axis.ticks.length = tick_length,
     axis.ticks.y = element_line(),
@@ -1075,11 +1089,17 @@ t <- df_all_abs %>%
   distinct(ISO3, .keep_all = TRUE) %>%
   select(ISO3, democracy_index_mean, IdealPointFP_scale, GlobalNorth) %>%
   remove_missing()
-
-cor.test(t$democracy_index_mean,
-    t$IdealPointFP_scale, method = "spearman")
 hist(t$democracy_index_mean)
 hist(t$IdealPointFP_scale)
+
+cor_res <- cor.test(t$democracy_index_mean,
+                    t$IdealPointFP_scale,
+                    method = "spearman")
+rho  <- round(cor_res$estimate, 3)
+pval <- c("<0.001")
+
+cor_text <- paste0("rs =", rho, " ",
+                   "Bonferroni p = ", pval)
 
 plot <- ggplot(t, aes(x = democracy_index_mean,
                                y = IdealPointFP_scale)) +
@@ -1124,6 +1144,12 @@ plot <- ggplot(t, aes(x = democracy_index_mean,
     x = "Liberal Democracy index",
     y = "Geopolitical alignment Index"
   ) +
+  annotate("text",
+           x = -Inf, y = Inf,          # canto superior esquerdo
+           hjust = -0.1, vjust = 1.1,  # pequenos ajustes
+           label = cor_text,
+           size = 3.5,
+           color = "black") +
   
   theme_classic() +
   theme(
@@ -1140,7 +1166,7 @@ plot <- ggplot(t, aes(x = democracy_index_mean,
     axis.ticks.y = element_line(),
     axis.ticks.x = element_line(),
     axis.line = element_blank(),  # Remove linha do eixo (usamos panel.border)
-    legend.text = element_blank(),
+    legend.text = element_text(size = 8),
     panel.border = element_rect(color = "black",
                                 fill = NA,
                                 linewidth = border_size)
