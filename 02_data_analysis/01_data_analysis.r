@@ -405,12 +405,12 @@ plot_bivariate_map <- function(geo_plot,
     geom_tile() +
     scale_fill_identity() +
     labs(
-      x = y_label,
-      y = x_label
+      x = x_label,
+      y = y_label
     ) +
     theme_minimal() +
     theme(
-      axis.title = element_text(size = 5, color = "black"),
+      axis.title = element_text(size = 7, color = "black"),
       axis.text.x = element_text(size = 5, angle = 45, hjust = 0.8, color = "black"),
       axis.text.y = element_text(size = 5, color = "black"),
       panel.grid = element_blank()
@@ -943,10 +943,10 @@ load(file.path(
   "cox_terminal_models.RData")
 )
 
-cores <- c("Amphibia" = "#75C6FF",
-           "Reptilia" = "#86A94D",
-           "Aves" = "#7F5C3B",
-           "Mammalia" = "#D66FFF")
+cores <- c("Amphibia" = "#ed3a8b",
+           "Reptilia" = "#00cc00",
+           "Aves" = "#7a67ed",
+           "Mammalia" = "#ffa400")
 
 dev.off()
 par(mfrow=c(1,2),
@@ -1200,9 +1200,10 @@ par(mfrow=c(4,8),
     cex.lab=5)
 par(las=2)
 
+
 plot_gof_custom(gof.amphibia, 
                 titles = TRUE,
-                bg.col = "#75C6FF",
+                bg.col = cores[["Amphibia"]],
                 year_seq = seq(1750, 2025, by = 25),
                 show.xaxis = TRUE,
                 show.yaxis = TRUE,
@@ -1210,7 +1211,7 @@ plot_gof_custom(gof.amphibia,
                 show.yticks = TRUE)
 plot_gof_custom(gof.reptilia,
                 titles = FALSE,
-                bg.col = "#86A94D",
+                bg.col = cores[["Reptilia"]],
                 year_seq = seq(1750, 2025, by = 25),
                 show.xaxis = TRUE,
                 show.yaxis = TRUE,
@@ -1218,7 +1219,7 @@ plot_gof_custom(gof.reptilia,
                 show.yticks = TRUE)
 plot_gof_custom(gof.aves,
                 titles = FALSE,
-                bg.col = "#7F5C3B",
+                bg.col = cores[['Aves']],
                 year_seq = seq(1750, 2025, by = 25),
                 show.xaxis = TRUE,
                 show.yaxis = TRUE,
@@ -1226,7 +1227,7 @@ plot_gof_custom(gof.aves,
                 show.yticks = TRUE)
 plot_gof_custom(gof.mammalia,
                 titles = FALSE,
-                bg.col = "#D66FFF",
+                bg.col = cores[["Mammalia"]],
                 year_seq = seq(1750, 2025, by = 25),
                 show.xaxis = TRUE,
                 show.yaxis = TRUE,
@@ -1248,19 +1249,19 @@ par(las=2)
 plot_gof_custom(gof.terminal.amphibia,
                 titles = TRUE,
                 year_seq = seq(1900, 2025, by = 25),
-                bg.col = "#75C6FF")
+                bg.col = cores[["Amphibia"]])
 plot_gof_custom(gof.terminal.reptilia,
                 titles = FALSE,
                 year_seq = seq(1900, 2025, by = 25),
-                bg.col = "#86A94D")
+                bg.col = cores[["Reptilia"]])
 plot_gof_custom(gof.terminal.aves,
                 titles = FALSE,
                 year_seq = seq(1850, 2025, by = 25),
-                bg.col = "#7F5C3B")
+                bg.col = cores[["Aves"]])
 plot_gof_custom(gof.terminal.mammalia, 
                 titles = FALSE,
                 year_seq = seq(1900, 2025, by = 25),
-                bg.col = "#D66FFF")
+                bg.col = cores[["Mammalia"]])
 
 ## Time varying effects ----
 load(
@@ -1294,7 +1295,7 @@ plot_surv_panel(fit.amphibia.surv,
                 show_xlab = FALSE,
                 show_ylab = FALSE,
                 show_years = TRUE,
-                coef_col = "#2DA5E8",
+                coef_col = cores[["Amphibia"]],
                 shade_alpha = 0.2)
 
 plot_surv_panel(fit.reptilia.surv,
@@ -1302,7 +1303,7 @@ plot_surv_panel(fit.reptilia.surv,
                 show_xlab = FALSE,
                 show_ylab = FALSE,
                 show_years = TRUE,
-                coef_col = "#86A94D",
+                coef_col = cores[["Reptilia"]],
                 shade_alpha = 0.2)
 
 plot_surv_panel(fit.aves.surv,
@@ -1310,7 +1311,7 @@ plot_surv_panel(fit.aves.surv,
                 show_xlab = FALSE,
                 show_ylab = FALSE,
                 show_years = TRUE,
-                coef_col = "#7F5C3B",
+                coef_col = cores[["Aves"]],
                 shade_alpha = 0.2)
 
 plot_surv_panel(fit.mammalia.surv,
@@ -1318,7 +1319,7 @@ plot_surv_panel(fit.mammalia.surv,
                 show_xlab = FALSE,
                 show_ylab = FALSE,
                 show_years = TRUE,
-                coef_col = "#D66FFF",
+                coef_col = cores[["Mammalia"]],
                 shade_alpha = 0.2) 
 
 # Completeness
@@ -1337,7 +1338,7 @@ plot_surv_panel(fit.amphibia.completeness,
                 show_xlab = FALSE,
                 show_ylab = FALSE,
                 show_years = TRUE,
-                coef_col = "#2DA5E8",
+                coef_col = cores[["Amphibia"]],
                 shade_alpha = 0.2)
 
 plot_surv_panel(fit.reptilia.completeness,
@@ -1345,7 +1346,7 @@ plot_surv_panel(fit.reptilia.completeness,
                 show_xlab = FALSE,
                 show_ylab = FALSE,
                 show_years = TRUE,
-                coef_col = "#86A94D",
+                coef_col = cores[["Reptilia"]],
                 shade_alpha = 0.2)
 
 plot_surv_panel(fit.aves.completeness,
@@ -1353,7 +1354,7 @@ plot_surv_panel(fit.aves.completeness,
                 show_xlab = FALSE,
                 show_ylab = FALSE,
                 show_years = TRUE,
-                coef_col = "#7F5C3B",
+                coef_col = cores[["Aves"]],
                 shade_alpha = 0.2)
 
 plot_surv_panel(fit.mammalia.completeness,
@@ -1361,7 +1362,7 @@ plot_surv_panel(fit.mammalia.completeness,
                 show_xlab = FALSE,
                 show_ylab = FALSE,
                 show_years = TRUE,
-                coef_col = "#D66FFF",
+                coef_col = cores[["Mammalia"]],
                 shade_alpha = 0.2) 
 
 # Hist plot events
@@ -1435,6 +1436,14 @@ event_total <- df_wallacean_100 %>%
   filter(event == 1) %>%
   count(name_en, name = "n_events")
 
+event_recent <- df_wallacean_100 %>%
+  mutate(year = year(date)) %>%
+  filter(year > 1974) %>%
+  filter(event == 1) %>%
+  count(name_en, name = "n_events") %>%
+  mutate(geo_taxa = n_events/50) %>%
+  select(name_en, geo_taxa)
+
 df_geo <- df_wallacean_100 %>%
   select(date, event, name_en, GlobalNorth) %>%
   filter(event == 1) %>%
@@ -1442,11 +1451,13 @@ df_geo <- df_wallacean_100 %>%
   arrange(name_en, year) %>%
   left_join(event_total, by = "name_en") %>%
   left_join(richness_all, by = "name_en") %>%
+  left_join(event_recent, by = "name_en") %>%
   group_by(name_en) %>%
   mutate(
     GlobalNorth = first(GlobalNorth),
     event_order = cumsum(event),
-    prop = event_order / n_events
+    prop = event_order / n_events,
+    geo_taxa = first(geo_taxa)
   )
 
 milestones <- df_geo %>%
@@ -1454,6 +1465,8 @@ milestones <- df_geo %>%
   summarise(
     GlobalNorth = first(GlobalNorth),
     PercentWallace = first(percent_wallace),
+    PropWallace = first(percent_wallace_prop),
+    geo_taxa = first(geo_taxa),
     year25 = min(year[prop >= 0.25]),
     year50 = min(year[prop >= 0.50]),
     year75 = min(year[prop >= 0.75]),
@@ -1473,8 +1486,8 @@ plot_time <- plot_bivariate_map(
   "IQR",
   "year75",
   title = NULL,
-  x_label = "Interquartile range\nof Geodiscoveries",
-  y_label = "Year when 75% of\ngeodiscoveries were accumulated"); plot_time
+  x_label = "Timing of geodiscovery",
+  y_label = "Duration of geodiscovery"); plot_time
 
 plot_spatialtime <- plot_bivariate_map(
   geo_plot,
@@ -1489,8 +1502,16 @@ plot_spatialiqr <- plot_bivariate_map(
   "PercentWallace",
   "IQR",
   title = NULL,
+  x_label = "Duration of geodiscovery",
+  y_label = "Inventory completeness (%)"); plot_spatialiqr
+
+plot_rate <- plot_bivariate_map(
+  geo_plot,
+  "PercentWallace",
+  "geo_taxa",
+  title = NULL,
   x_label = "Inventory completeness (%)",
-  y_label = "Interquartile range of geodiscoveries (years)"); plot_spatialtime
+  y_label = "Geographic expansion rate"); plot_rate
 
 ggsave(filename= "FigureS1.pdf",
        plot= plot_time,
@@ -1516,6 +1537,141 @@ ggsave(filename= "FigureS3.pdf",
        plot= plot_spatialiqr,
        width=7.09,
        height=4.73,
+       units="in",
+       dpi = 300,
+       bg="white", 
+       limitsize=F,
+       device = cairo_pdf)
+
+ggsave(filename= "FigureS4.pdf",
+       plot= plot_rate,
+       width=7.09,
+       height=4.73,
+       units="in",
+       dpi = 300,
+       bg="white", 
+       limitsize=F,
+       device = cairo_pdf)
+
+# Explorando mapa tricolor e PCA
+library(tricolore)
+library(ggplot2)
+library(sf)
+library(ggtern)
+library(ggtern)
+library(grid)
+
+# 1. Calcular a cor para cada região com base nas 3 variáveis
+normalize <- function(x){
+  (x - min(x, na.rm = TRUE)) /
+    (max(x, na.rm = TRUE) - min(x, na.rm = TRUE))
+}
+
+data <- geo_plot %>%
+  mutate(
+    KnowledgeAge = normalize(2025 - year75), 
+    year75 = as.numeric(normalize(year75)),
+    PercentWallace = as.numeric(normalize(PercentWallace)),
+    IQR = as.numeric(normalize(IQR))) %>% 
+  select(name_en, ISO3, 
+         GlobalNorth.y, year75, IQR, PercentWallace, KnowledgeAge) %>%
+  remove_missing() %>%
+  st_transform(6933)  # ou o CRS que você preferir
+
+# analises
+vars <- data %>%
+  st_drop_geometry() %>%
+  select(ISO3, GlobalNorth.y, PercentWallace, IQR, year75)
+
+cor(vars[,-1])
+
+# PCA
+pca <- prcomp(vars[, c("KnowledgeAge",
+                       "PercentWallace",
+                       "IQR")],
+              scale. = TRUE)
+
+scores <- as.data.frame(pca$x) %>%
+  bind_cols(vars[, c("ISO3", "GlobalNorth.y")])
+
+ggplot(scores,
+       aes(PC1, PC2,
+           label = ISO3,
+           color = factor(GlobalNorth.y))) +
+  geom_point(size = 2.5) +
+  geom_text_repel(
+    size = 3,
+    max.overlaps = Inf,
+    seed = 123
+  ) +
+  scale_color_manual(values = c("red", "blue")) +
+  theme_classic()
+
+
+# Mapa tricolor
+tric <- Tricolore(data, 
+                  p1 = 'year75', 
+                  p2 = 'PercentWallace', 
+                  p3 = 'IQR',
+                  breaks = Inf)
+
+# Adicionar a cor calculada ao seu dataframe
+data$rgb <- tric$rgb
+
+# Bounding box para borda
+bbox <- st_bbox(data)
+bbox_poly <- st_as_sfc(bbox)
+
+plot <- ggplot(data) +
+  geom_sf(aes(fill = rgb, geometry = geometry), 
+          color = "black", 
+          size = 0.15) +
+  geom_sf(data = bbox_poly, 
+          fill = NA, 
+          color = "black", 
+          linewidth = 0.3) +
+  scale_fill_identity() +
+  coord_sf(
+    xlim = c(bbox["xmin"], bbox["xmax"]),
+    ylim = c(bbox["ymin"], bbox["ymax"]),
+    expand = FALSE
+  ) +
+  theme_minimal() +
+  theme(
+    text = element_text(color = "black"),
+    legend.position = "none",
+    panel.border = element_blank(),
+    axis.text = element_text(size = 6, color = "black"),
+    axis.ticks = element_line(color = "black", linewidth = 0.2),
+    axis.ticks.length = unit(2, "mm"),
+    panel.grid = element_line(color = "grey80", linewidth = 0.2),
+    plot.margin = margin(5, 15, 5, 5)
+  )
+
+# 1. Aumentar o tamanho da legenda
+key_grob <- ggplotGrob(tric$key)
+key_grob$widths <- key_grob$widths * 2.0   
+key_grob$heights <- key_grob$heights * 2.0 
+
+# 2. Descobrir os limites do seu mapa para posicionar a legenda
+# Você precisa saber os valores reais de x e y do seu mapa
+bbox <- st_bbox(data)  # Pega os limites geográficos
+
+# 3. Posicionar a legenda usando coordenadas REAIS do mapa
+# Use valores baseados no bbox do seu mapa
+plot_final <- plot + annotation_custom(
+  ggplotGrob(
+    tric$key),
+  xmin = bbox$xmin + (bbox$xmax - bbox$xmin) * 0.02,  # 2% da esquerda
+  xmax = bbox$xmin + (bbox$xmax - bbox$xmin) * 0.30,  # 30% da esquerda
+  ymin = bbox$ymin + (bbox$ymax - bbox$ymin) * 0.12,  # 2% da base
+  ymax = bbox$ymin + (bbox$ymax - bbox$ymin) * 0.45   # 35% da base
+); plot_final
+
+ggsave(filename= "FigureTest.pdf",
+       plot= plot_final,
+       width=16.09,
+       height=9.73,
        units="in",
        dpi = 300,
        bg="white", 
