@@ -157,11 +157,6 @@ save(
 )
 
 # Species count per adm. unit ----
-# TODO aqui vamos precisar rever. Porque ate entao, estamos construindo a qtde
-# de unidades esperadas para cada especie mesmo com uma pequena bordinha delas
-# chegando as vezes aonde elas não estão! então aqui talvez precisamos considerar
-# diferentes cenários de 'completeness'. Também aqui só temos as espécies que tem
-# poligonos & ocorrencias.
 list_per_admunit <- species_admin_all %>%
   filter(!name_en %in% countries_without_gdp$name_en) %>%
   select(name_en, all_species) %>%
@@ -200,9 +195,13 @@ data_wallacean_unnested_modified <- data_wallacean_unnested %>%
     date = as.POSIXct(date, tz = "UTC"),
     date = date + seconds(1) # TODO CHECAR SPP QUE SOH TEM ANO NO PRIMEIRO REGISTRO
   ) %>%
+  # completeness sensitivity 
   left_join(sp_count, by = "speciesKey") %>% # adm. unit count
+  left_join(completeness01, by = "speciesKey") %>%
+  left_join(completeness05, by = "speciesKey") %>%
+  left_join(completeness1, by = "speciesKey") %>%
   # Join socieconomic data with occurences
-  # TODO: aqui tem um detalhe, nao necessariamente a ocorrencia
+  # TODO: aqui tem uma premissa, nao necessariamente a ocorrencia
   # representa o ano que o registro aconteceu. devido a colocarmos o ano de ocorrencia
   # sempre depois da descricao. entao se usarmos "year", teremos NA's porque
   # mudamos o ano de ocorrencia para ser sempre depois da descricao (year_modified).
@@ -215,13 +214,14 @@ data_wallacean_unnested_modified <- data_wallacean_unnested %>%
          name_en, date, year_modified, log_gdp_final, gdp_rank, gdp_percentile,
          BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
          HumanDensityTime, Latitude, Elevation, ETA50K, AssessedStatus,
-         ua_total, YearOfDescription, RangeSize, origin_of_data)
+         ua_total, ua_total01, ua_total05, ua_total1,
+         YearOfDescription, RangeSize, origin_of_data)
 
 data_wallacean_unnested_modified <- data_wallacean_unnested_modified %>%
   group_by(speciesKey) %>%
   #mutate(date = as.Date(date)) %>%
   arrange(date, .by_group = TRUE) %>%
-  # TODO aqui estamos tirando para cada speciesKey, repeticoes de data na mesma unidade
+  # REMOVE COMBINATIONS OF SPECIESKEY-ADMUNIT-DATE
   distinct(name_en, date, .keep_all = TRUE) %>%
   # Adiciona secundos sequenciais (0, 1, 2...) para cada data repetida
   # TODO uma premissa chatinha porque algo pode ter vindo antes,
@@ -268,8 +268,11 @@ df_wallacean_time <- data_wallacean_unnested_modified %>%
     # se 1L em event, a wallacecompletude eh junto do ultimo evento
     # se 0L em event, a wallacecompletude eh depois do ultimo evento
     WallaceCompletude = if_else(event == 1L & ua_acumulada == ua_total, 1L, 0L),
-    Wallace75 = if_else(event == 1L & ua_acumulada >= ua_total * 0.75, 1L, 0L),
-    Wallace50 = if_else(event == 1L & ua_acumulada >= ua_total * 0.5, 1L, 0L)) %>%
+    WallaceCompletude01 = if_else(event == 1L & ua_acumulada == ua_total01, 1L, 0L),
+    WallaceCompletude05 = if_else(event == 1L & ua_acumulada == ua_total05, 1L, 0L),
+    WallaceCompletude1 = if_else(event == 1L & ua_acumulada == ua_total1, 1L, 0L)) %>%
+    #Wallace75 = if_else(event == 1L & ua_acumulada >= ua_total * 0.75, 1L, 0L),
+    #Wallace50 = if_else(event == 1L & ua_acumulada >= ua_total * 0.5, 1L, 0L)) %>%
   # cria o t.start e o t.stop em dias e transforma em anos
   mutate(
     duracao_evento = as.numeric(difftime(t.stop.date, t.start.date, units = "secs")),
@@ -303,37 +306,61 @@ df_wallacean_100 <- df_wallacean_time %>%
          event, WallaceCompletude, log_gdp_final, gdp_rank, gdp_percentile,
          BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
          HumanDensityTime, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
-         ua_total, origin_of_data, YearOfDescription)
+         ua_total, ua_total01, ua_total05, ua_total1, origin_of_data, YearOfDescription) # 24969 spp
 
-df_wallacean_75 <- df_wallacean_time %>%
+df_wallacean_01 <- df_wallacean_time %>%
+  # remove com cobertura pequena dos poligonos
+  select(-WallaceCompletude, -WallaceCompletude05, -WallaceCompletude1) %>%
+  remove_missing() %>%
   # remove todos eventos apos completude 
   mutate(
     linha = row_number(),
-    pos_completude = if (any(Wallace75 == 1)) min(linha[Wallace75 == 1]) else Inf
+    pos_completude = if (any(WallaceCompletude01 == 1)) min(linha[WallaceCompletude01 == 1]) else Inf
   ) %>%
   filter(linha <= pos_completude) %>%
   ungroup() %>%
   select(speciesKey, Class, Order, Family, scientificName, name_en, date,
          t.start.date, t.stop.date, t.start, t.stop, t.start.year, t.stop.year,
-         event, WallaceCompletude, log_gdp_final, gdp_rank, gdp_percentile,
+         event, WallaceCompletude01, log_gdp_final, gdp_rank, gdp_percentile,
          BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
          HumanDensityTime, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
-         ua_total, origin_of_data, YearOfDescription)
+         ua_total01, origin_of_data, YearOfDescription)
 
-df_wallacean_50 <- df_wallacean_time %>%
+df_wallacean_05 <- df_wallacean_time %>%
+  # remove com cobertura pequena dos poligonos
+  select(-WallaceCompletude, -WallaceCompletude01, -WallaceCompletude1) %>%
+  remove_missing() %>%
   # remove todos eventos apos completude 
   mutate(
     linha = row_number(),
-    pos_completude = if (any(Wallace50 == 1)) min(linha[Wallace50 == 1]) else Inf
+    pos_completude = if (any(WallaceCompletude05 == 1)) min(linha[WallaceCompletude05 == 1]) else Inf
   ) %>%
   filter(linha <= pos_completude) %>%
   ungroup() %>%
   select(speciesKey, Class, Order, Family, scientificName, name_en, date, 
          t.start.date, t.stop.date, t.start,t.stop, t.start.year, t.stop.year,
-         event, Wallace50, log_gdp_final, gdp_rank, gdp_percentile,
+         event, WallaceCompletude05, log_gdp_final, gdp_rank, gdp_percentile,
          BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
          HumanDensityTime, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
-         ua_total, origin_of_data, YearOfDescription) 
+         ua_total05, origin_of_data, YearOfDescription) 
+
+df_wallacean_1 <- df_wallacean_time %>%
+  # remove com cobertura pequena dos poligonos
+  select(-WallaceCompletude, -WallaceCompletude01, -WallaceCompletude05) %>%
+  remove_missing() %>%
+  # remove todos eventos apos completude 
+  mutate(
+    linha = row_number(),
+    pos_completude = if (any(WallaceCompletude1 == 1)) min(linha[WallaceCompletude1 == 1]) else Inf
+  ) %>%
+  filter(linha <= pos_completude) %>%
+  ungroup() %>%
+  select(speciesKey, Class, Order, Family, scientificName, name_en, date, 
+         t.start.date, t.stop.date, t.start,t.stop, t.start.year, t.stop.year,
+         event, WallaceCompletude1, log_gdp_final, gdp_rank, gdp_percentile,
+         BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
+         HumanDensityTime, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
+         ua_total1, origin_of_data, YearOfDescription) 
 
 # TODO Precisa pensar em validacoes para atender o modelo de evento
 df_wallacean_time %>%
@@ -345,14 +372,20 @@ table(df_wallacean_time$WallaceCompletude)
 # 3000 completeness com 0.5%
 # 3294 completeness com 1%
 
+table(df_wallacean_time$WallaceCompletude01) 
+table(df_wallacean_time$WallaceCompletude05) 
+table(df_wallacean_time$WallaceCompletude1) 
+
+
 # bons exemplos para checar problemas
 # 2433011
 # 2423581
 # 2472164
 
 save(df_wallacean_100,
-     df_wallacean_75,
-     df_wallacean_50,
+     df_wallacean_01,
+     df_wallacean_05,
+     df_wallacean_1,
     file = file.path(
       local_directory,
       "02_data_analysis",

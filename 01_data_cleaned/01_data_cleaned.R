@@ -1269,48 +1269,23 @@ load(file.path(
   "trait_data.RData")
 ) # match taxonomic and trait information with speciesKey
 
+# Algumas especies presentes no TetrapodTraits sao consideradas sinonimos,
+# entao precisamos manter apenas as espécies mais antigas, e lidar com os atributos delas
+#trait_data %>%
+#  arrange(speciesKey, YearOfDescription) %>%
+# filter(duplicated(speciesKey) | duplicated(speciesKey, fromLast = TRUE)) %>%
+#  View()
 tetrapods_key_species <- trait_data %>%
+  # Especies com o mesmo speciesKey fico com a mais antiga
+  arrange(speciesKey, YearOfDescription) %>%
   select("speciesKey","scientificName","Class", "Order","Family", 
          "YearOfDescription","BodyLength_mm","ImputedLength","BodyMass_g",
          "ImputedMass","Diu","Noc","Nocturnality", "Fos", "Ter", "Aqu", "Arb", "Aer",
          "ImputedHabitat","Verticality","MajorHabitatSum","ImputedMajorHabitat","RangeSize",
          "HumanDensity", "AssessedStatus", "Latitude", "Elevation", "ETA50K", "AnnuMeanTemp") %>%
-  distinct(speciesKey, .keep_all = TRUE) 
+  distinct(speciesKey, .keep_all = TRUE) # 31594 spp
 
 anyDuplicated(tetrapods_key_species$speciesKey) # ok
-
-# TODO Algumas especies presentes no TetrapodTraits sao consideradas sinonimos,
-# entao precisamos manter apenas as espécies mais antigas, e lidar com os atributos delas
-trait_data %>%
-  filter(duplicated(speciesKey) | duplicated(speciesKey, fromLast = TRUE)) %>%
-  View()
-
-traits_summary <- tetrapods_key_species %>%
-  group_by(speciesKey) %>%
-  
-  # 1. Selecionar o menor YearOfDescription
-  mutate(YearOfDescription = min(YearOfDescription, na.rm = TRUE)) %>%
-  
-  # 2. Agregar os traits conforme solicitado
-  summarise(
-    # manter YearOfDescription mais antigo
-    YearOfDescription = first(YearOfDescription),
-    
-    # agregações
-    RangeSize = sum(RangeSize, na.rm = TRUE),
-    
-    BodyLength_mm = mean(BodyLength_mm, na.rm = TRUE),
-    BodyMass_g    = mean(BodyMass_g, na.rm = TRUE),
-    Latitude      = mean(Latitude, na.rm = TRUE),
-    
-    Nocturnality = median(Nocturnality, na.rm = TRUE),
-    Verticality  = median(Verticality, na.rm = TRUE),
-    Elevation    = median(Elevation, na.rm = TRUE),
-    
-    # manter outras colunas fixas (opcional)
-    across(where(is.character), ~ first(.x))
-  ) %>%
-  ungroup()
 
 data_tetrapods_nested <- data_occurences_units %>%
   group_by(speciesKey) %>%  # Agrupa pelo speciesKey
@@ -1329,9 +1304,6 @@ data_wallacean_nested <- left_join(
 # check data
 table(data_wallacean_nested$Class)
 
-# para o mundo sem human observation
-#Amphibia  Aves   Mammalia Reptilia 
-# 4942     8250     4459     7050 
 # para o mundo com human observation
 #Amphibia  Aves   Mammalia Reptilia 
 # 5553     8941     4794     8107 
@@ -1343,7 +1315,6 @@ data_wallacean_unnested <- data_wallacean_nested %>%
   unnest(cols = c(event_table))
 nrow(data_wallacean_unnested) 
 
-# 3.144.303 occ global
 # 123.776.736 occ global com Human Observation
 save(data_wallacean_nested,
      data_wallacean_unnested,
@@ -1391,6 +1362,7 @@ load(file.path(
 ) # match taxonomic and trait information with speciesKey
 
 tetrapods_key_species <- trait_data %>%
+  arrange(speciesKey, YearOfDescription)
   select("speciesKey","scientificName","Class", "Order","Family", 
          "YearOfDescription","BodyLength_mm","ImputedLength","BodyMass_g",
          "ImputedMass","Diu","Noc","Nocturnality", "Fos", "Ter", "Aqu", "Arb", "Aer",
@@ -1647,6 +1619,28 @@ specieslist_count <- species_admin_all %>%
              completeness_all_01 = completeness_all), by = "name_en"
   ) 
 
+# Completeness species-level
+completeness01 <- species_admin_01perc %>%
+  select(name_en, perc_01) %>%
+  unnest(perc_01) %>%
+  select(speciesKey, name_en) %>%
+  group_by(speciesKey) %>%
+  summarise(ua_total01 = n_distinct(name_en))
+
+completeness05 <- species_admin_05perc %>%
+  select(name_en, perc_05) %>%
+  unnest(perc_05) %>%
+  select(speciesKey, name_en) %>%
+  group_by(speciesKey) %>%
+  summarise(ua_total05 = n_distinct(name_en))
+
+completeness1 <- species_admin_1perc %>%
+  select(name_en, perc_1) %>%
+  unnest(perc_1) %>%
+  select(speciesKey, name_en) %>%
+  group_by(speciesKey) %>%
+  summarise(ua_total1 = n_distinct(name_en))
+
 save(
   specieslist_count,         # data.frame com as contagens por threshold
   occ_nested,                # lista de todas ocorrencias 
@@ -1657,6 +1651,9 @@ save(
   species_admin_1perc,       # lista de especies com cobertura > 1% na und adm.
   species_admin_05perc,      # lista de especies com cobertura > 0.5% na und adm
   species_admin_01perc,      # lista de especies com cobertura > 0.1% na und adm
+  completeness01,
+  completeness05,
+  completeness1,
   file = file.path(
     local_directory,
     "00_raw_data",

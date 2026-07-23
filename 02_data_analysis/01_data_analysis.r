@@ -65,7 +65,7 @@ extrair_exp_coefficients_simples <- function(output_text) {
 }
 
 plot_gof_custom <- function(x,
-                            col = 3, 
+                            col = 3,
                             type = NULL,
                             titles = TRUE,
                             bg.col = NULL,
@@ -79,7 +79,10 @@ plot_gof_custom <- function(x,
                             show.yaxis = TRUE,
                             show.xticks = TRUE,
                             show.yticks = TRUE,
-                            year_seq = seq(1750, 2025, by = 25),  # <<< NOVO
+                            year_seq = seq(1750, 2025, by = 25),
+                            variable = NULL,
+                            show.varname = FALSE,
+                            var.labels = NULL,
                             ...) {
   
   if (is.null(type)) {
@@ -91,21 +94,37 @@ plot_gof_custom <- function(x,
   xlab_final <- if (show.xlab) xlab else ""
   ylab_final <- if (show.ylab) ylab else ""
   
+  get_varname <- function(i){
+    
+    nm <- rownames(x$res)[i]
+    
+    if(!is.null(var.labels)){
+      if(nm %in% names(var.labels)){
+        nm <- var.labels[[nm]]
+      }
+    }
+    
+    nm
+  }
+  
   if (type == "time" || type == "modelmatrix") {
     
     p <- ncol(x$score)
     
-    for (i in 1:p) {
+    vars <- if(is.null(variable)) seq_len(p) else variable
+    
+    for(i in vars){
       
       simU <- x$simUt[, (0:49) * p + i]
+      
       rsU <- max(abs(simU))
       rsU <- max(rsU, abs(x$score[, i]))
       
-      # FIXAR LIMITES DO EIXO X
-      plot(x$jumptimes, x$score[, i],
+      plot(x$jumptimes,
+           x$score[, i],
            type = "n",
            ylim = c(-rsU, rsU),
-           xlim = range(year_seq),   # <<< garante mesmo eixo
+           xlim = range(year_seq),
            xlab = xlab_final,
            ylab = ylab_final,
            cex.lab = cex.lab,
@@ -113,51 +132,84 @@ plot_gof_custom <- function(x,
            xaxt = "n",
            yaxt = "n",
            ...)
-    
-      if (show.xaxis || show.xticks) {
-        axis(1,
-             at = year_seq,
-             labels = if (show.xaxis) year_seq else rep("", length(year_seq)),
-             tick = show.xticks,
-             cex.axis = cex.axis)
+      
+      if(show.xaxis || show.xticks){
+        
+        axis(
+          1,
+          at = year_seq,
+          labels = if(show.xaxis) year_seq else rep("", length(year_seq)),
+          tick = show.xticks,
+          cex.axis = cex.axis
+        )
+        
       }
-
-      if (show.yaxis || show.yticks) {
-        axis(2,
-             labels = show.yaxis,
-             tick = show.yticks,
-             cex.axis = cex.axis)
+      
+      if(show.yaxis || show.yticks){
+        
+        axis(
+          2,
+          labels = show.yaxis,
+          tick = show.yticks,
+          cex.axis = cex.axis
+        )
+        
       }
       
       box()
       
-      if (titles) title(main = rownames(x$res)[i])
+      if(titles)
+        title(main = get_varname(i))
       
-      matlines(x$jumptimes, simU,
-               type = "s",
-               lwd = 0.3,
-               col = if (!is.null(bg.col)) bg.col else col)
+      if(show.varname)
+        mtext(
+          get_varname(i),
+          side = 2,
+          line = 2.8,
+          las = 0,
+          font = 2,
+          cex = 0.9
+        )
       
-      lines(x$jumptimes, x$score[, i],
-            type = "s",
-            lwd = 1.5)
+      matlines(
+        x$jumptimes,
+        simU,
+        type = "s",
+        lwd = 0.3,
+        col = if(!is.null(bg.col)) bg.col else col
+      )
+      
+      lines(
+        x$jumptimes,
+        x$score[, i],
+        type = "s",
+        lwd = 1.5
+      )
+      
     }
     
   } else {
     
-    for (i in 1:length(x$Zres)) {
+    vars <- if(is.null(variable)) seq_along(x$Zres) else variable
+    
+    for(i in vars){
       
       xr <- x$Zres[[i]]
-      obsz <- c(tail(xr$score, 1))
+      
+      obsz <- tail(xr$score, 1)
+      
       times <- xr$xaxs
       
-      rsU <- max(max(abs(obsz)),
-                 max(abs(xr$simUtlast[1:50, ])))
+      rsU <- max(
+        max(abs(obsz)),
+        max(abs(xr$simUtlast[1:50, ]))
+      )
       
-      plot(times, obsz,
+      plot(times,
+           obsz,
            type = "n",
            ylim = c(-rsU, rsU),
-           xlim = range(year_seq),   # <<< garante mesmo eixo
+           xlim = range(year_seq),
            xlab = xlab_final,
            ylab = ylab_final,
            cex.lab = cex.lab,
@@ -165,36 +217,61 @@ plot_gof_custom <- function(x,
            yaxt = "n",
            ...)
       
-      if (show.xaxis || show.xticks) {
-        axis(1,
-             at = year_seq,
-             labels = if (show.xaxis) year_seq else rep("", length(year_seq)),
-             tick = show.xticks,
-             cex.axis = cex.axis)
+      if(show.xaxis || show.xticks){
+        
+        axis(
+          1,
+          at = year_seq,
+          labels = if(show.xaxis) year_seq else rep("", length(year_seq)),
+          tick = show.xticks,
+          cex.axis = cex.axis
+        )
+        
       }
       
-      if (show.yaxis || show.yticks) {
-        axis(2,
-             labels = show.yaxis,
-             tick = show.yticks,
-             cex.axis = cex.axis)
+      if(show.yaxis || show.yticks){
+        
+        axis(
+          2,
+          labels = show.yaxis,
+          tick = show.yticks,
+          cex.axis = cex.axis
+        )
+        
       }
       
       box()
       
-      if (titles) title(main = rownames(x$res)[i])
+      if(titles)
+        title(main = get_varname(i))
       
-      matlines(times,
-               t(xr$simUtlast[1:50, ]),
-               type = "l",
-               lwd = 0.3,
-               col = if (!is.null(bg.col)) bg.col else col)
+      if(show.varname)
+        mtext(
+          get_varname(i),
+          side = 2,
+          line = 2.8,
+          las = 0,
+          font = 2,
+          cex = 0.9
+        )
       
-      lines(times,
-            obsz,
-            lwd = 2,
-            col = 1)
+      matlines(
+        times,
+        t(xr$simUtlast[1:50, ]),
+        type = "l",
+        lwd = 0.3,
+        col = if(!is.null(bg.col)) bg.col else col
+      )
+      
+      lines(
+        times,
+        obsz,
+        lwd = 2,
+        col = 1
+      )
+      
     }
+    
   }
 }
 
@@ -399,8 +476,8 @@ plot_bivariate_map <- function(geo_plot,
   legend_data <- bi_pal
   
   legend_plot <- ggplot(legend_data,
-                        aes(x = y_cat,
-                            y = x_cat,
+                        aes(x = x_cat,
+                            y = y_cat,
                             fill = fill)) +
     geom_tile() +
     scale_fill_identity() +
@@ -426,6 +503,11 @@ plot_bivariate_map <- function(geo_plot,
   return(final_plot)
 }
 
+normalize <- function(x){
+  (x - min(x, na.rm = TRUE)) /
+    (max(x, na.rm = TRUE) - min(x, na.rm = TRUE))
+}
+
 # Load data ----
 load(file = file.path(
   local_directory,
@@ -446,15 +528,63 @@ load(file.path(
   "richness_completude.RData"))
 
 # Preparing data ----
-df_wallacean_100 <- df_wallacean_100 %>%
-  mutate(status = event + WallaceCompletude) %>%
+# Thresholds of completeness 
+df_wallacean_01 <- df_wallacean_01 %>%
+  filter(ua_total01 > 2) %>%
+  mutate(status = event + WallaceCompletude01) %>%
   left_join(
     geographic_shape_data %>%
       select(GlobalNorth, Georegion, name_en) %>%
       sf::st_drop_geometry(), by = "name_en"
   )
 
+df_wallacean_05 <- df_wallacean_05 %>%
+  filter(ua_total05 > 2) %>%
+  mutate(status = event + WallaceCompletude05) %>%
+  left_join(
+    geographic_shape_data %>%
+      select(GlobalNorth, Georegion, name_en) %>%
+      sf::st_drop_geometry(), by = "name_en"
+  )
+
+df_wallacean_1 <- df_wallacean_1 %>%
+  filter(ua_total1 > 2) %>%
+  mutate(status = event + WallaceCompletude1) %>%
+  left_join(
+    geographic_shape_data %>%
+      select(GlobalNorth, Georegion, name_en) %>%
+      sf::st_drop_geometry(), by = "name_en"
+  )
+
+# Each group
+df_tetrapods_100 <- df_wallacean_100 %>%
+  filter(ua_total > 2) %>%
+  mutate(status = event + WallaceCompletude) %>%
+  left_join(
+    geographic_shape_data %>%
+      select(GlobalNorth, Georegion, name_en) %>%
+      sf::st_drop_geometry(), by = "name_en"
+  ) %>%
+  mutate(status = event + WallaceCompletude) %>%
+  mutate(BodySize = scale(log(BodyLength_mm)),
+         Verticality = scale(Verticality^2),
+         Nocturnality = scale(Nocturnality^2),
+         HumanDensity = scale(log(HumanDensityTime+1)),
+         Latitude = scale(abs(Latitude)),
+         RangeSize = scale(log(RangeSize)),
+         Elevation = scale(log(Elevation)),
+         gdp_rank_z = scale(gdp_rank),
+         gdp_percentile_z = scale(gdp_percentile),
+         gdp = scale(log_gdp_final))
+
 df_amphibia_100 <- df_wallacean_100 %>%
+  filter(ua_total > 2) %>%
+  mutate(status = event + WallaceCompletude) %>%
+  left_join(
+    geographic_shape_data %>%
+      select(GlobalNorth, Georegion, name_en) %>%
+      sf::st_drop_geometry(), by = "name_en"
+  ) %>%
   mutate(status = event + WallaceCompletude) %>%
   filter(Class == "Amphibia") %>%
   mutate(BodySize = scale(log(BodyLength_mm)),
@@ -469,6 +599,13 @@ df_amphibia_100 <- df_wallacean_100 %>%
          gdp = scale(log_gdp_final))
 
 df_reptilia_100 <- df_wallacean_100 %>%
+  filter(ua_total > 2) %>%
+  mutate(status = event + WallaceCompletude) %>%
+  left_join(
+    geographic_shape_data %>%
+      select(GlobalNorth, Georegion, name_en) %>%
+      sf::st_drop_geometry(), by = "name_en"
+  ) %>%
   mutate(status = event + WallaceCompletude) %>%
   filter(Class == "Reptilia") %>%
   mutate(BodySize = scale(log(BodyLength_mm)),
@@ -483,6 +620,13 @@ df_reptilia_100 <- df_wallacean_100 %>%
          gdp = scale(log_gdp_final))
 
 df_aves_100 <- df_wallacean_100 %>%
+  filter(ua_total > 2) %>%
+  mutate(status = event + WallaceCompletude) %>%
+  left_join(
+    geographic_shape_data %>%
+      select(GlobalNorth, Georegion, name_en) %>%
+      sf::st_drop_geometry(), by = "name_en"
+  ) %>%
   mutate(status = event + WallaceCompletude) %>%
   filter(Class == "Aves") %>%
   mutate(BodySize = scale(log(BodyMass_g)),
@@ -497,6 +641,13 @@ df_aves_100 <- df_wallacean_100 %>%
          gdp = scale(log_gdp_final))
 
 df_mammalia_100 <- df_wallacean_100 %>%
+  filter(ua_total > 2) %>%
+  mutate(status = event + WallaceCompletude) %>%
+  left_join(
+    geographic_shape_data %>%
+      select(GlobalNorth, Georegion, name_en) %>%
+      sf::st_drop_geometry(), by = "name_en"
+  ) %>%
   mutate(status = event + WallaceCompletude) %>%
   filter(Class == "Mammalia") %>%
   mutate(BodySize = scale(log(BodyMass_g)),
@@ -511,17 +662,92 @@ df_mammalia_100 <- df_wallacean_100 %>%
          gdp = scale(log_gdp_final))
 
 # Recurrent event model ----
-tetrapods_100 <- recurrentMarginal(Event(t.start.year, t.stop.year, status==1)~
-                                     strata(GlobalNorth)+
-                                     cluster(speciesKey),
-                                   data=df_wallacean_100,
-                                   cause=1,
-                                   death.code=2)
+# All species
+tetrapods_100 <- recurrentMarginal(
+  Event(t.start.year, t.stop.year, status==1)~
+    strata(GlobalNorth)+
+    cluster(speciesKey),
+    cause=1,
+    death.code=2,
+  data=df_wallacean_100 %>%
+    mutate(status = event + WallaceCompletude) %>%
+    left_join(geographic_shape_data %>%
+        select(GlobalNorth, Georegion, name_en) %>%
+        sf::st_drop_geometry(), by = "name_en"
+    ))
+
 save(
   tetrapods_100,
   file = file.path(
     local_directory, "02_data_analysis", "tetrapods_model.RData")
 ) # plot in script "02_exploratory_analysis.R"
+
+# For widely distributed species (at least 3 administrative units)
+fit.tetrapods.surv <- aalen(
+  formula = Surv(t.start.year, t.stop.year, status == 1) ~
+    BodySize +
+    Verticality +
+    Nocturnality +
+    RangeSize +
+    Elevation +
+    HumanDensity +
+    Latitude +
+    gdp_percentile_z +
+    cluster(speciesKey)+
+    strata(Class),
+  data= df_tetrapods_100,
+  start.time = 1760,
+  max.time     = 2025,
+  #residuals = 1,
+  robust       = 1,       # variância robusta
+  n.sim        = 100,     # número de simulações para CI
+  resample.iid = 1       # para funções de residuais/CI i.i.d.
+)
+
+tetrapods_event_100 <- phreg(Surv(t.start.year, t.stop.year, status==1)~
+                              BodySize +
+                              Verticality +
+                              Nocturnality +
+                              RangeSize +
+                              Elevation +
+                              HumanDensity +
+                              Latitude +
+                              gdp_percentile_z +
+                              cluster(speciesKey)+
+                              strata(Class),
+                            data=df_tetrapods_100)
+
+tetrapods_terminal_100 <- phreg(Surv(t.start.year,
+                                    t.stop.year,
+                                    status==2)~
+                                 BodySize +
+                                 Verticality +
+                                 Nocturnality +
+                                 RangeSize +
+                                 Elevation +
+                                 HumanDensity +
+                                 Latitude +
+                                 gdp_percentile_z +
+                                 cluster(speciesKey)+
+                                  strata(Class),
+                               data=df_tetrapods_100)
+
+tetrapods_100 <- recurrentMarginal(Event(t.start.year,
+                                         t.stop.year,
+                                         status==1)~
+                                     strata(Class)+
+                                     cluster(speciesKey),
+                                   data= df_tetrapods_100,
+                                   cause=1,
+                                   death.code=2)
+
+
+teste <- recurrent.marginal.mean(fit.reptilia.surv,fit.reptilia.completeness)
+plot(teste)
+
+with(teste,plot(times,mu,type="s"))
+with(teste,lines(times,mu+1.96*se.mu,type="s",lty=2))
+with(teste,lines(times,mu-1.96*se.mu,type="s",lty=2))
 
 ## Amphibia ----
 # Cox model
@@ -555,6 +781,7 @@ amphibia_terminal_100 <- phreg(Surv(t.start.year,
                                  cluster(speciesKey),
                                data=df_amphibia_100)
 summary(amphibia_terminal_100)
+
 gof.terminal.amphibia <- gof(amphibia_terminal_100)
 
 # Aalen model
@@ -572,7 +799,7 @@ fit.amphibia.surv <- aalen(
   data= df_amphibia_100,
   start.time = 1760,
   max.time     = 2025,
-  residuals = 1,
+  #residuals = 1,
   robust       = 1,       # variância robusta
   n.sim        = 100,     # número de simulações para CI
   resample.iid = 1       # para funções de residuais/CI i.i.d.
@@ -580,18 +807,15 @@ fit.amphibia.surv <- aalen(
 plot(fit.amphibia.surv)
 
 # Extrair a lista de resíduos
-residuos_do_modelo <- fit.amphibia.surv$residuals
-# Ver a estrutura da lista
-str(residuos_do_modelo)
-
-# 2. Passar o objeto diretamente para a função de validação
-resultado_validacao <- cum.residuals(fit.amphibia.surv,
-                                     data = df_amphibia_100,
-                                     cum.resid = 1,
-                                     n.sim = 100)
-
+#residuos_do_modelo <- fit.amphibia.surv$residuals
+#str(residuos_do_modelo)
+# Passar o objeto diretamente para a função de validação
+#resultado_validacao <- cum.residuals(fit.amphibia.surv,
+#                                     data = df_amphibia_100,
+#                                     cum.resid = 1,
+#                                     n.sim = 100)
 # 3. Visualizar os resultados
-plot(resultado_validacao, score = 2)
+#plot(resultado_validacao, score = 2)
 # A lista geralmente contém:
 # - dM: os incrementos do martingale estimados (resíduos)
 # - time: o vetor de tempo correspondente a cada incremento
@@ -636,7 +860,7 @@ reptilia_event_100 <- phreg(Surv(t.start.year,
                               Latitude +
                               gdp_percentile_z +
                               cluster(speciesKey),
-                            data=df_reptilia_100)
+                            data=df_reptilia_01)
 summary(reptilia_event_100)
 gof.reptilia <- gof(reptilia_event_100)
 
@@ -652,7 +876,7 @@ reptilia_terminal_100 <- phreg(Surv(t.start.year,
                                  Latitude +
                                  gdp_percentile_z +
                                  cluster(speciesKey),
-                               data=df_reptilia_100)
+                               data=df_reptilia_01)
 summary(reptilia_terminal_100)
 gof.terminal.reptilia <- gof(reptilia_terminal_100)
 
@@ -872,6 +1096,8 @@ save(
   gof.aves,
   mammalia_event_100,
   gof.mammalia,
+  tetrapods_event_100,
+  tetrapods_100,
   file = file.path(
     local_directory,
     "02_data_analysis",
@@ -887,6 +1113,7 @@ save(
   gof.terminal.aves,
   mammalia_terminal_100,
   gof.terminal.mammalia,
+  tetrapods_terminal_100,
   file = file.path(
     local_directory,
     "02_data_analysis",
@@ -953,16 +1180,15 @@ par(mfrow=c(1,2),
     cex.lab = 1.5, 
     cex.axis = 1.3)  # Aumentar tamanho dos labels dos eixos
 
-# Event
-plot(amphibia_event_100, se = TRUE, col = cores["Amphibia"],
+ordem <- tetrapods_event_100$strata.level
+cores <- cores[ordem]
+
+plot(tetrapods_event_100, se = TRUE, col = cores,
      legend = FALSE,
      ylim = c(0, 35),
      xlim = c(1750, 2025),
      xlab = "",  # Omitir título do eixo x
      cex.main = 1.5)  # Aumentar tamanho do título
-plot(reptilia_event_100, se = TRUE, add = TRUE, col = cores["Reptilia"])
-plot(aves_event_100, se = TRUE, add = TRUE, col = cores["Aves"])
-plot(mammalia_event_100, se = TRUE, add = TRUE, col = cores["Mammalia"])
 title(main = "Geodiscovery", line = 0.5, cex.main = 1.5)  # Ajustar posição do título
 legend("topleft", legend = names(cores), col = unname(cores), 
        lwd = 2, bty = "n", title = "", cex = 1.2)  # Aumentar tamanho da legenda
@@ -970,41 +1196,30 @@ legend("topleft", legend = names(cores), col = unname(cores),
 anos <- seq(1750, 2025, by = 50)
 abline(v = anos, col = "gray70", lty = 2, lwd = 1)
 
-# Terminal event
-plot(amphibia_terminal_100, se = TRUE, col = cores["Amphibia"], 
+ordem <- tetrapods_terminal_100$strata.level
+cores <- cores[ordem]
+plot(tetrapods_terminal_100, se = TRUE, col = cores, 
      legend = FALSE,
      ylim = c(0, 0.25),
      xlim = c(1750, 2025),
      xlab = "",  # Omitir título do eixo x
      cex.main = 1.5)
-plot(reptilia_terminal_100, se = TRUE, add = TRUE, col = cores["Reptilia"])
-plot(aves_terminal_100, se = TRUE, add = TRUE, col = cores["Aves"])
-plot(mammalia_terminal_100, se = TRUE, add = TRUE, col = cores["Mammalia"])
 title(main = "Completeness", line = 0.5, cex.main = 1.5)
-
 anos <- seq(1750, 2025, by = 50)
 abline(v = anos, col = "gray70", lty = 2, lwd = 1)
 
 # Mean events
-amphibia_rm <- recurrentMarginalPhreg(amphibia_event_100,
-                                      amphibia_terminal_100)
-reptilia_rm <- recurrentMarginalPhreg(reptilia_event_100,
-                                      reptilia_terminal_100)
-aves_rm <- recurrentMarginalPhreg(aves_event_100,
-                                  aves_terminal_100)
-mammalia_rm <- recurrentMarginalPhreg(mammalia_event_100,
-                                      mammalia_terminal_100)
+tetrapods_rm <- recurrentMarginalPhreg(tetrapods_event_100,
+                                      tetrapods_terminal_100)
+plot(tetrapods_rm)
 
 # Mean between event + terminal
-plot(amphibia_rm, se = TRUE, col = cores["Amphibia"], 
+plot(tetrapods_rm, se = TRUE, col = cores, 
      legend = FALSE,
      ylim = c(0, 35),
      xlim = c(1750, 2025),
-     xlab = "",  # Omitir título do eixo x
+     xlab = "",
      cex.main = 1.5)
-plot(reptilia_rm, se = TRUE, add = TRUE, col = cores["Reptilia"])
-plot(aves_rm, se = FALSE, add = TRUE, col = cores["Aves"])
-plot(mammalia_rm, se = TRUE, add = TRUE, col = cores["Mammalia"])
 title(main = "Geodiscovery + Completeness", line = 0.5, cex.main = 1.5)
 
 ## Coefficient plot ----
@@ -1047,11 +1262,11 @@ coef_plot <- bind_rows(
   mammalia_combinado
 )
 
-# Definir a ordem desejada das variáveis
+# Ordem das variáveis
 ordem_variaveis <- c(
   "BodySize",
   "Verticality",
-  "Nocturnality", 
+  "Nocturnality",
   "RangeSize",
   "Elevation",
   "HumanDensity",
@@ -1059,127 +1274,185 @@ ordem_variaveis <- c(
   "gdp_percentile_z"
 )
 
-# Definir a ordem desejada dos grupos (classes)
-ordem_grupos <- c("Amphibia", "Reptilia", "Aves", "Mammalia")
+# Ordem das classes
+ordem_grupos <- c(
+  "Amphibia",
+  "Reptilia",
+  "Aves",
+  "Mammalia"
+)
 
-# Criar background_data com uma cor por grupo
+# Background
 background_data <- expand.grid(
   Class = factor(ordem_grupos, levels = ordem_grupos),
   variable = factor(ordem_variaveis, levels = ordem_variaveis)
 ) %>%
-  mutate(
-    # Mapear a cor baseada no grupo
-    fill = cores[as.character(Class)]
-  )
+  mutate(fill = cores[as.character(Class)])
 
-# Converter ambas as colunas para fatores com a ordem especificada
+# Organizar dados
 coef_plot_ordenado <- coef_plot %>%
   mutate(
     variable = factor(variable, levels = ordem_variaveis),
-    Class = factor(Class, levels = ordem_grupos)
+    Class = factor(Class, levels = ordem_grupos),
+    modelo = factor(
+      modelo,
+      levels = c("Geodiscovery", "Completeness")
+    ),
+    significant = lower > 1 | upper < 1
   )
 
-# Reordenar também o background_data para corresponder
 background_data_ordenado <- background_data %>%
   mutate(Class = factor(Class, levels = ordem_grupos))
 
-# Agora usar o dataframe ordenado no gráfico
-coefplot <- ggplot(coef_plot_ordenado,
-                   aes(x = hr, y = variable, color = modelo)) +
-  # Background colorido (usar o background_data ordenado)
+# Mesmo dodge para pontos e barras
+pd <- position_dodge(width = 0.6, reverse = TRUE)
+
+coefplot <- ggplot(
+  coef_plot_ordenado,
+  aes(
+    x = hr,
+    y = variable,
+    colour = modelo,
+    group = modelo
+  )
+) +
+  # Background
   geom_rect(
     data = background_data_ordenado,
-    aes(xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf, fill = fill),
+    aes(
+      xmin = -Inf,
+      xmax = Inf,
+      ymin = -Inf,
+      ymax = Inf,
+      fill = fill
+    ),
     inherit.aes = FALSE,
     alpha = 0.05,
-    color = NA
+    colour = NA
   ) +
-  # Linha vertical de referência
-  geom_vline(xintercept = 1, linetype = "dashed", 
-             color = "black", linewidth = 0.6, alpha = 0.8) +
-  # Barras de erro
+  geom_vline(
+    xintercept = 1,
+    linetype = "dashed",
+    colour = "gray60",
+    linewidth = 0.6,
+    alpha = 0.8
+  ) +
   geom_errorbarh(
-    aes(xmin = lower, xmax = upper), 
-    position = position_dodge(width = 0.6),
+    aes(
+      xmin = lower,
+      xmax = upper,
+      linetype = significant
+    ),
+    position = pd,
     height = 0.25,
-    linewidth = 1.2,
-    alpha = 1
+    linewidth = 0.8
   ) +
-  # Pontos
   geom_point(
-    position = position_dodge(width = 0.6), 
+    aes(shape = significant),
+    position = pd,
     size = 3.5,
-    shape = 16
+    fill = "black"
   ) +
-  # Labels
-  labs(
-    x = "Hazard Ratio (HR)", 
-    y = "",
-    color = "Model"
+  scale_shape_manual(
+    values = c(
+      `TRUE` = 16,
+      `FALSE` = 1
+    )
   ) +
-  # Escalas
+  scale_linetype_manual(
+    values = c(
+      `TRUE` = "solid",
+      `FALSE` = "dashed"
+    )
+  ) +
+  
   scale_color_manual(
-    values = c("Completeness" = "#A23B72", "Geodiscovery" = "#2E86AB"),
-    labels = c("Completeness", "Geodiscovery")
+    values = c(
+      Completeness = "#696969",
+      Geodiscovery = "#000000"
+    )
   ) +
+  
   scale_fill_identity() +
-  # Facets - agora os grupos aparecerão na ordem especificada
-  facet_wrap(~ Class, ncol = 4) +
-  # Reverter a ordem do eixo Y para que BodyLength_mm fique no topo
-  scale_y_discrete(limits = rev) +
-  # Tema
+  facet_wrap(
+    ~Class,
+    ncol = 4
+  ) +
+  scale_y_discrete(
+    limits = rev,
+    labels = c(
+      BodySize = "Body size",
+      Verticality = "Verticality",
+      Nocturnality = "Nocturnality",
+      RangeSize = "Range size",
+      Elevation = "Elevation",
+      HumanDensity = "Human density",
+      Latitude = "Latitude",
+      gdp_percentile_z = "GDP-PPP"
+    )
+  ) +
+  labs(
+    x = "Hazard Ratio (HR)",
+    y = "",
+    colour = "Model"
+  ) +
+  
+  geom_hline(
+    data = data.frame(
+      yintercept = seq(
+        1.5,
+        length(ordem_variaveis) - 0.5,
+        by = 1
+      )
+    ),
+    aes(yintercept = yintercept),
+    inherit.aes = FALSE,
+    colour = "grey70",
+    linewidth = 0.2
+  ) +
+  
   theme_minimal() +
+  
   theme(
-    # Texto
-    plot.title = element_text(face = "bold", hjust = 0.5, size = 18),
-    axis.title.x = element_text(size = 15, face = "bold", margin = margin(t = 10)),
-    axis.text.x = element_text(size = 13),
-    axis.text.y = element_text(size = 15, color = "black"),
-    
-    # Legendas
-    legend.position = "top",  # MUDADO: de "bottom" para "top"
-    legend.title = element_blank(),  # MUDADO: remove o título "Model"
-    legend.text = element_text(size = 18),
-    legend.box.spacing = unit(0.2, "cm"),
-    legend.margin = margin(b = 0, t = 0),  # ADICIONADO: ajusta margens
-    
-    # Strips (títulos dos facets) - agora na ordem correta
-    strip.text = element_text(
-      face = "bold", 
+    plot.title = element_text(
+      face = "bold",
+      hjust = 0.5,
+      size = 18
+    ),
+    axis.title.x = element_text(
       size = 15,
-      color = "black",
-      margin = margin(b = 8, t = 8)
+      #face = "bold",
+      margin = margin(t = 10)
+    ),
+    axis.text.x = element_text(size = 13),
+    axis.text.y = element_text(
+      size = 15,
+      colour = "black"
+    ),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 18),
+    strip.text = element_text(
+      #face = "bold",
+      size = 15
     ),
     strip.background = element_rect(
       fill = "white",
-      color = "grey80",
-      linewidth = 0.5
+      colour = "grey80"
     ),
-    
-    # Painéis - REDUZIR espaçamento
-    panel.spacing.x = unit(0.3, "lines"),  # Espaço horizontal entre grupos
-    panel.spacing.y = unit(0.1, "lines"),  # Espaço vertical (se tiver múltiplas linhas)
-    panel.grid.major = element_line(color = "grey90", linewidth = 0.3),
+    panel.spacing.x = unit(0.3, "lines"),
+    panel.spacing.y = unit(0.1, "lines"),
+    panel.grid.major = element_line(
+      colour = "grey90",
+      linewidth = 0.3
+    ),
     panel.grid.minor = element_blank(),
     panel.border = element_rect(
-      fill = NA, 
-      color = "grey80", 
+      fill = NA,
+      colour = "grey80",
       linewidth = 0.4
     ),
-    
-    # Plot geral
-    plot.background = element_rect(fill = "white", color = NA),
     plot.margin = margin(15, 15, 15, 15)
-  ) +
-  # Adicionar linhas divisórias horizontais entre variáveis
-  geom_hline(
-    data = data.frame(
-      yintercept = seq(1.5, length(ordem_variaveis) - 0.5, by = 1)
-    ),
-    aes(yintercept = yintercept),
-    color = "grey70",
-    linewidth = 0.2,
-    linetype = "solid"
   ); coefplot
 
 ggsave(file.path("G:", "Meu Drive", "Artigos", "wallace_time", "Figures",
@@ -1189,9 +1462,19 @@ ggsave(file.path("G:", "Meu Drive", "Artigos", "wallace_time", "Figures",
 
 ## GOF plot ----
 # Event
-dev.off()
-par(mfrow=c(4,8),
-    mar=c(2.5, 3, 1.5, 0.5),
+var.labels <- c(
+  BodySize = "Body size",
+  Verticality = "Verticality",
+  Nocturnality = "Nocturnality",
+  RangeSize = "Range size",
+  Elevation = "Elevation",
+  HumanDensity = "Human density",
+  Latitude = "Latitude",
+  gdp_percentile_z = "GDP-PPP"
+)
+
+par(mfrow=c(8,4),
+    mar=c(2.5,2,1.5,0.5),
     oma=c(0,0,0,0),
     mgp=c(1.7,0.6,0),
     xaxs="i",
@@ -1200,39 +1483,45 @@ par(mfrow=c(4,8),
     cex.lab=5)
 par(las=2)
 
-
-plot_gof_custom(gof.amphibia, 
-                titles = TRUE,
-                bg.col = cores[["Amphibia"]],
-                year_seq = seq(1750, 2025, by = 25),
-                show.xaxis = TRUE,
-                show.yaxis = TRUE,
-                show.xticks = TRUE,
-                show.yticks = TRUE)
-plot_gof_custom(gof.reptilia,
-                titles = FALSE,
-                bg.col = cores[["Reptilia"]],
-                year_seq = seq(1750, 2025, by = 25),
-                show.xaxis = TRUE,
-                show.yaxis = TRUE,
-                show.xticks = TRUE,
-                show.yticks = TRUE)
-plot_gof_custom(gof.aves,
-                titles = FALSE,
-                bg.col = cores[['Aves']],
-                year_seq = seq(1750, 2025, by = 25),
-                show.xaxis = TRUE,
-                show.yaxis = TRUE,
-                show.xticks = TRUE,
-                show.yticks = TRUE)
-plot_gof_custom(gof.mammalia,
-                titles = FALSE,
-                bg.col = cores[["Mammalia"]],
-                year_seq = seq(1750, 2025, by = 25),
-                show.xaxis = TRUE,
-                show.yaxis = TRUE,
-                show.xticks = TRUE,
-                show.yticks = TRUE)
+for(i in 1:8){
+  
+  plot_gof_custom(
+    gof.amphibia,
+    variable = i,
+    show.varname = TRUE,
+    var.labels = var.labels,
+    bg.col = cores[["Amphibia"]],
+    titles = FALSE
+  )
+  
+  plot_gof_custom(
+    gof.reptilia,
+    variable = i,
+    show.varname = FALSE,
+    var.labels = var.labels,
+    bg.col = cores[["Reptilia"]],
+    titles = FALSE
+  )
+  
+  plot_gof_custom(
+    gof.aves,
+    variable = i,
+    show.varname = FALSE,
+    var.labels = var.labels,
+    bg.col = cores[["Aves"]],
+    titles = FALSE
+  )
+  
+  plot_gof_custom(
+    gof.mammalia,
+    variable = i,
+    show.varname = FALSE,
+    var.labels = var.labels,
+    bg.col = cores[["Mammalia"]],
+    titles = FALSE
+  )
+  
+}
 
 # Terminal 
 dev.off()
@@ -1413,9 +1702,7 @@ df_wallacean_100 %>%
   labs(x = "Year", y = "Completeness frequency") +
   theme_bw()
 
-
-
-## Temporal-spatial map ----
+## Spatiotemporal map ----
 richness_all <- richness_completude_amphibia %>%
   left_join(richness_completude_reptilia, by = "name_en") %>%
   left_join(richness_completude_aves, by = "name_en") %>%
@@ -1562,11 +1849,6 @@ library(ggtern)
 library(grid)
 
 # 1. Calcular a cor para cada região com base nas 3 variáveis
-normalize <- function(x){
-  (x - min(x, na.rm = TRUE)) /
-    (max(x, na.rm = TRUE) - min(x, na.rm = TRUE))
-}
-
 data <- geo_plot %>%
   mutate(
     KnowledgeAge = normalize(2025 - year75), 

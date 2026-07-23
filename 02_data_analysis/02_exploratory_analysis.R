@@ -307,7 +307,8 @@ ggpairs(data.frame(vars_to_plot))
 table(df_all$GlobalNorth)
 names(df_all)
 
-modelo_beta <- betareg(percent_wallace_prop ~ 
+modelo_beta <- glm(H_final ~ 
+                         percent_wallace_prop +
                          polygons_richness_scaled + 
                          dens_pop_scaled + 
                          mean_grp_scaled +
@@ -896,12 +897,12 @@ load(
 )
 plot(tetrapods_100,
      se = TRUE,
-     legend = FALSE,
+     legend = TRUE,
      ylim = c(0, 30),
      xlim = c(1740, 2030),
      xlab = "Year",
      ylab = "Marginal mean",
-     col = c("#c40e3e", "#2DA5E8"),
+     #col = c("#c40e3e", "#2DA5E8"),
      xaxt = "n",
      yaxt = "n"   # 🔧 controla eixo Y também
 )
