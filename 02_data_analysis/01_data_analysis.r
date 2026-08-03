@@ -360,12 +360,18 @@ plot_surv_panel <- function(fit_object,
     lines(time, est, col = coef_col, lwd = coef_lwd)
     
     # 5. QUINTO: Eixos
-    axis(1, 
-         at = tick_seq,
-         labels = ifelse(tick_seq %in% label_seq, tick_seq, ""),
-         las = 2, 
-         cex.axis = cex.axis,
-         tcl = tick.length)
+    axis(
+      1,
+      at = tick_seq,
+      labels = if (show_xlab) {
+        ifelse(tick_seq %in% label_seq, tick_seq, "")
+      } else {
+        rep("", length(tick_seq))
+      },
+      las = 2,
+      cex.axis = cex.axis,
+      tcl = tick.length
+    )
     
     axis(2, 
          cex.axis = cex.axis,
@@ -1230,15 +1236,15 @@ save(
 
 # Results plots ----
 # Exploratory data
-length(unique(df_amphibia_100$speciesKey)) # 1955 spp
-length(unique(df_reptilia_100$speciesKey)) # 3401 spp
-length(unique(df_aves_100$speciesKey))     # 6073 spp
-length(unique(df_mammalia_100$speciesKey)) # 2954 spp
+#length(unique(df_amphibia_100$speciesKey)) # 1955 spp
+#length(unique(df_reptilia_100$speciesKey)) # 3401 spp
+#length(unique(df_aves_100$speciesKey))     # 6073 spp
+#length(unique(df_mammalia_100$speciesKey)) # 2954 spp
 
-table(df_amphibia_100$event)
-table(df_reptilia_100$event)
-table(df_aves_100$event)
-table(df_mammalia_100$event)
+#table(df_amphibia_100$event)
+#table(df_reptilia_100$event)
+#table(df_aves_100$event)
+#table(df_mammalia_100$event)
 
 load(file.path(
   local_directory,
@@ -1418,20 +1424,20 @@ coefplot <- ggplot(
     group = modelo
   )
 ) +
-  # Background
-  geom_rect(
-    data = background_data_ordenado,
-    aes(
-      xmin = -Inf,
-      xmax = Inf,
-      ymin = -Inf,
-      ymax = Inf,
-      fill = fill
-    ),
-    inherit.aes = FALSE,
-    alpha = 0.05,
-    colour = NA
-  ) +
+  # Background dos coefplot
+  #geom_rect(
+  #  data = background_data_ordenado,
+  #  aes(
+  #    xmin = -Inf,
+  #    xmax = Inf,
+  #    ymin = -Inf,
+  #    ymax = Inf,
+  #    fill = fill
+  #  ),
+  #  inherit.aes = FALSE,
+  #  alpha = 0.05,
+  #  colour = NA
+  #) +
   geom_vline(
     xintercept = 1,
     linetype = "dashed",
@@ -1483,14 +1489,14 @@ coefplot <- ggplot(
   scale_y_discrete(
     limits = rev,
     labels = c(
-      BodySize = "Body size",
+      BodySize = "Body\nsize",
       Verticality = "Verticality",
       Nocturnality = "Nocturnality",
-      RangeSize = "Range size",
+      RangeSize = "Range\nsize",
       Elevation = "Elevation",
-      HumanDensity = "Human density",
+      HumanDensity = "Human\ndensity",
       Latitude = "Latitude",
-      gdp_percentile_z = "GDP-PPP"
+      gdp_percentile_z = "Economic\ncapacity"
     )
   ) +
   labs(
@@ -1555,7 +1561,30 @@ coefplot <- ggplot(
       linewidth = 0.4
     ),
     plot.margin = margin(15, 15, 15, 15)
-  ); coefplot
+  ) +
+  facet_wrap(
+    ~Class,
+    ncol = 4,
+    strip.position = "top"
+  ) +
+  # color background names
+  facet_wrap2(
+    ~Class,
+    ncol = 4,
+    strip = strip_themed(
+      background_x = list(
+        Amphibia = element_rect(fill = cores[["Amphibia"]], colour = NA),
+        Reptilia = element_rect(fill = cores[["Reptilia"]], colour = NA),
+        Aves     = element_rect(fill = cores[["Aves"]], colour = NA),
+        Mammalia = element_rect(fill = cores[["Mammalia"]], colour = NA)
+      ),
+      text_x = list(
+        Amphibia = element_text(colour = "black"),
+        Reptilia = element_text(colour = "black"),
+        Aves     = element_text(colour = "black"),
+        Mammalia = element_text(colour = "black")
+      )
+    )); coefplot
 
 ggsave(file.path("G:", "Meu Drive", "Artigos", "wallace_time", "Figures",
                  "Fig2.CoefPlot.pdf"),
@@ -1572,17 +1601,19 @@ var.labels <- c(
   Elevation = "Elevation",
   HumanDensity = "Human density",
   Latitude = "Latitude",
-  gdp_percentile_z = "GDP-PPP"
+  gdp_percentile_z = "Economic capacity"
 )
 
-par(mfrow=c(8,4),
-    mar=c(1.2,1.7,1.2,1.1),   # margens internas (entre painéis)
-    oma=c(1,1,0.5,1),         # margens externas (distância da página)
-    mgp=c(1.7,0.3,0),
-    xaxs="i",
-    yaxs="i",
-    cex.axis=1,
-    cex.lab=5)
+par(
+  mfrow = c(8,4),
+  mar = c(1.2, 1.7, 0.6, 1.1),
+  oma = c(1,1,0.5,1),
+  mgp = c(1.7,0.3,0),
+  xaxs = "i",
+  yaxs = "i",
+  cex.axis = 1,
+  cex.lab = 5
+)
 par(las=2)
 
 for(i in 1:8){
@@ -1591,6 +1622,7 @@ for(i in 1:8){
     gof.amphibia,
     variable = i,
     show.varname = TRUE,
+    show.xaxis = (i == 8),
     var.labels = var.labels,
     bg.col = cores[["Amphibia"]],
     titles = FALSE,
@@ -1601,6 +1633,7 @@ for(i in 1:8){
     gof.reptilia,
     variable = i,
     show.varname = FALSE,
+    show.xaxis = (i == 8),
     var.labels = var.labels,
     bg.col = cores[["Reptilia"]],
     titles = FALSE,
@@ -1611,6 +1644,7 @@ for(i in 1:8){
     gof.aves,
     variable = i,
     show.varname = FALSE,
+    show.xaxis = (i == 8),
     var.labels = var.labels,
     bg.col = cores[["Aves"]],
     titles = FALSE,
@@ -1621,6 +1655,7 @@ for(i in 1:8){
     gof.mammalia,
     variable = i,
     show.varname = FALSE,
+    show.xaxis = (i == 8),
     var.labels = var.labels,
     bg.col = cores[["Mammalia"]],
     titles = FALSE,
@@ -1630,14 +1665,16 @@ for(i in 1:8){
 
 # Terminal 
 dev.off()
-par(mfrow=c(8,4),
-    mar=c(1.2,1.7,1.2,1.1),   # margens internas (entre painéis)
-    oma=c(1,1,0.5,1),         # margens externas (distância da página)
-    mgp=c(1.7,0.3,0),
-    xaxs="i",
-    yaxs="i",
-    cex.axis=1,
-    cex.lab=5)
+par(
+  mfrow = c(8,4),
+  mar = c(1.2, 1.7, 0.6, 1.1),
+  oma = c(1,1,0.5,1),
+  mgp = c(1.7,0.3,0),
+  xaxs = "i",
+  yaxs = "i",
+  cex.axis = 1,
+  cex.lab = 5
+)
 par(las=2)
 
 for(i in 1:8){
@@ -1646,6 +1683,7 @@ for(i in 1:8){
     gof.terminal.amphibia,
     variable = i,
     show.varname = TRUE,
+    show.xaxis = (i == 8),
     var.labels = var.labels,
     bg.col = cores[["Amphibia"]],
     titles = FALSE,
@@ -1656,6 +1694,7 @@ for(i in 1:8){
     gof.terminal.reptilia,
     variable = i,
     show.varname = FALSE,
+    show.xaxis = (i == 8),
     var.labels = var.labels,
     bg.col = cores[["Reptilia"]],
     titles = FALSE,
@@ -1666,6 +1705,7 @@ for(i in 1:8){
     gof.terminal.aves,
     variable = i,
     show.varname = FALSE,
+    show.xaxis = (i == 8),
     var.labels = var.labels,
     bg.col = cores[["Aves"]],
     titles = FALSE,
@@ -1676,6 +1716,7 @@ for(i in 1:8){
     gof.terminal.mammalia ,
     variable = i,
     show.varname = FALSE,
+    show.xaxis = (i == 8),
     var.labels = var.labels,
     bg.col = cores[["Mammalia"]],
     titles = FALSE,
@@ -1701,14 +1742,17 @@ load(
   )
 
 dev.off()
-par(mfrow = c(8, 4),
-    mar = c(2.0, 2.0, 1.2, 1.1),  # AUMENTEI as margens inferior e esquerda
-    oma = c(1.5, 1.5, 0.5, 0.5),  # Ajuste nas margens externas
-    mgp = c(1.7, 0.5, 0),         # Ajuste para posição dos labels
-    xaxs = "i",
-    yaxs = "i",
-    cex.axis = 0.8)               
-par(las = 2)
+par(
+  mfrow = c(8,4),
+  mar = c(1.2, 1.7, 0.6, 1.1),
+  oma = c(1,1,0.5,1),
+  mgp = c(1.7,0.3,0),
+  xaxs = "i",
+  yaxs = "i",
+  cex.axis = 1,
+  cex.lab = 5
+)
+par(las=2)
 
 # Definir sequências de tempo
 tick_seq <- seq(1750, 2025, by = 25)
@@ -1738,7 +1782,7 @@ for(i in 1:8) {
     plot_surv_panel(fit_object = fit_atual,
                     comps = 3:10,
                     show_main = FALSE,
-                    show_xlab = FALSE,
+                    show_xlab = (i == 8),
                     show_ylab = FALSE,
                     show_years = TRUE,
                     year_seq = label_seq,
@@ -1770,11 +1814,11 @@ richness_all <- richness_completude_amphibia %>%
     percent_wallace_prop = percent_wallace / 100
   ) 
 
-event_total <- df_wallacean_100 %>%
+event_total <- df_tetrapods_100 %>%
   filter(event == 1) %>%
   count(name_en, name = "n_events")
 
-event_recent <- df_wallacean_100 %>%
+event_recent <- df_tetrapods_100 %>%
   mutate(year = year(date)) %>%
   filter(year > 1974) %>%
   filter(event == 1) %>%
@@ -1782,7 +1826,7 @@ event_recent <- df_wallacean_100 %>%
   mutate(geo_taxa = n_events/50) %>%
   select(name_en, geo_taxa)
 
-df_geo <- df_wallacean_100 %>%
+df_geo <- df_tetrapods_100 %>%
   select(date, event, name_en, GlobalNorth) %>%
   filter(event == 1) %>%
   mutate(year = year(date)) %>%
@@ -1827,184 +1871,10 @@ plot_time <- plot_bivariate_map(
   x_label = "Timing of geodiscovery",
   y_label = "Duration of geodiscovery"); plot_time
 
-plot_spatialtime <- plot_bivariate_map(
-  geo_plot,
-  "PercentWallace",
-  "year75",
-  title = NULL,
-  x_label = "Inventory completeness (%)",
-  y_label = "Year when 75% of\ngeodiscoveries were accumulated"); plot_spatialtime
-
-plot_spatialiqr <- plot_bivariate_map(
-  geo_plot,
-  "PercentWallace",
-  "IQR",
-  title = NULL,
-  x_label = "Duration of geodiscovery",
-  y_label = "Inventory completeness (%)"); plot_spatialiqr
-
-plot_rate <- plot_bivariate_map(
-  geo_plot,
-  "PercentWallace",
-  "geo_taxa",
-  title = NULL,
-  x_label = "Inventory completeness (%)",
-  y_label = "Geographic expansion rate"); plot_rate
-
 ggsave(filename= "FigureS1.pdf",
        plot= plot_time,
        width=7.09,
        height=4.73,
-       units="in",
-       dpi = 300,
-       bg="white", 
-       limitsize=F,
-       device = cairo_pdf)
-
-ggsave(filename= "FigureS2.pdf",
-       plot= plot_spatialtime,
-       width=7.09,
-       height=4.73,
-       units="in",
-       dpi = 300,
-       bg="white", 
-       limitsize=F,
-       device = cairo_pdf)
-
-ggsave(filename= "FigureS3.pdf",
-       plot= plot_spatialiqr,
-       width=7.09,
-       height=4.73,
-       units="in",
-       dpi = 300,
-       bg="white", 
-       limitsize=F,
-       device = cairo_pdf)
-
-ggsave(filename= "FigureS4.pdf",
-       plot= plot_rate,
-       width=7.09,
-       height=4.73,
-       units="in",
-       dpi = 300,
-       bg="white", 
-       limitsize=F,
-       device = cairo_pdf)
-
-# Explorando mapa tricolor e PCA
-library(tricolore)
-library(ggplot2)
-library(sf)
-library(ggtern)
-library(ggtern)
-library(grid)
-
-# 1. Calcular a cor para cada região com base nas 3 variáveis
-data <- geo_plot %>%
-  mutate(
-    KnowledgeAge = normalize(2025 - year75), 
-    year75 = as.numeric(normalize(year75)),
-    PercentWallace = as.numeric(normalize(PercentWallace)),
-    IQR = as.numeric(normalize(IQR))) %>% 
-  select(name_en, ISO3, 
-         GlobalNorth.y, year75, IQR, PercentWallace, KnowledgeAge) %>%
-  remove_missing() %>%
-  st_transform(6933)  # ou o CRS que você preferir
-
-# analises
-vars <- data %>%
-  st_drop_geometry() %>%
-  select(ISO3, GlobalNorth.y, PercentWallace, IQR, year75)
-
-cor(vars[,-1])
-
-# PCA
-pca <- prcomp(vars[, c("KnowledgeAge",
-                       "PercentWallace",
-                       "IQR")],
-              scale. = TRUE)
-
-scores <- as.data.frame(pca$x) %>%
-  bind_cols(vars[, c("ISO3", "GlobalNorth.y")])
-
-ggplot(scores,
-       aes(PC1, PC2,
-           label = ISO3,
-           color = factor(GlobalNorth.y))) +
-  geom_point(size = 2.5) +
-  geom_text_repel(
-    size = 3,
-    max.overlaps = Inf,
-    seed = 123
-  ) +
-  scale_color_manual(values = c("red", "blue")) +
-  theme_classic()
-
-
-# Mapa tricolor
-tric <- Tricolore(data, 
-                  p1 = 'year75', 
-                  p2 = 'PercentWallace', 
-                  p3 = 'IQR',
-                  breaks = Inf)
-
-# Adicionar a cor calculada ao seu dataframe
-data$rgb <- tric$rgb
-
-# Bounding box para borda
-bbox <- st_bbox(data)
-bbox_poly <- st_as_sfc(bbox)
-
-plot <- ggplot(data) +
-  geom_sf(aes(fill = rgb, geometry = geometry), 
-          color = "black", 
-          size = 0.15) +
-  geom_sf(data = bbox_poly, 
-          fill = NA, 
-          color = "black", 
-          linewidth = 0.3) +
-  scale_fill_identity() +
-  coord_sf(
-    xlim = c(bbox["xmin"], bbox["xmax"]),
-    ylim = c(bbox["ymin"], bbox["ymax"]),
-    expand = FALSE
-  ) +
-  theme_minimal() +
-  theme(
-    text = element_text(color = "black"),
-    legend.position = "none",
-    panel.border = element_blank(),
-    axis.text = element_text(size = 6, color = "black"),
-    axis.ticks = element_line(color = "black", linewidth = 0.2),
-    axis.ticks.length = unit(2, "mm"),
-    panel.grid = element_line(color = "grey80", linewidth = 0.2),
-    plot.margin = margin(5, 15, 5, 5)
-  )
-
-# 1. Aumentar o tamanho da legenda
-key_grob <- ggplotGrob(tric$key)
-key_grob$widths <- key_grob$widths * 2.0   
-key_grob$heights <- key_grob$heights * 2.0 
-
-# 2. Descobrir os limites do seu mapa para posicionar a legenda
-# Você precisa saber os valores reais de x e y do seu mapa
-bbox <- st_bbox(data)  # Pega os limites geográficos
-
-# 3. Posicionar a legenda usando coordenadas REAIS do mapa
-# Use valores baseados no bbox do seu mapa
-plot_final <- plot + annotation_custom(
-  ggplotGrob(
-    tric$key),
-  xmin = bbox$xmin + (bbox$xmax - bbox$xmin) * 0.02,  # 2% da esquerda
-  xmax = bbox$xmin + (bbox$xmax - bbox$xmin) * 0.30,  # 30% da esquerda
-  ymin = bbox$ymin + (bbox$ymax - bbox$ymin) * 0.12,  # 2% da base
-  ymax = bbox$ymin + (bbox$ymax - bbox$ymin) * 0.45   # 35% da base
-); plot_final
-
-ggsave(filename= "FigureTest.pdf",
-       plot= plot_final,
-       width=16.09,
-       height=9.73,
        units="in",
        dpi = 300,
        bg="white", 
