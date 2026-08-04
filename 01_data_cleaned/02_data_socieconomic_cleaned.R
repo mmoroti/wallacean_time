@@ -109,13 +109,15 @@ rm(list = setdiff(ls(), c("local_directory",
                           "institutions",
                           "geographic_shape_data",
                           "list_per_admunit",
+                          "onu_alignment_data",
                           "data_wallacean_unnested"))); gc()
 
 # HANDLING DATA ----
-admunit <- list_per_admunit %>%
+admunit <- geographic_shape_data %>%
   select(name_en, ISO3) %>%
   distinct() %>%
-  arrange(ISO3)
+  arrange(ISO3) %>%
+  sf::st_drop_geometry()
 
 politic_data_summary <- politic_data %>%
   group_by(country_text_id) %>%
@@ -503,7 +505,7 @@ df_interp <- maddison_filtered %>%
   ungroup() #%>%
 
 # Plot
-ggplot(df_interp %>% filter(country == "Russian Federation"), aes(x = year)) +
+ggplot(df_interp %>% filter(country == "Libya"), aes(x = year)) +
   geom_point(aes(y = log_gdp), alpha = 0.6, color = "blue") + # pontos observados
   # Intervalo da Primeira Guerra
   geom_rect(aes(xmin = 1914, xmax = 1918, ymin = -Inf, ymax = Inf),

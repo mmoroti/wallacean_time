@@ -4,6 +4,7 @@ library(mets)
 library(timereg)
 library(sf)
 library(cowplot)
+library(ggh4x)
 
 rm(list=ls()); gc() # clean local enviroment
 
@@ -736,6 +737,55 @@ save(
 ) # plot in script "02_exploratory_analysis.R"
 
 # For widely distributed species (at least 3 administrative units)
+# mets package - cox estimator
+tetrapods_event_100 <- phreg(Surv(t.start.year, t.stop.year, status==1)~
+                               #BodySize +
+                               #Verticality +
+                               #Nocturnality +
+                               #RangeSize +
+                               #Elevation +
+                               #Latitude +
+                               #HumanDensity +
+                               #gdp_percentile_z +
+                               cluster(speciesKey)+
+                               strata(Class),
+                             data=df_tetrapods_100)
+
+tetrapods_terminal_100 <- phreg(Surv(t.start.year,
+                                     t.stop.year,
+                                     status==2)~
+                                  #BodySize +
+                                  #Verticality +
+                                  #Nocturnality +
+                                  #RangeSize +
+                                  #Elevation +
+                                  #HumanDensity +
+                                  #Latitude +
+                                  #gdp_percentile_z +
+                                  cluster(speciesKey)+
+                                  strata(Class),
+                                data=df_tetrapods_100)
+
+tetrapods_100 <- recurrentMarginal(Event(t.start.year,
+                                         t.stop.year,
+                                         status)~
+                                     #BodySize +
+                                     #Verticality +
+                                     #Nocturnality +
+                                     #RangeSize +
+                                     #Elevation +
+                                     #HumanDensity +
+                                     #Latitude +
+                                     #gdp_percentile_z +
+                                     strata(Class)+
+                                     cluster(speciesKey),
+                                   data= df_tetrapods_100,
+                                   cause=1,
+                                   death.code=2)
+
+tetrapods_100 <- recurrentMarginalPhreg(
+  tetrapods_event_100, tetrapods_terminal_100)
+
 # timereg aalen estimator
 #fit.tetrapods.surv <- aalen(
 #  formula = Surv(t.start.year, t.stop.year, status == 1) ~
@@ -781,53 +831,6 @@ save(
 #
 #fit.tetrapods <- recurrent.marginal.mean(fit.tetrapods.surv,
 #                                         fit.tetrapods.completeness)
-#
-
-# mets package - cox estimator
-tetrapods_event_100 <- phreg(Surv(t.start.year, t.stop.year, status==1)~
-                               BodySize +
-                               Verticality +
-                               Nocturnality +
-                               RangeSize +
-                               Elevation +
-                               HumanDensity +
-                               Latitude +
-                               gdp_percentile_z +
-                               cluster(speciesKey)+
-                               strata(Class),
-                             data=df_tetrapods_100)
-
-tetrapods_terminal_100 <- phreg(Surv(t.start.year,
-                                     t.stop.year,
-                                     status==2)~
-                                  BodySize +
-                                  Verticality +
-                                  Nocturnality +
-                                  RangeSize +
-                                  Elevation +
-                                  HumanDensity +
-                                  Latitude +
-                                  gdp_percentile_z +
-                                  cluster(speciesKey)+
-                                  strata(Class),
-                                data=df_tetrapods_100)
-
-tetrapods_100 <- recurrentMarginal(Event(t.start.year,
-                                         t.stop.year,
-                                         status==1)~
-                                     BodySize +
-                                     Verticality +
-                                     Nocturnality +
-                                     RangeSize +
-                                     Elevation +
-                                     HumanDensity +
-                                     Latitude +
-                                     gdp_percentile_z +
-                                     strata(Class)+
-                                     cluster(speciesKey),
-                                   data= df_tetrapods_100,
-                                   cause=1,
-                                   death.code=2)
 
 ## Amphibia ----
 # Cox model
@@ -837,8 +840,8 @@ amphibia_event_100 <- phreg(Surv(t.start.year, t.stop.year, status==1)~
                               Nocturnality +
                               RangeSize +
                               Elevation +
-                              HumanDensity +
                               Latitude +
+                              HumanDensity +
                               gdp_percentile_z +
                               cluster(speciesKey),
                             data=df_amphibia_100)
@@ -855,13 +858,12 @@ amphibia_terminal_100 <- phreg(Surv(t.start.year,
                                  Nocturnality +
                                  RangeSize +
                                  Elevation +
-                                 HumanDensity +
                                  Latitude +
+                                 HumanDensity +
                                  gdp_percentile_z +
                                  cluster(speciesKey),
                                data=df_amphibia_100)
 summary(amphibia_terminal_100)
-
 gof.terminal.amphibia <- gof(amphibia_terminal_100)
 
 # Aalen model
@@ -872,8 +874,8 @@ fit.amphibia.surv <- aalen(
     Nocturnality +
     RangeSize +
     Elevation +
-    HumanDensity +
     Latitude +
+    HumanDensity +
     gdp_percentile_z +
     cluster(speciesKey),
   data= df_amphibia_100,
@@ -886,20 +888,6 @@ fit.amphibia.surv <- aalen(
 )
 plot(fit.amphibia.surv)
 
-# Extrair a lista de resíduos
-#residuos_do_modelo <- fit.amphibia.surv$residuals
-#str(residuos_do_modelo)
-# Passar o objeto diretamente para a função de validação
-#resultado_validacao <- cum.residuals(fit.amphibia.surv,
-#                                     data = df_amphibia_100,
-#                                     cum.resid = 1,
-#                                     n.sim = 100)
-# 3. Visualizar os resultados
-#plot(resultado_validacao, score = 2)
-# A lista geralmente contém:
-# - dM: os incrementos do martingale estimados (resíduos)
-# - time: o vetor de tempo correspondente a cada incremento
-
 fit.amphibia.completeness <- aalen(
   formula = Surv(t.start.year, t.stop.year, status == 2) ~
     BodySize +
@@ -907,8 +895,8 @@ fit.amphibia.completeness <- aalen(
     Nocturnality +
     RangeSize +
     Elevation +
-    HumanDensity +
     Latitude +
+    HumanDensity +
     gdp_percentile_z +
     cluster(speciesKey),
   data= df_amphibia_100,
@@ -921,10 +909,10 @@ fit.amphibia.completeness <- aalen(
 )
 plot(fit.amphibia.completeness)
 
-fit.amphibia <- recurrent.marginal.mean(
-  fit.amphibia.surv, 
-  fit.amphibia.completeness
-)
+#fit.amphibia <- recurrent.marginal.mean(
+#  fit.amphibia.surv, 
+#  fit.amphibia.completeness
+#)
 
 ## Reptilia ----
 # Cox model
@@ -936,11 +924,11 @@ reptilia_event_100 <- phreg(Surv(t.start.year,
                               Nocturnality +
                               RangeSize +
                               Elevation +
-                              HumanDensity +
                               Latitude +
+                              HumanDensity +
                               gdp_percentile_z +
                               cluster(speciesKey),
-                            data=df_reptilia_01)
+                            data=df_reptilia_100)
 summary(reptilia_event_100)
 gof.reptilia <- gof(reptilia_event_100)
 
@@ -952,11 +940,11 @@ reptilia_terminal_100 <- phreg(Surv(t.start.year,
                                  Nocturnality +
                                  RangeSize +
                                  Elevation +
-                                 HumanDensity +
                                  Latitude +
+                                 HumanDensity +
                                  gdp_percentile_z +
                                  cluster(speciesKey),
-                               data=df_reptilia_01)
+                               data=df_reptilia_100)
 summary(reptilia_terminal_100)
 gof.terminal.reptilia <- gof(reptilia_terminal_100)
 
@@ -968,8 +956,8 @@ fit.reptilia.surv <- aalen(
     Nocturnality +
     RangeSize +
     Elevation +
-    HumanDensity +
     Latitude +
+    HumanDensity +
     gdp_percentile_z +
     cluster(speciesKey),
   data= df_reptilia_100,
@@ -988,8 +976,8 @@ fit.reptilia.completeness <- aalen(
     Nocturnality +
     RangeSize +
     Elevation +
-    HumanDensity +
     Latitude +
+    HumanDensity +
     gdp_percentile_z +
     cluster(speciesKey),
   data= df_reptilia_100,
@@ -1001,10 +989,10 @@ fit.reptilia.completeness <- aalen(
   resample.iid = 1       # para funções de residuais/CI i.i.d.
 )
 
-fit.reptilia <- recurrent.marginal.mean(
-  fit.reptilia.surv,
-  fit.reptilia.completeness
-)
+#fit.reptilia <- recurrent.marginal.mean(
+#  fit.reptilia.surv,
+#  fit.reptilia.completeness
+#)
 
 ## Aves ----
 aves_event_100 <- phreg(Surv(t.start.year,
@@ -1015,8 +1003,8 @@ aves_event_100 <- phreg(Surv(t.start.year,
                           Nocturnality +
                           RangeSize +
                           Elevation +
-                          HumanDensity +
                           Latitude +
+                          HumanDensity +
                           gdp_percentile_z +
                           cluster(speciesKey),
                         data=df_aves_100)
@@ -1031,8 +1019,8 @@ aves_terminal_100 <- phreg(Surv(t.start.year,
                              Nocturnality +
                              RangeSize +
                              Elevation +
-                             HumanDensity +
                              Latitude +
+                             HumanDensity +
                              gdp_percentile_z +
                              cluster(speciesKey),
                            data=df_aves_100)
@@ -1047,8 +1035,8 @@ fit.aves.surv <- aalen(
     Nocturnality +
     RangeSize +
     Elevation +
-    HumanDensity +
     Latitude +
+    HumanDensity +
     gdp_percentile_z +
     cluster(speciesKey),
   data= df_aves_100,
@@ -1067,8 +1055,8 @@ fit.aves.completeness <- aalen(
     Nocturnality +
     RangeSize +
     Elevation +
-    HumanDensity +
     Latitude +
+    HumanDensity +
     gdp_percentile_z +
     cluster(speciesKey),
   data= df_aves_100,
@@ -1080,10 +1068,10 @@ fit.aves.completeness <- aalen(
   resample.iid = 1       # para funções de residuais/CI i.i.d.
 )
 
-fit.aves <- recurrent.marginal.mean(
-  fit.aves.surv,
-  fit.aves.completeness
-)
+#fit.aves <- recurrent.marginal.mean(
+#  fit.aves.surv,
+#  fit.aves.completeness
+#)
 
 ## Mammals ----
 mammalia_event_100 <- phreg(Surv(t.start.year,
@@ -1094,8 +1082,8 @@ mammalia_event_100 <- phreg(Surv(t.start.year,
                               Nocturnality +
                               RangeSize +
                               Elevation +
-                              HumanDensity +
                               Latitude +
+                              HumanDensity +
                               gdp_percentile_z +
                               cluster(speciesKey),
                             data=df_mammalia_100)
@@ -1110,8 +1098,8 @@ mammalia_terminal_100 <- phreg(Surv(t.start.year,
                                  Nocturnality +
                                  RangeSize +
                                  Elevation +
-                                 HumanDensity +
                                  Latitude +
+                                 HumanDensity +
                                  gdp_percentile_z +
                                  cluster(speciesKey),
                                data=df_mammalia_100)
@@ -1126,8 +1114,8 @@ fit.mammalia.surv <- aalen(
     Nocturnality +
     RangeSize +
     Elevation +
-    HumanDensity +
     Latitude +
+    HumanDensity +
     gdp_percentile_z +
     cluster(speciesKey),
   data= df_mammalia_100 %>% filter(!Order %in% c("Chiroptera")),
@@ -1147,8 +1135,8 @@ fit.mammalia.completeness <- aalen(
     Nocturnality +
     RangeSize +
     Elevation +
-    HumanDensity +
     Latitude +
+    HumanDensity +
     gdp_percentile_z +
     cluster(speciesKey),
   data= df_mammalia_100,
@@ -1160,10 +1148,10 @@ fit.mammalia.completeness <- aalen(
   resample.iid = 1       # para funções de residuais/CI i.i.d.
 )
 
-fit.mammalia <- recurrent.marginal.mean(
-  fit.mammalia.surv,
-  fit.mammalia.completeness
-)
+#fit.mammalia <- recurrent.marginal.mean(
+#  fit.mammalia.surv,
+#  fit.mammalia.completeness
+#)
 
 # Save models ----
 # Cox models
@@ -1177,12 +1165,11 @@ save(
   mammalia_event_100,
   gof.mammalia,
   tetrapods_event_100,
-  tetrapods_100,
   file = file.path(
     local_directory,
     "02_data_analysis",
     "results",
-    "cox_event_models.RData")
+    "cox_event_models_adj.RData")
 )
 save(
   amphibia_terminal_100,
@@ -1198,7 +1185,7 @@ save(
     local_directory,
     "02_data_analysis",
     "results",
-    "cox_terminal_models.RData")
+    "cox_terminal_models_adj.RData")
 )
 
 # Aalen models
@@ -1211,7 +1198,7 @@ save(
     local_directory,
     "02_data_analysis",
     "results",
-    "aalen_event_models.RData"))
+    "aalen_event_models_adj.RData"))
 save(
   fit.amphibia.completeness,
   fit.reptilia.completeness,
@@ -1221,7 +1208,7 @@ save(
     local_directory,
     "02_data_analysis",
     "results",
-    "aalen_terminal_models.RData"))
+    "aalen_terminal_models_adj.RData"))
 
 #save(
 #  fit.tetrapods,
@@ -1377,8 +1364,8 @@ ordem_variaveis <- c(
   "Nocturnality",
   "RangeSize",
   "Elevation",
-  "HumanDensity",
   "Latitude",
+  "HumanDensity",
   "gdp_percentile_z"
 )
 
@@ -1494,8 +1481,8 @@ coefplot <- ggplot(
       Nocturnality = "Nocturnality",
       RangeSize = "Range\nsize",
       Elevation = "Elevation",
-      HumanDensity = "Human\ndensity",
       Latitude = "Latitude",
+      HumanDensity = "Human\ndensity",
       gdp_percentile_z = "Economic\ncapacity"
     )
   ) +
@@ -1588,7 +1575,7 @@ coefplot <- ggplot(
 
 ggsave(file.path("G:", "Meu Drive", "Artigos", "wallace_time", "Figures",
                  "Fig2.CoefPlot.pdf"),
-       plot=coefplot, width=15, height=8, units="in",
+       plot=coefplot, width=16, height=8, units="in",
        dpi = 'print', cairo_pdf)
 
 ## GOF plot ----
@@ -1604,10 +1591,11 @@ var.labels <- c(
   gdp_percentile_z = "Economic capacity"
 )
 
+dev.off()
 par(
   mfrow = c(8,4),
-  mar = c(1.2, 1.7, 0.6, 1.1),
-  oma = c(1,1,0.5,1),
+  mar = c(0.8, 1.2, 0, 1),
+  oma = c(2, 3.5, 0.5, 1),
   mgp = c(1.7,0.3,0),
   xaxs = "i",
   yaxs = "i",
@@ -1667,8 +1655,8 @@ for(i in 1:8){
 dev.off()
 par(
   mfrow = c(8,4),
-  mar = c(1.2, 1.7, 0.6, 1.1),
-  oma = c(1,1,0.5,1),
+  mar = c(0.8, 1.2, 0, 1),
+  oma = c(2, 3.5, 0.5, 1),
   mgp = c(1.7,0.3,0),
   xaxs = "i",
   yaxs = "i",
@@ -1744,8 +1732,8 @@ load(
 dev.off()
 par(
   mfrow = c(8,4),
-  mar = c(1.2, 1.7, 0.6, 1.1),
-  oma = c(1,1,0.5,1),
+  mar = c(0.8, 1.2, 0, 1),
+  oma = c(2, 3.5, 0.5, 1),
   mgp = c(1.7,0.3,0),
   xaxs = "i",
   yaxs = "i",
