@@ -1232,10 +1232,6 @@ data_occurences_units <- data_occurences_geometry %>%
   st_drop_geometry()
 
 # Species count per adm. unit ----
-# TODO aqui vamos precisar rever. Porque ate entao, estamos construindo a qtde
-# de unidades esperadas para cada especie mesmo com uma pequena bordinha delas
-# chegando as vezes aonde elas não estão! então aqui talvez precisamos considerar
-# diferentes cenários de 'completeness'
 interseccao_sf <- st_intersection(data_tetrapods_sa, geographic_shape_data)
 
 list_per_admunit <- interseccao_sf %>%
@@ -1281,7 +1277,7 @@ tetrapods_key_species <- trait_data %>%
   select("speciesKey","scientificName","Class", "Order","Family", 
          "YearOfDescription","BodyLength_mm","ImputedLength","BodyMass_g",
          "ImputedMass","Diu","Noc","Nocturnality", "Fos", "Ter", "Aqu", "Arb", "Aer",
-         "ImputedHabitat","Verticality","MajorHabitatSum","ImputedMajorHabitat","RangeSize",
+         "ImputedHabitat","Verticality","ImputedActTime","ImputedMajorHabitat","RangeSize",
          "HumanDensity", "AssessedStatus", "Latitude", "Elevation", "ETA50K", "AnnuMeanTemp") %>%
   distinct(speciesKey, .keep_all = TRUE) # 31594 spp
 

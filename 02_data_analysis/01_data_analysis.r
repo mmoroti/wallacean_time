@@ -552,7 +552,7 @@ plot_bivariate_map <- function(geo_plot,
     draw_plot(map_plot) +
     draw_plot(legend_plot,
               x = 0.065, y = 0.28,
-              width = 0.20, height = 0.30)
+              width = 0.22, height = 0.29)
   
   return(final_plot)
 }
@@ -716,7 +716,7 @@ df_mammalia_100 <- df_wallacean_100 %>%
          gdp = scale(log_gdp_final))
 
 # Recurrent event model ----
-# All species
+## Tetrapods ----
 tetrapods_100 <- recurrentMarginal(
   Event(t.start.year, t.stop.year, status==1)~
     strata(GlobalNorth)+
@@ -738,15 +738,9 @@ save(
 
 # For widely distributed species (at least 3 administrative units)
 # mets package - cox estimator
-tetrapods_event_100 <- phreg(Surv(t.start.year, t.stop.year, status==1)~
-                               #BodySize +
-                               #Verticality +
-                               #Nocturnality +
-                               #RangeSize +
-                               #Elevation +
-                               #Latitude +
-                               #HumanDensity +
-                               #gdp_percentile_z +
+tetrapods_event_100 <- phreg(Surv(t.start.year,
+                                  t.stop.year,
+                                  status==1)~
                                cluster(speciesKey)+
                                strata(Class),
                              data=df_tetrapods_100)
@@ -754,37 +748,12 @@ tetrapods_event_100 <- phreg(Surv(t.start.year, t.stop.year, status==1)~
 tetrapods_terminal_100 <- phreg(Surv(t.start.year,
                                      t.stop.year,
                                      status==2)~
-                                  #BodySize +
-                                  #Verticality +
-                                  #Nocturnality +
-                                  #RangeSize +
-                                  #Elevation +
-                                  #HumanDensity +
-                                  #Latitude +
-                                  #gdp_percentile_z +
                                   cluster(speciesKey)+
                                   strata(Class),
                                 data=df_tetrapods_100)
 
-tetrapods_100 <- recurrentMarginal(Event(t.start.year,
-                                         t.stop.year,
-                                         status)~
-                                     #BodySize +
-                                     #Verticality +
-                                     #Nocturnality +
-                                     #RangeSize +
-                                     #Elevation +
-                                     #HumanDensity +
-                                     #Latitude +
-                                     #gdp_percentile_z +
-                                     strata(Class)+
-                                     cluster(speciesKey),
-                                   data= df_tetrapods_100,
-                                   cause=1,
-                                   death.code=2)
-
-tetrapods_100 <- recurrentMarginalPhreg(
-  tetrapods_event_100, tetrapods_terminal_100)
+#tetrapods_100 <- recurrentMarginalPhreg(
+#  tetrapods_event_100, tetrapods_terminal_100)
 
 # timereg aalen estimator
 #fit.tetrapods.surv <- aalen(
@@ -1261,7 +1230,7 @@ cores <- c("Amphibia" = "#ed3a8b",
 
 ## Cumulative hazard plots ----
 dev.off()
-par(mfrow=c(1,3),
+par(mfrow=c(1,2),
     cex.lab = 1.5, 
     cex.axis = 1.5)  # Aumentar tamanho dos labels dos eixos
 
@@ -1270,7 +1239,7 @@ cores <- cores[ordem]
 
 plot(tetrapods_event_100, se = TRUE, col = cores,
      legend = FALSE,
-     ylim = c(0, 35),
+     ylim = c(0, 20),
      xlim = c(1750, 2025),
      xlab = "",  # Omitir título do eixo x
      cex.main = 1.5)  # Aumentar tamanho do título
@@ -1290,26 +1259,11 @@ ordem <- tetrapods_terminal_100$strata.level
 cores <- cores[ordem]
 plot(tetrapods_terminal_100, se = TRUE, col = cores, 
      legend = FALSE,
-     ylim = c(0, 0.25),
+     ylim = c(0, 0.30),
      xlim = c(1750, 2025),
      xlab = "",  # Omitir título do eixo x
      cex.main = 1.5)
 title(main = "Completeness", line = 0.5, cex.main = 1.5)
-anos <- seq(1750, 2025, by = 50)
-abline(v = anos, col = "gray70", lty = 2, lwd = 1)
-anos_25 <- seq(1750, 2025, by = 25)
-anos_50 <- seq(1750, 2025, by = 50)
-axis(1, at = anos_25, labels = FALSE, tck = -0.015)  # ticks menores
-axis(1, at = anos_50, labels = anos_50, las = 1)     # labels só nos anos de 50
-
-# Mean between event + terminal
-plot(tetrapods_100, se = TRUE, col = cores, 
-     legend = FALSE,
-     ylim = c(0, 20),
-     xlim = c(1750, 2025),
-     xlab = "",
-     cex.main = 1.5)
-title(main = "Geographic distribution knowledge", line = 0.5, cex.main = 1.5)
 anos <- seq(1750, 2025, by = 50)
 abline(v = anos, col = "gray70", lty = 2, lwd = 1)
 anos_25 <- seq(1750, 2025, by = 25)
@@ -1804,7 +1758,7 @@ richness_all <- richness_completude_amphibia %>%
 
 event_total <- df_tetrapods_100 %>%
   filter(event == 1) %>%
-  count(name_en, name = "n_events")
+  count(name_en, name = "n_events") 
 
 event_recent <- df_tetrapods_100 %>%
   mutate(year = year(date)) %>%
@@ -1861,6 +1815,114 @@ plot_time <- plot_bivariate_map(
 
 ggsave(filename= "FigureS1.pdf",
        plot= plot_time,
+       width=7.09,
+       height=4.73,
+       units="in",
+       dpi = 300,
+       bg="white", 
+       limitsize=F,
+       device = cairo_pdf)
+
+# Separando para cada grupo
+event_total <- df_tetrapods_100 %>%
+  filter(event == 1) %>%
+  count(name_en, Class, name = "n_events")
+
+df_out <- df_tetrapods_100 %>%
+  select(date, event, name_en, Class, GlobalNorth) %>%
+  filter(event == 1) %>%
+  mutate(year = year(date)) %>%
+  arrange(name_en, Class, year) %>%
+  left_join(event_total, by = c("name_en", "Class")) %>%
+  group_by(name_en, Class) %>%
+  mutate(
+    GlobalNorth = first(GlobalNorth),
+    event_order = cumsum(event),
+    prop = event_order / n_events
+  )
+
+milestones <- df_out %>%
+  group_by(name_en, Class) %>%
+  summarise(
+    GlobalNorth = first(GlobalNorth),
+    year25 = min(year[prop >= 0.25]),
+    year50 = min(year[prop >= 0.50]),
+    year75 = min(year[prop >= 0.75]),
+    year90 = min(year[prop >= 0.90])
+  ) %>%
+  select(-GlobalNorth)
+
+geo_plot <- geographic_shape_data %>%
+  left_join(milestones %>%
+              mutate(
+                IQR = year75 - year25
+              ), by = "name_en")
+
+# Quando 75% das geodescobertas ja haviam ocorrido?
+plot_time_amphibia <- plot_bivariate_map(
+  geo_plot %>% filter(Class == "Amphibia"),
+  "IQR",
+  "year75",
+  title = NULL,
+  x_label = "Timing of geodiscovery",
+  y_label = "Duration of geodiscovery"); plot_time_amphibia
+
+ggsave(filename= "plot_time_amphibia.pdf",
+       plot= plot_time_amphibia,
+       width=7.09,
+       height=4.73,
+       units="in",
+       dpi = 300,
+       bg="white", 
+       limitsize=F,
+       device = cairo_pdf)
+
+plot_time_reptilia <- plot_bivariate_map(
+  geo_plot %>% filter(Class == "Reptilia"),
+  "IQR",
+  "year75",
+  title = NULL,
+  x_label = "Timing of geodiscovery",
+  y_label = "Duration of geodiscovery"); plot_time_reptilia
+
+ggsave(filename= "plot_time_reptilia.pdf",
+       plot= plot_time_reptilia,
+       width=7.09,
+       height=4.73,
+       units="in",
+       dpi = 300,
+       bg="white", 
+       limitsize=F,
+       device = cairo_pdf)
+
+plot_time_aves <- plot_bivariate_map(
+  geo_plot %>% filter(Class == "Aves"),
+  "IQR",
+  "year75",
+  title = NULL,
+  x_label = "Timing of geodiscovery",
+  y_label = "Duration of geodiscovery"); plot_time_aves
+
+ggsave(filename= "plot_time_aves.pdf",
+       plot= plot_time_aves,
+       width=7.09,
+       height=4.73,
+       units="in",
+       dpi = 300,
+       bg="white", 
+       limitsize=F,
+       device = cairo_pdf)
+
+plot_time_mammals <- plot_bivariate_map(
+  geo_plot %>% filter(Class == "Mammalia"),
+  "IQR",
+  "year75",
+  title = NULL,
+  x_label = "Timing of geodiscovery",
+  y_label = "Duration of geodiscovery"); plot_time_mammals
+
+ggsave(filename= "plot_time_mammals.pdf",
+       plot= plot_time_mammals,
        width=7.09,
        height=4.73,
        units="in",
