@@ -5,8 +5,8 @@ library(terra)
 library(rnaturalearth)
 
 ## set your directory in this block
-local_directory <- file.path("F:",
-                             "datasets_centrais",
+local_directory <- file.path("D:",
+                             "MatheusMoroti",
                              "wallacean_time") 
 
 # CHANGE GRID-CELLS TO POLYGONS---- 
