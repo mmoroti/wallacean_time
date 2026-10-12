@@ -199,9 +199,9 @@ data_tetrapods_filter_spatialpoints <- data_tetrapods_filter[
   flags$.summary,
 ] 
 
-nrow(data_tetrapods_filter_spatialpoints) # 13.463.096 occ
+nrow(data_tetrapods_filter_spatialpoints) # 13.392.668 occ
 
-# filter coordinates uncertain > 100km
+# filter coordinates uncertain > 100km  13392668
 data_tetrapods_filtered <- data_tetrapods_filter_spatialpoints %>%
   filter(coordinateUncertaintyInMeters / 1000 <= 100 | 
            is.na(coordinateUncertaintyInMeters)) 
@@ -1034,6 +1034,7 @@ load(file = file.path(
      )
 )
 
+# Original 
 # deixar apenas as especies que tem poligonos
 data_wallacean_knownledge_sa <- data_occurences_precleaned_duplicate %>%
   filter(speciesKey %in% tetrapods_polygons_key$speciesKey)
@@ -1041,18 +1042,55 @@ data_wallacean_knownledge_sa <- data_occurences_precleaned_duplicate %>%
 data_tetrapods_sa <- tetrapods_polygons_key %>% 
   filter(speciesKey %in% data_occurences_precleaned_duplicate$speciesKey) 
 
-# usando os poligonos do tetrapodtraits chegamos a 7893 spp
-# usando dados de poligonos de outras bases 6527 spp apenas
-# tem que ter o mesmo numero de especies (speciesKey)
-length(unique(data_wallacean_knownledge_sa$speciesKey)) 
+length(unique(data_wallacean_knownledge_sa$speciesKey)) # 28459
 length(unique(data_tetrapods_sa$speciesKey)) 
 
 # run cc_iucn()
 # terra::vect(data_tetrapods_sa) se funcionar vai dar certo
 data_tetrapods_sa_transf <- st_cast(data_tetrapods_sa,
- "MULTIPOLYGON")
+                                    "MULTIPOLYGON")
 # Verificar se a conversão funcionou
 geometry_types <- st_geometry_type(data_tetrapods_sa_transf)
+table(geometry_types)
+
+# 110km expansion
+tetrapods_polygons_key_110 <- tetrapods_polygons_sensitivity %>%
+  filter(scenario == "buffer_110km")
+data_wallacean_knownledge_110 <- data_occurences_precleaned_duplicate %>%
+  filter(speciesKey %in% tetrapods_polygons_key_110$speciesKey)
+# deixar apenas os poligonos que tem dados de distribuicao
+data_tetrapods_110 <- tetrapods_polygons_key_110 %>% 
+  filter(speciesKey %in% data_occurences_precleaned_duplicate$speciesKey)
+
+length(unique(data_wallacean_knownledge_110$speciesKey)) # 28440 spp
+length(unique(data_tetrapods_110$speciesKey)) 
+
+# run cc_iucn()
+# terra::vect(data_tetrapods_sa) se funcionar vai dar certo
+data_tetrapods_110_transf <- st_cast(data_tetrapods_110,
+                                     "MULTIPOLYGON")
+# Verificar se a conversão funcionou
+geometry_types <- st_geometry_type(data_tetrapods_110_transf)
+table(geometry_types)
+
+# 220km expansion
+tetrapods_polygons_key_220 <- tetrapods_polygons_sensitivity %>%
+  filter(scenario == "buffer_220km")
+data_wallacean_knownledge_220 <- data_occurences_precleaned_duplicate %>%
+  filter(speciesKey %in% tetrapods_polygons_key_220$speciesKey)
+# deixar apenas os poligonos que tem dados de distribuicao
+data_tetrapods_220 <- tetrapods_polygons_key_220 %>% 
+  filter(speciesKey %in% data_occurences_precleaned_duplicate$speciesKey)
+
+length(unique(data_wallacean_knownledge_220$speciesKey)) # 28440 spp
+length(unique(data_tetrapods_220$speciesKey)) 
+
+# run cc_iucn()
+# terra::vect(data_tetrapods_sa) se funcionar vai dar certo
+data_tetrapods_220_transf <- st_cast(data_tetrapods_220,
+                                     "MULTIPOLYGON")
+# Verificar se a conversão funcionou
+geometry_types <- st_geometry_type(data_tetrapods_110_transf)
 table(geometry_types)
 
 # check if list_occurences_clean is empty before run
