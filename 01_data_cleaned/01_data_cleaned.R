@@ -101,8 +101,8 @@ package_vec <- c(
 sapply(package_vec, install.load.package)
 
 # Set directory 
-local_directory <- file.path("F:",
-                             "datasets_centrais",
+local_directory <- file.path("D:",
+                             "MatheusMoroti",
                              "wallacean_time") 
 
 # FILTER AND CLEAN ----
@@ -117,78 +117,110 @@ load(file.path(
   "tetrapodstraits_data.RData")
 )
 
-# key of each occurence
+# key of each occurrence
 anyDuplicated(data_tetrapodstraits$gbifID) 
 nrow(data_tetrapodstraits) 
 # 24.591.154 Global species occurrences
 table(data_tetrapodstraits$class)
 
-# Amphibia 4745415                         
-# Aves 7533355                                     
-# Crocodylia 17970
-# Mammalia 8218550
-# Sphenodontia 420
-# Squamata 3810639
-# Testudines 26480
-
-data_tetrapods_clean <- data_tetrapodstraits %>%
-  filter(taxonRank == "SPECIES" | taxonRank == "SUBSPECIES") %>%
-  filter(occurrenceStatus != "ABSENT") %>%
-  mutate(origin_of_data = "gbif") %>%
-  mutate(eventDate = na_if(eventDate, "")) %>%
-  # U. ricardinii aparece sem classificacao de classe
-  mutate(class = if_else(class == "", "Squamata", class))
-
-nrow(data_tetrapods_clean) # 24.402.844
-
 # how much data is na?
-data_tetrapods_clean %>%
+data_tetrapodstraits %>%
   summarise(missing_lat = sum(is.na(decimalLatitude)),
             missing_long = sum(is.na(decimalLongitude)),
             missing_day = sum(is.na(day)),
             missing_month = sum(is.na(month)),
             missing_year = sum(is.na(year)),
             missing_date = sum(is.na(eventDate)))
-# 9.001.840 sem coordenada
-# 3.626.524 sem ano 
-# 6.563.455 sem mes
-# 7.408.408 sem dia
 
 # exists a difference between "year" and "event date" 
 # these differences is associate a occurences between imprecise dates
 # check documentation https://encurtador.com.br/XmP8P
-#View(data_tetrapods_clean %>%
-#       filter(!is.na(eventDate) & is.na(year)))
-data_tetrapods_filter <- data_tetrapods_clean %>%
+data_tetrapods_clean <- data_tetrapodstraits %>%
   drop_na(decimalLatitude,
-          decimalLongitude,
-          year) %>%
+          decimalLongitude) %>%
   select(-eventDate)
 
-data_tetrapods_filter %>%
-  summarise(missing_lat = sum(is.na(decimalLatitude)), # without missing data =)
+data_tetrapods_clean %>%
+  summarise(missing_lat = sum(is.na(decimalLatitude)), 
             missing_long = sum(is.na(decimalLongitude)), 
-            missing_day = sum(is.na(day)), # 2.776.369 NA's
-            missing_month = sum(is.na(month)), # 2.257.939 NA's
-            missing_year = sum(is.na(year))) # without missing data =)
-#missing_date = sum(is.na(eventDate))) 
+            missing_day = sum(is.na(day)), 
+            missing_month = sum(is.na(month)),
+            missing_year = sum(is.na(year))) 
 
-nrow(data_tetrapods_filter) # 14.141.511 Global species occurrences
-table(data_tetrapods_filter$class) # occurrences per classes 
+nrow(data_tetrapods_clean) # 15489662 Global species occurrences
+table(data_tetrapods_clean$class) # occurrences per classes 
+
+# Extract geolocation
+# shapefile to crop adm unit
+load(file.path(
+  local_directory,
+  "00_raw_data",
+  "geographic_shape_data.RData"))
+
+# Verificar validade das geometrias
+sf_use_s2(FALSE)
+st_is_valid(geographic_shape_data) %>% table()
+
+# extracting geolocation per specie
+data_occurences_gbif <- st_as_sf(data_tetrapods_clean,
+                            coords = c("decimalLongitude", "decimalLatitude"),
+                            crs = 4326) %>%    # WGS84
+  st_transform(st_crs(geographic_shape_data))  # equal area
+
+data_occurences_gbif <- data_occurences_gbif%>%
+  mutate(ID = 1:nrow(data_occurences_gbif))
+any(duplicated(data_occurences_gbif$ID))
+
+geographic_shape_data_adj <- geographic_shape_data %>%
+  select(name_en, GlobalNorth, geometry)
+
+data_occurences_geo <- st_join(data_occurences_gbif,
+                               geographic_shape_data_adj, 
+                               join = st_intersects,
+                               left = TRUE) %>% 
+  filter(!is.na(name_en)) %>% # 'col' filtra NA's (buracos) nos poligonos
+  group_by(ID) %>%
+  filter(n() == 1) %>% # remove registros em polígonos sobrepostos
+  ungroup()
+
+any(duplicated(data_occurences_geo$ID))
+# 907.533 occ registros fora do poligonos (oceano, areas em litigio, etc)
+nrow(data_occurences_gbif)-nrow(data_occurences_geo) # 907.533 occ removidas 
+names(data_occurences_geo)
+table(data_occurences_geo$GlobalNorth)
+
+# Filters
+data_tetrapods_filter <- data_occurences_geo %>%
+  drop_na(year)
+
+nrow(data_tetrapods_filter)
+table(data_tetrapods_filter$GlobalNorth)
+
+data_tetrapods_filter <- data_tetrapods_filter %>%
+  filter(taxonRank == "SPECIES" | taxonRank == "SUBSPECIES") %>%
+  filter(occurrenceStatus != "ABSENT") %>%
+  mutate(origin_of_data = "gbif") %>%
+  #mutate(eventDate = na_if(eventDate, "")) %>%
+  # U. ricardinii aparece sem classificacao de classe
+  mutate(class = if_else(class == "", "Squamata", class))
+
+nrow(data_tetrapods_filter) # 24.402.844
+table(data_tetrapods_filter$GlobalNorth)
 
 # coordsclean
-# convert country code from ISO2c to ISO3c
-data_tetrapods_filter$countryCode <-  countrycode(
-  data_tetrapods_filter$countryCode,
-  origin =  'iso2c',
-  destination = 'iso3c',
-  custom_match = c("XK" = "XKX"))
+data_tetrapods_filter <- data_tetrapods_filter %>%
+  sf::st_transform(4326) %>%
+  dplyr::mutate(
+    decimalLongitude = sf::st_coordinates(geometry)[, 1],
+    decimalLatitude  = sf::st_coordinates(geometry)[, 2]
+  ) %>%
+  sf::st_drop_geometry()
 
 flags <- clean_coordinates(x = data_tetrapods_filter,
                            lon = "decimalLongitude",
                            lat = "decimalLatitude",
-                           countries = "countryCode",
-                           species = "species",
+                           #countries = "countryCode",
+                           #species = "species",
                            tests = c("equal","gbif",
                                      "institutions",
                                      "seas","zeros"))
@@ -199,19 +231,22 @@ data_tetrapods_filter_spatialpoints <- data_tetrapods_filter[
   flags$.summary,
 ] 
 
-nrow(data_tetrapods_filter_spatialpoints) # 13.392.668 occ
+nrow(data_tetrapods_filter_spatialpoints) # 13389364 occ
+table(data_tetrapods_filter_spatialpoints$GlobalNorth)
 
-# filter coordinates uncertain > 100km  13392668
+# filter coordinates uncertain > 100km
 data_tetrapods_filtered <- data_tetrapods_filter_spatialpoints %>%
   filter(coordinateUncertaintyInMeters / 1000 <= 100 | 
            is.na(coordinateUncertaintyInMeters)) 
-nrow(data_tetrapods_filtered) # 13.053.975 
+nrow(data_tetrapods_filtered) # 13319194 
+table(data_tetrapods_filtered$GlobalNorth)
 
 ## Human observation non-birds ----
 rm(list = setdiff(ls(), c("local_directory",
                           "validar_dados",
                           "comparative_plot",
-                          "data_tetrapods_filtered"))); gc()
+                          "data_tetrapods_filtered",
+                          "geographic_shape_data_adj"))); gc()
 
 load(file.path(
   local_directory,
@@ -223,46 +258,23 @@ load(file.path(
 anyDuplicated(data_nonbirds$gbifID) 
 nrow(data_nonbirds) # 38.702.092 Global species occurrences
 
-table(data_nonbirds$class)
-# Amphibia 6.484.723                                     
-# Crocodylia 92.317
-# Mammalia 25.644.889
-# Sphenodontia 1.376
-# Squamata 5.634.057
-# Testudines 844.730
-
-data_nonbirds_clean <- data_nonbirds %>%
-  filter(taxonRank == "SPECIES" | taxonRank == "SUBSPECIES") %>%
-  filter(occurrenceStatus != "ABSENT") %>%
-  mutate(origin_of_data = "gbif") %>%
-  mutate(eventDate = na_if(eventDate, "")) 
-
-nrow(data_nonbirds_clean) # 38.317.234 Global species occurrences
-table(data_nonbirds_clean$class)
-
 # how much data is na?
-data_nonbirds_clean %>%
+data_nonbirds %>%
   summarise(missing_lat = sum(is.na(decimalLatitude)),
             missing_long = sum(is.na(decimalLongitude)),
             missing_day = sum(is.na(day)),
             missing_month = sum(is.na(month)),
             missing_year = sum(is.na(year)),
             missing_date = sum(is.na(eventDate)))
-# 344.879 sem coordenada
-# 1.415.954 sem ano 
-# 3.887.627 sem mes
-# 4.598.425 sem dia
 
 # exists a difference between "year" and "event date" of 7280 occurences
 # these differences is associate a occurences between imprecise dates
 # check documentation https://encurtador.com.br/XmP8P
 #View(data_tetrapods_clean %>%
 #       filter(!is.na(eventDate) & is.na(year)))
-data_nonbirds_filter <- data_nonbirds_clean %>%
+data_nonbirds_filter <- data_nonbirds %>%
   drop_na(decimalLatitude,
-          decimalLongitude,
-          year) #%>%
-  #select(-eventDate)
+          decimalLongitude) 
 
 data_nonbirds_filter %>%
   summarise(missing_lat = sum(is.na(decimalLatitude)), # without missing data =)
@@ -271,38 +283,83 @@ data_nonbirds_filter %>%
             missing_month = sum(is.na(month)), # 2.374.207 NA's
             missing_year = sum(is.na(year))) # without missing data =)
 
-nrow(data_nonbirds_filter) # 36.590.997 Global species occurrences
+nrow(data_nonbirds_filter) # 38349941 Global species occurrences
 table(data_nonbirds_filter$class) # occurences per classes 
 
-# Coordsclean
-# convert country code from ISO2c to ISO3c
-data_nonbirds_filter$countryCode <-  countrycode(
-  data_nonbirds_filter$countryCode,
-  origin =  'iso2c',
-  destination = 'iso3c',
-  custom_match = c("XK" = "XKX"))
+table(data_nonbirds$class)
 
-flags <- clean_coordinates(x = data_nonbirds_filter,
+# spatial id
+data_occurences_hononbirds <- st_as_sf(data_nonbirds_filter,
+                                 coords = c("decimalLongitude", "decimalLatitude"),
+                                 crs = 4326) %>%    # WGS84
+  st_transform(st_crs(geographic_shape_data_adj))  # equal area
+
+data_occurences_hononbirds <- data_occurences_hononbirds %>%
+  mutate(ID = 1:nrow(data_occurences_hononbirds))
+any(duplicated(data_occurences_hononbirds$ID))
+
+data_occurences_geo <- st_join(data_occurences_hononbirds,
+                               geographic_shape_data_adj, 
+                               join = st_intersects,
+                               left = TRUE) %>% 
+  filter(!is.na(name_en)) %>% # 'col' filtra NA's (buracos) nos poligonos
+  group_by(ID) %>%
+  filter(n() == 1) %>% # remove registros em polígonos sobrepostos
+  ungroup()
+
+any(duplicated(data_occurences_geo$ID))
+# occ registros fora do poligonos (oceano, areas em litigio, etc)
+nrow(data_occurences_geo)
+table(data_occurences_geo$GlobalNorth)
+
+# sem data
+data_occurences_geo_date <- data_occurences_geo %>%
+  drop_na(year) 
+
+nrow(data_occurences_geo_date)
+table(data_occurences_geo_date$GlobalNorth)
+
+# filter
+data_nonbirds_clean <- data_occurences_geo_date %>%
+  filter(taxonRank == "SPECIES" | taxonRank == "SUBSPECIES") %>%
+  filter(occurrenceStatus != "ABSENT") %>%
+  mutate(origin_of_data = "HumanObservation") %>%
+  mutate(eventDate = na_if(eventDate, "")) 
+
+nrow(data_nonbirds_clean) # 38.317.234 Global species occurrences
+table(data_nonbirds_clean$GlobalNorth)
+
+# Coordsclean
+data_nonbirds_clean <- data_nonbirds_clean %>%
+  sf::st_transform(4326) %>%
+  dplyr::mutate(
+    decimalLongitude = sf::st_coordinates(geometry)[, 1],
+    decimalLatitude  = sf::st_coordinates(geometry)[, 2]
+  ) %>%
+  sf::st_drop_geometry()
+
+flags <- clean_coordinates(x = data_nonbirds_clean,
                            lon = "decimalLongitude",
                            lat = "decimalLatitude",
-                           countries = "countryCode",
-                           species = "species",
                            tests = c("equal","gbif",
                                      "institutions",
                                      "seas","zeros"))
-# Flagged 1381710 of 36590997 records, EQ = 0.04.
 
 #Exclude problematic records
-data_nonbirds_filter_spatialpoints <- data_nonbirds_filter[
+data_nonbirds_filter_spatialpoints <- data_nonbirds_clean[
   flags$.summary,
 ]
 nrow(data_nonbirds_filter_spatialpoints) # 35.209.287 Global species occ
+table(data_nonbirds_filter_spatialpoints$GlobalNorth)
 
 # filter coordinates uncertain > 100km
 # filter years from 1900
 data_nonbirds_filtered <- data_nonbirds_filter_spatialpoints %>%
   filter(coordinateUncertaintyInMeters / 1000 <= 100 | 
            is.na(coordinateUncertaintyInMeters)) 
+
+nrow(data_nonbirds_filtered) # 35058217 Global species occ
+table(data_nonbirds_filtered$GlobalNorth)
 
 ## Human observation birds ----
 # Extract ZIP file from eBird
@@ -605,7 +662,8 @@ rm(list = setdiff(ls(), c("local_directory",
                           "validar_dados",
                           "comparative_plot",
                           "data_tetrapods_filtered",
-                          "data_nonbirds_filtered"))); gc()
+                          "data_nonbirds_filtered",
+                          "geographic_shape_data_adj"))); gc()
 load(file.path(
   local_directory,
   "00_raw_data",
@@ -622,6 +680,32 @@ data_biotime_clean <- biotime_data_key_precleaned %>%
          month = MONTH,
          year = YEAR) %>%
   mutate(origin_of_data = "biotime")
+nrow(data_biotime_clean)
+
+# extracting geolocation per specie
+data_occurences_biotime <- st_as_sf(data_biotime_clean,
+                                 coords = c("decimalLongitude", "decimalLatitude"),
+                                 crs = 4326) %>%    # WGS84
+  st_transform(st_crs(geographic_shape_data_adj))  # equal area
+
+data_occurences_biotime <- data_occurences_biotime %>%
+  mutate(ID = 1:nrow(data_occurences_biotime))
+any(duplicated(data_occurences_biotime$ID))
+
+data_occurences_geo <- st_join(data_occurences_biotime,
+                               geographic_shape_data_adj, 
+                               join = st_intersects,
+                               left = TRUE) %>% 
+  filter(!is.na(name_en)) %>% # 'col' filtra NA's (buracos) nos poligonos
+  group_by(ID) %>%
+  filter(n() == 1) %>% # remove registros em polígonos sobrepostos
+  ungroup()
+
+any(duplicated(data_occurences_geo$ID))
+# 907.533 occ registros fora do poligonos (oceano, areas em litigio, etc)
+nrow(data_occurences_biotime)-nrow(data_occurences_geo) 
+nrow(data_occurences_geo)
+table(data_occurences_geo$GlobalNorth)
 
 data_biotime_clean %>% 
   summarise(missing_lat = sum(is.na(decimalLatitude)),
@@ -630,19 +714,29 @@ data_biotime_clean %>%
             missing_month = sum(is.na(month)), # 766.064
             missing_year = sum(is.na(year)))   # without missing data
 
-flags <- clean_coordinates(x = data_biotime_clean,
+# Filter
+data_nonbirds_filter <- data_occurences_geo %>%
+  sf::st_transform(4326) %>%
+  dplyr::mutate(
+    decimalLongitude = sf::st_coordinates(geometry)[, 1],
+    decimalLatitude  = sf::st_coordinates(geometry)[, 2]
+  ) %>%
+  sf::st_drop_geometry()
+
+flags <- clean_coordinates(x = data_nonbirds_filter,
                            lon = "decimalLongitude",
                            lat = "decimalLatitude",
                            species = "species",
                            tests = c("equal","gbif",
                                      "institutions",
                                      "seas","zeros"))
-# Flagged 1068661 of 3506963 records, EQ = 0.3.
 
 #Exclude problematic records
-data_biotime_filtered <- data_biotime_clean[
+data_biotime_filtered <- data_nonbirds_filter[
   flags$.summary,
 ]
+nrow(data_biotime_filtered)
+table(data_biotime_filtered$GlobalNorth)
 
 ## speciesLink ----
 rm(list = setdiff(ls(), c("local_directory",
@@ -650,7 +744,8 @@ rm(list = setdiff(ls(), c("local_directory",
                           "comparative_plot",
                           "data_tetrapods_filtered",
                           "data_nonbirds_filtered",
-                          "data_biotime_filtered"))); gc()
+                          "data_biotime_filtered",
+                          "geographic_shape_data_adj"))); gc()
 load(file.path(
   local_directory,
   "00_raw_data",
@@ -669,16 +764,20 @@ data_splink_clean <- splink_data_key_precleaned %>%
          year = yearcollected) %>%
   mutate(origin_of_data = "splink") %>%
   mutate(
-    day = as.numeric(na_if(day, "")),
-    month = as.numeric(na_if(month, "")),
-    year = as.numeric(na_if(year, ""))) %>%
-  mutate(
-    month = ifelse(month > 12 | month < 1, NA, month),
-    day = ifelse(day > 31 | day < 1, NA, day)          
+    day = as.numeric(na_if(trimws(as.character(day)), "")),
+    month = as.numeric(na_if(trimws(as.character(month)), "")),
+    year = as.numeric(na_if(trimws(as.character(year)), ""))
   ) %>%
-  mutate(coordinateprecision = na_if(coordinateprecision, "")) %>% 
-  mutate(year = as.integer(as.character(year))) %>%
-  filter(!is.na(year))
+  mutate(
+    year = ifelse(year > 2025 | year < 1758, NA_real_, year),
+    month = ifelse(month > 12 | month < 1, NA_real_, month),
+    day = ifelse(day > 31 | day < 1, NA_real_, day)
+  ) %>%
+  mutate(
+    coordinateprecision = na_if(
+      trimws(as.character(coordinateprecision)), ""
+    )
+  )
 
 data_splink_clean %>%
   summarise(missing_lat = sum(is.na(decimalLatitude)),
@@ -686,6 +785,7 @@ data_splink_clean %>%
             missing_day = sum(is.na(day)),     # 438.648
             missing_month = sum(is.na(month)), # 473.340
             missing_year = sum(is.na(year)))
+nrow(data_splink_clean)
 
 # invalidity coordinates
 data_splink_cleaned <- data_splink_clean %>%
@@ -695,6 +795,47 @@ data_splink_cleaned <- data_splink_clean %>%
     decimalLatitude >= -90 & decimalLatitude <= 90,
     decimalLongitude >= -180 & decimalLongitude <= 180
   ) 
+nrow(data_splink_cleaned)
+
+# extracting geolocation per specie
+data_occurences_splink <- st_as_sf(data_splink_cleaned,
+                                    coords = c("decimalLongitude", "decimalLatitude"),
+                                    crs = 4326) %>%    # WGS84
+  st_transform(st_crs(geographic_shape_data_adj))  # equal area
+
+data_occurences_splink <- data_occurences_splink %>%
+  mutate(ID = 1:nrow(data_occurences_splink))
+any(duplicated(data_occurences_splink$ID))
+
+data_occurences_geo <- st_join(data_occurences_splink,
+                               geographic_shape_data_adj, 
+                               join = st_intersects,
+                               left = TRUE) %>% 
+  filter(!is.na(name_en)) %>% # 'col' filtra NA's (buracos) nos poligonos
+  group_by(ID) %>%
+  filter(n() == 1) %>% # remove registros em polígonos sobrepostos
+  ungroup()
+
+any(duplicated(data_occurences_geo$ID))
+# occ registros fora do poligonos (oceano, areas em litigio, etc)
+nrow(data_occurences_splink)-nrow(data_occurences_geo) 
+nrow(data_occurences_geo)
+table(data_occurences_geo$GlobalNorth)
+
+# Without date
+data_occurences_geo_date <- data_occurences_geo %>%
+  drop_na(year)
+nrow(data_occurences_geo_date)
+table(data_occurences_geo_date$GlobalNorth)
+
+# Filter
+data_splink_cleaned <- data_occurences_geo_date %>%
+  sf::st_transform(4326) %>%
+  dplyr::mutate(
+    decimalLongitude = sf::st_coordinates(geometry)[, 1],
+    decimalLatitude  = sf::st_coordinates(geometry)[, 2]
+  ) %>%
+  sf::st_drop_geometry()
 
 flags <- clean_coordinates(x = data_splink_cleaned,
                            lon = "decimalLongitude",
@@ -710,12 +851,17 @@ data_splink_filter_spatialpoints <- data_splink_cleaned[
   flags$.summary,
 ]
 
+nrow(data_splink_filter_spatialpoints)
+table(data_splink_filter_spatialpoints$GlobalNorth)
+
 # filter coordinates uncertain > 100km
 # filter years from 1900
 data_splink_filtered <- data_splink_filter_spatialpoints %>%
   mutate(coordinateprecision = as.numeric(coordinateprecision)) %>%
-  filter(coordinateprecision / 1000 <= 100 | is.na(coordinateprecision)) %>%
-  filter(year < 2026)
+  filter(coordinateprecision / 1000 <= 100 | is.na(coordinateprecision))
+
+nrow(data_splink_filter_spatialpoints)
+table(data_splink_filter_spatialpoints$GlobalNorth)
 
 # If data its ok, save data
 save(
@@ -879,9 +1025,13 @@ parquet_dir <- file.path(local_directory,
                          "01_data_cleaned",
                          "parquet_clean")
 data_birds <- open_dataset(
-  sources = parquet_dir
+  sources = parquet_dir,
+  unify_schemas = TRUE
 ) %>%
   collect()
+
+nrow(data_birds)
+table(data_birds$GlobalNorth)
 
 load(file.path(
   local_directory,
@@ -932,7 +1082,8 @@ chaves_perdidas_birdsHO <- setdiff(
 data_birds <- data_birds %>% 
   #filter(!(speciesKey %in% chaves_perdidas_birdsHO)) %>%
   mutate(day = as.integer(day),
-         month = as.integer(month)) %>%
+         month = as.integer(month),
+         GlobalNorth = as.double(GlobalNorth)) %>%
   mutate(origin_of_data = "HUMAN_OBSERVATION")
 
 data_occurences_precleaned <- bind_rows(
@@ -944,7 +1095,8 @@ data_occurences_precleaned <- bind_rows(
 
 nested_cols <- c("speciesKey", "class", "order", "family", "species",
                  "gbifID", "day", "month", "year",
-                 "decimalLatitude", "decimalLongitude", "origin_of_data")
+                 "decimalLatitude", "decimalLongitude", "origin_of_data", 
+                 "name_en", "GlobalNorth")
 
 data_occurences_precleaned <- data_occurences_precleaned %>% 
   select(all_of(nested_cols))
@@ -966,7 +1118,7 @@ chaves_perdidas_combinadas <- bind_rows(
 ) %>%
   arrange(speciesKey, Database)
 
-# 858 chaves ao todo perdidas, estao no BioTime e/ou speciesLink, mas nao
+# 852 chaves ao todo perdidas, estao no BioTime e/ou speciesLink, mas nao
 # no TetrapodTraits. Essas podemos conferir para ver se entram ou nao em nossos
 # dados.
 chaves_perdidas_combinadas %>% 
@@ -1002,6 +1154,9 @@ data_occurences_precleaned <- data_occurences_precleaned %>%
   arrange(speciesKey, year, month, day) %>%
   collect()
 
+nrow(data_occurences_precleaned)
+table(data_occurences_precleaned$GlobalNorth)
+
 # Remove duplicates
 duplicated_flags <- cc_dupl(
   data_occurences_precleaned,
@@ -1014,10 +1169,11 @@ duplicated_flags <- cc_dupl(
 data_occurences_precleaned_duplicate <- data_occurences_precleaned[
   duplicated_flags == TRUE, ]
 
-nrow(data_occurences_precleaned_duplicate)*100/nrow(data_occurences_precleaned)
-# 78% dos dados mantidos
+nrow(data_occurences_precleaned_duplicate)
+table(data_occurences_precleaned_duplicate$GlobalNorth)
+
 length(unique(data_occurences_precleaned_duplicate$speciesKey)) 
-# 28.459 global scale spp
+# 28.455 global scale spp
 
 # FILTER POINTS BY RANGE POLYGONS ----
 # Shapefile base
@@ -1025,14 +1181,6 @@ load(file = file.path(
   local_directory,
   "00_raw_data",
   "tetrapods_polygons_key.RData")) # From TetrapodTraits
-
-# Sensitivity shapefiles expanded 110km and 220km
-load(file = file.path(
-       local_directory,
-       "00_raw_data",
-       "tetrapods_polygons_sensitivity.RData"
-     )
-)
 
 # Original 
 # deixar apenas as especies que tem poligonos
@@ -1042,7 +1190,7 @@ data_wallacean_knownledge_sa <- data_occurences_precleaned_duplicate %>%
 data_tetrapods_sa <- tetrapods_polygons_key %>% 
   filter(speciesKey %in% data_occurences_precleaned_duplicate$speciesKey) 
 
-length(unique(data_wallacean_knownledge_sa$speciesKey)) # 28459
+length(unique(data_wallacean_knownledge_sa$speciesKey)) # 28455
 length(unique(data_tetrapods_sa$speciesKey)) 
 
 # run cc_iucn()
@@ -1053,6 +1201,12 @@ data_tetrapods_sa_transf <- st_cast(data_tetrapods_sa,
 geometry_types <- st_geometry_type(data_tetrapods_sa_transf)
 table(geometry_types)
 
+# Sensitivity shapefiles expanded 110km and 220km
+load(file = file.path(
+  local_directory,
+  "00_raw_data",
+  "tetrapods_polygons_sensitivity.RData")
+  )
 # 110km expansion
 tetrapods_polygons_key_110 <- tetrapods_polygons_sensitivity %>%
   filter(scenario == "buffer_110km")
@@ -1068,7 +1222,7 @@ length(unique(data_tetrapods_110$speciesKey))
 # run cc_iucn()
 # terra::vect(data_tetrapods_sa) se funcionar vai dar certo
 data_tetrapods_110_transf <- st_cast(data_tetrapods_110,
-                                     "MULTIPOLYGON")
+                                    "MULTIPOLYGON")
 # Verificar se a conversão funcionou
 geometry_types <- st_geometry_type(data_tetrapods_110_transf)
 table(geometry_types)
@@ -1143,14 +1297,15 @@ print(species_keys_with_errors)
 # 405.215 ocorrencias usando dados espaciais do  (7893 spp)
 # 269.333 ocorrencias usando poligonos de especialistas (5748 spp)
 # 263.628 ocorrencias com poligonos e filtro temporal
-nrow(list_occurences_clean) # 124.684.269 occ
-nrow(data_wallacean_knownledge_sa)-nrow(list_occurences_clean) # 15.018.549 removed
-length(unique(list_occurences_clean$speciesKey)) # 27405 spp 
+nrow(list_occurences_clean) # 124068850
+nrow(data_wallacean_knownledge_sa)-nrow(list_occurences_clean) # 14926904 removed
+length(unique(list_occurences_clean$speciesKey)) # 27402 spp 
 length(
   unique(
     data_wallacean_knownledge_sa$speciesKey))-length(
-      unique(list_occurences_clean$speciesKey)) # 1054 spp removed
+      unique(list_occurences_clean$speciesKey)) # 1053 spp removed
 
+table(list_occurences_clean$GlobalNorth)
 # Quantas espécies para cada grupo?
 list_species <- list_occurences_clean %>%
  distinct(speciesKey, .keep_all=TRUE)
@@ -1188,114 +1343,23 @@ plot_clean <- ggplot() +
              size = 0.5) +
   theme_bw()
 
-# EXTRACTING GEOLOCATIONS ----
-parquet_dir <- file.path(local_directory, 
-                         "01_data_cleaned",
-                         "list_occurences_clean.parquet")
-list_occurences_clean <- open_dataset(
-  sources = parquet_dir
-) %>%
-  collect()
-
-load(file = file.path(
-  local_directory,
-  "00_raw_data",
-  "tetrapods_polygons_key.RData")) # From TetrapodTraits
-
-# deixar apenas os poligonos que tem dados de distribuicao
-data_tetrapods_sa <- tetrapods_polygons_key %>% 
-  filter(speciesKey %in% list_occurences_clean$speciesKey) 
-
-# run cc_iucn()
-# terra::vect(data_tetrapods_sa) se funcionar vai dar certo
-data_tetrapods_sa_transf <- st_cast(data_tetrapods_sa,
-                                    "MULTIPOLYGON")
-# Verificar se a conversão funcionou
-geometry_types <- st_geometry_type(data_tetrapods_sa_transf)
-table(geometry_types)
-
-rm(list = setdiff(ls(), c("local_directory",
-                          "list_occurences_clean",
-                          "data_tetrapods_sa"
-))); gc()
-
-# shapefile to crop adm unit
-load(file.path(
-  local_directory,
-  "00_raw_data",
-  "geographic_shape_data.RData"))
-
-# Verificar validade das geometrias
-sf_use_s2(FALSE)
-st_is_valid(data_tetrapods_sa) %>% table()
-st_is_valid(geographic_shape_data) %>% table()
-
-# extracting geolocation per specie
-data_occurences <- st_as_sf(list_occurences_clean,
-                            coords = c("decimalLongitude", "decimalLatitude"),
-                            crs = 4326) %>%    # WGS84
-  st_transform(st_crs(geographic_shape_data))  # equal area
-
-nrow(data_occurences) == nrow(list_occurences_clean) 
-
-data_occurences <- data_occurences %>%
-  mutate(ID = 1:nrow(data_occurences))
-any(duplicated(data_occurences$ID))
-
-# validaty of polygons 
-any(!st_is_valid(geographic_shape_data))
-any(!st_is_valid(data_occurences))
-
-geographic_shape_data_adj <- geographic_shape_data %>%
-  select(name_en, geometry)
-
-data_occurences_geo <- st_join(data_occurences,
-  geographic_shape_data_adj, 
-  join = st_intersects,
-  left = TRUE) %>% 
-  filter(!is.na(name_en)) %>% # 'col' filtra NA's (buracos) nos poligonos
-  group_by(ID) %>%
-  filter(n() == 1) %>% # remove registros em polígonos sobrepostos
-  ungroup()
-
-any(duplicated(data_occurences_geo$ID))
-# 907.533 occ registros fora do poligonos (oceano, areas em litigio, etc)
-nrow(data_occurences)-nrow(data_occurences_geo) # 907.533 occ removidas 
-names(data_occurences_geo)
-
-data_occurences_geometry <- data_occurences_geo %>%
-  select(speciesKey, species, day, month, year, origin_of_data, name_en, ID) 
-
-data_occurences_units <- data_occurences_geometry %>%
-  st_drop_geometry()
-
-# Species count per adm. unit ----
-interseccao_sf <- st_intersection(data_tetrapods_sa, geographic_shape_data)
-
-list_per_admunit <- interseccao_sf %>%
-  st_drop_geometry()
-
-list_per_admunit$name_en %>% table()
-
-save(list_occurences_clean, # sem duplicatas e filtrados por poligonos
-     data_occurences_units, # com as unidades administrativas
-     #list_per_admunit,      # lista de especies por und adm
-     file = file.path(
-       local_directory,
-       "01_data_cleaned",
-       "data_occurences_geolocation.RData")
-)
-
 # NESTED DATAFRAME WITH BIOLOGICAL TRAITS ----
-rm(list = setdiff(ls(), c("local_directory",
-                          "list_per_admunit"
-))); gc()
+rm(list = setdiff(ls(), c("local_directory"))); gc()
 
-load(file = file.path(
-  local_directory,
-  "01_data_cleaned",
-  "data_occurences_geolocation.RData")
-)
+# occurences data
+data_occurences_units <- open_dataset(
+  sources = file.path(
+    local_directory,
+    "01_data_cleaned",
+    "list_occurences_clean.parquet")
+) %>% collect()
+
+# To access sensitivity analysis
+#load(file = file.path(
+#  local_directory,
+#  "01_data_cleaned",
+#  "data_occurences_geolocation_220.RData")
+#)
 
 load(file.path(
   local_directory,
@@ -1338,10 +1402,6 @@ data_wallacean_nested <- left_join(
 # check data
 table(data_wallacean_nested$Class)
 
-# para o mundo com human observation
-#Amphibia  Aves   Mammalia Reptilia 
-# 5553     8941     4794     8107 
-
 anyDuplicated(data_wallacean_nested$speciesKey)
 
 # unnest data
@@ -1349,10 +1409,8 @@ data_wallacean_unnested <- data_wallacean_nested %>%
   unnest(cols = c(event_table))
 nrow(data_wallacean_unnested) 
 
-# 123.776.736 occ global com Human Observation
 save(data_wallacean_nested,
      data_wallacean_unnested,
-     #list_per_admunit,
      file = file.path(
        local_directory,
        "01_data_cleaned",
@@ -1396,8 +1454,8 @@ load(file.path(
 ) # match taxonomic and trait information with speciesKey
 
 tetrapods_key_species <- trait_data %>%
-  arrange(speciesKey, YearOfDescription)
-  select("speciesKey","scientificName","Class", "Order","Family", 
+  arrange(speciesKey, YearOfDescription) %>%
+  dplyr::select("speciesKey","scientificName","Class", "Order","Family", 
          "YearOfDescription","BodyLength_mm","ImputedLength","BodyMass_g",
          "ImputedMass","Diu","Noc","Nocturnality", "Fos", "Ter", "Aqu", "Arb", "Aer",
          "ImputedHabitat","Verticality","MajorHabitatSum","ImputedMajorHabitat","RangeSize",
@@ -1406,7 +1464,7 @@ tetrapods_key_species <- trait_data %>%
 
 # pegando todas as chaves que tem nos dados baixados e filtrados pelos poligonos
 keys_with_occ <- data_wallacean_unnested %>%
-  select(speciesKey) %>%
+  dplyr::select(speciesKey) %>%
   distinct() %>%
   pull()
 length(keys_with_occ) # 27.395 especies com occ filtradas 
@@ -1491,7 +1549,7 @@ species_admin_intersect <- st_intersection(
 
 # Todas as ocorrencias observadas por unidade administrativa
 occ_nested <- data_wallacean_unnested %>%
-  select(speciesKey, name_en) %>%
+  dplyr::select(speciesKey, name_en) %>%
   distinct() %>%
   group_by(name_en) %>%
   nest() %>%
