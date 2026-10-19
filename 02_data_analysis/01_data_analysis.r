@@ -566,8 +566,7 @@ normalize <- function(x){
 load(file = file.path(
   local_directory,
   "02_data_analysis",
-  "data_wallacean_time.RData")
-)
+  "data_wallacean_time.RData"))
 
 # shapefile to crop adm unit
 load(file.path(
@@ -579,7 +578,7 @@ load(file.path(
 load(file.path(
   local_directory,
   "02_data_analysis",
-  "richness_completude.RData"))
+  "richness_completude_220.RData"))
 
 # Preparing data ----
 # Thresholds of completeness 
@@ -612,7 +611,7 @@ df_wallacean_1 <- df_wallacean_1 %>%
 
 # Each group
 df_tetrapods_100 <- df_wallacean_100 %>%
-  filter(ua_total > 2) %>%
+  #filter(ua_total > 2) %>%
   mutate(status = event + WallaceCompletude) %>%
   left_join(
     geographic_shape_data %>%

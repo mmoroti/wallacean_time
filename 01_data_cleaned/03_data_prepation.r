@@ -15,7 +15,7 @@ load(
     file = file.path(
       local_directory,
       "01_data_cleaned",
-      "dataset_occurences.RData")
+      "dataset_occurences_220.RData")
 )
 
 rm(list = setdiff(ls(), c("local_directory",
@@ -47,7 +47,7 @@ load(
   file.path(
     local_directory,
     "00_raw_data",
-    "tetrapods_list_sensitivity.RData"
+    "tetrapods_list_sensitivity_220.RData"
     )
   )
 
@@ -153,7 +153,7 @@ save(
   file = file.path(
    local_directory,
    "02_data_analysis",
-   "richness_completude.RData")
+   "richness_completude_220.RData")
 )
 
 # Species count per adm. unit ----
@@ -168,11 +168,7 @@ sp_count <- list_per_admunit %>%
   distinct(speciesKey, .keep_all = TRUE) %>%
   select(speciesKey, ua_total)
 any(is.na(data_wallacean_unnested$year))
-
-# Mobilization effort
-#mobilization_effort <- data_wallacean_unnested %>%
-#  group_by(name_en) %>%
-#  summarise(mobilization_effort = n())
+# na analise de sensibilidade, checar 2421643
 
 # Create time-to-event table ----
 data_wallacean_unnested_modified <- data_wallacean_unnested %>%
@@ -294,6 +290,7 @@ df_wallacean_time <- data_wallacean_unnested_modified %>%
   )
 
 df_wallacean_100 <- df_wallacean_time %>%
+  filter(!is.na(WallaceCompletude)) %>% # spp sem poligono que entraram aqui
   # remove todos eventos apos completude 
   mutate(
     linha = row_number(),
@@ -309,6 +306,7 @@ df_wallacean_100 <- df_wallacean_time %>%
          ua_total, ua_total01, ua_total05, ua_total1, origin_of_data, YearOfDescription) # 24969 spp
 
 df_wallacean_01 <- df_wallacean_time %>%
+  filter(!is.na(WallaceCompletude01)) %>% # spp sem poligono que entraram aqui
   # remove com cobertura pequena dos poligonos
   select(-WallaceCompletude, -WallaceCompletude05, -WallaceCompletude1) %>%
   remove_missing() %>%
@@ -327,6 +325,7 @@ df_wallacean_01 <- df_wallacean_time %>%
          ua_total01, origin_of_data, YearOfDescription)
 
 df_wallacean_05 <- df_wallacean_time %>%
+  filter(!is.na(WallaceCompletude05)) %>% # spp sem poligono que entraram aqui
   # remove com cobertura pequena dos poligonos
   select(-WallaceCompletude, -WallaceCompletude01, -WallaceCompletude1) %>%
   remove_missing() %>%
@@ -345,6 +344,7 @@ df_wallacean_05 <- df_wallacean_time %>%
          ua_total05, origin_of_data, YearOfDescription) 
 
 df_wallacean_1 <- df_wallacean_time %>%
+  filter(!is.na(WallaceCompletude1)) %>% # spp sem poligono que entraram aqui
   # remove com cobertura pequena dos poligonos
   select(-WallaceCompletude, -WallaceCompletude01, -WallaceCompletude05) %>%
   remove_missing() %>%
@@ -389,5 +389,5 @@ save(df_wallacean_100,
     file = file.path(
       local_directory,
       "02_data_analysis",
-      "data_wallacean_time.RData")
+      "data_wallacean_time_220.RData")
 )

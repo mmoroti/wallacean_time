@@ -307,8 +307,7 @@ ggpairs(data.frame(vars_to_plot))
 table(df_all$GlobalNorth)
 names(df_all)
 
-modelo_beta <- glm(H_final ~ 
-                         percent_wallace_prop +
+modelo_beta <- betareg(percent_wallace_prop ~ 
                          polygons_richness_scaled + 
                          dens_pop_scaled + 
                          mean_grp_scaled +
@@ -367,22 +366,6 @@ modelo_beta_1 <- betareg(perc_1 ~
                           data = df_all)
 summary(modelo_beta_1)
 car::vif(modelo_beta_1)
-
-# TODO Pensar sobre
-modelo_hier <- glmmTMB::glmmTMB(
-  percent_wallace_prop ~
-    polygons_richness_scaled + 
-    dens_pop_scaled + 
-    mean_grp_scaled +
-    democracy_index_scaled +
-    colonial_origin +
-    n_institutions_scale +
-    road_dens_scaled +
-    (1 | ISO3),
-  family = glmmTMB::beta_family(),
-  data = df_all
-)
-summary(modelo_hier)
 
 # Variation partitioning ----
 vars <- c(
@@ -710,10 +693,6 @@ coefplot_r2 <- plot + r2_plot +
     )
   ); coefplot_r2
 
-# https://www.nature.com/documents/natrev-figure-guidelines-v1.pdf
-# largura maxima é 180mm
-# altura maxima é 215mm
-# fonte size, de 8pt
 ggsave(filename="Figure2_EffectSize.pdf", 
        plot= coefplot_r2,
        width=180, 
@@ -750,6 +729,15 @@ wtest_1 <- wilcox.test(perc_1 ~ GlobalNorth, data = df_all)
 p_label_1 <- paste0(
   "W = ", round(wtest_1$statistic, 1), " ","p = ", format.pval(wtest_1$p.value, digits = 2, eps = .001)
 )
+
+df_all %>%
+  group_by(GlobalNorth) %>%
+  summarise(
+    n = n(),
+    median = median(percent_wallace_prop, na.rm = TRUE),
+    Q1 = quantile(percent_wallace_prop, 0.25, na.rm = TRUE),
+    Q3 = quantile(percent_wallace_prop, 0.75, na.rm = TRUE)
+  )
 
 # ordem desejada
 ordem_threshold <- c(
@@ -880,7 +868,7 @@ global_plot <- ggplot(geographic_shape_data) +
   )
 
 # plot 
-cairo_pdf("figure.pdf", 
+cairo_pdf("figure2.pdf", 
           width = 7.09, 
           height = 4.73, 
           pointsize = 8,
@@ -902,7 +890,7 @@ plot(tetrapods_100,
      xlim = c(1740, 2030),
      xlab = "Year",
      ylab = "Marginal mean",
-     #col = c("#c40e3e", "#2DA5E8"),
+     col = c("#c40e3e", "#2DA5E8"),
      xaxt = "n",
      yaxt = "n"   # 🔧 controla eixo Y também
 )
@@ -945,13 +933,6 @@ vp2 <- grid::viewport(
 )
 print(boxplot, vp = vp2)
 dev.off()
-
-#Largura 7.09  - Altura final	4.73
-
-# export 12x8 pdf
-# largura maxima 180mm - Width 7.09 in 
-# altura maxima 215 - Heigh 8.47 in
-# font size = 8 mm
 
 # Plot completeness map ----
 plot <- plot_bivariate_map(
@@ -1005,6 +986,7 @@ pval <- c("<0.001")
 cor_text <- paste0("rs =", rho, " ",
                    "Bonferroni p = ", pval)
 
+base_size <- 12
 plot <- ggplot(df_all_abs, aes(x = democracy_index_mean,
                            y = percent_wallace_prop)) +
   
@@ -1060,30 +1042,32 @@ plot <- ggplot(df_all_abs, aes(x = democracy_index_mean,
     legend.position = c(1, 0.01), 
     legend.justification = c(1, 0),    
     legend.background = element_blank(),
-    axis.title.x = element_text(size = 10),
-    axis.title.y = element_text(size = 10),
-    axis.text.x  = element_text(size = 10),
-    axis.text.y  = element_text(size = 10),
+    axis.title.x = element_text(size = base_size),
+    axis.title.y = element_text(size = base_size),
+    axis.text.x  = element_text(size = base_size),
+    axis.text.y  = element_text(size = base_size),
     axis.ticks = element_line(color = "black", linewidth = tick_size),
     axis.ticks.length = tick_length,
     axis.ticks.y = element_line(),
     axis.ticks.x = element_line(),
-    axis.line = element_blank(),  # Remove linha do eixo (usamos panel.border)
-    legend.text = element_text(size = 8),
-    panel.border = element_rect(color = "black",
-                                fill = NA,
-                                linewidth = border_size)
+    axis.line = element_blank(),
+    legend.text = element_text(size = 12),
+    panel.border = element_rect(
+      color = "black",
+      fill = NA,
+      linewidth = border_size
+    )
   ); plot
 
-ggsave(filename= "FigS3CompletenessLDI.pdf", 
-       plot= plot,
-       width=180, 
-       height=130, 
-       units="mm",
-       dpi = 300,
-       bg="white", 
-       limitsize=F,
-       device = cairo_pdf) 
+#ggsave(filename= "FigS3CompletenessLDI.pdf", 
+#       plot= plot,
+#       width=180, 
+#       height=130, 
+#       units="mm",
+#       dpi = 300,
+#       bg="white", 
+#       limitsize=F,
+#       device = cairo_pdf) 
 
 # Liberal Democracy Index vs ONU alignment 
 t <- df_all_abs %>%
@@ -1102,7 +1086,7 @@ pval <- c("<0.001")
 cor_text <- paste0("rs =", rho, " ",
                    "Bonferroni p = ", pval)
 
-plot <- ggplot(t, aes(x = democracy_index_mean,
+plot_ldi <- ggplot(t, aes(x = democracy_index_mean,
                                y = IdealPointFP_scale)) +
   
   geom_point(aes(color = as.factor(GlobalNorth)),
@@ -1167,23 +1151,31 @@ plot <- ggplot(t, aes(x = democracy_index_mean,
     axis.ticks.y = element_line(),
     axis.ticks.x = element_line(),
     axis.line = element_blank(),  # Remove linha do eixo (usamos panel.border)
-    legend.text = element_text(size = 8),
+    legend.text = element_text(size = 12),
     panel.border = element_rect(color = "black",
                                 fill = NA,
                                 linewidth = border_size)
-  ); plot
+  ); plot_ldi
 
-ggsave(filename= "FigS4ONULDI.pdf", 
-       plot= plot,
+plot_join <- cowplot::plot_grid(
+  plot,
+  plot_ldi,
+  ncol = 1,
+  align = "v",
+  axis = "l"
+); plot_join
+
+ggsave(filename= "FigS1.pdf", 
+       plot= plot_join,
        width=180, 
-       height=130, 
+       height=260, 
        units="mm",
        dpi = 300,
        bg="white", 
        limitsize=F,
        device = cairo_pdf)
 
-# Sensitivity analysis ----
+# Data explore ----
 load(file.path(
   local_directory,
   "00_raw_data",
