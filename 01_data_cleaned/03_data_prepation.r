@@ -15,7 +15,7 @@ load(
     file = file.path(
       local_directory,
       "01_data_cleaned",
-      "dataset_occurences_220.RData")
+      "dataset_occurences.RData")
 )
 
 rm(list = setdiff(ls(), c("local_directory",
@@ -47,7 +47,7 @@ load(
   file.path(
     local_directory,
     "00_raw_data",
-    "tetrapods_list_sensitivity_220.RData"
+    "tetrapods_list_sensitivity.RData"
     )
   )
 

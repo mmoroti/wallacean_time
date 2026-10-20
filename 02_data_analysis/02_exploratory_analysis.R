@@ -1176,75 +1176,188 @@ ggsave(filename= "FigS1.pdf",
        device = cairo_pdf)
 
 # Data explore ----
+# Viés geográfico de registros: Norte Global x Sul Global, por PAÍS
+# Unidade de análise final: país (coluna `admin`).
+# `name_en` = polígono (estado/província/país sem subdivisão).
+library(dplyr)
+library(tidyr)
+library(sf)
+
+load(
+  file = file.path(
+    local_directory,
+    "01_data_cleaned",
+    "dataset_occurences.RData")
+)
+
+rm(list = setdiff(ls(), c("local_directory",
+                          "list_per_admunit",
+                          "data_wallacean_unnested"))); gc()
+
+load(file.path(
+  local_directory, "00_raw_data", "geographic_shape_data.RData"
+))
+
 load(file.path(
   local_directory,
   "00_raw_data",
   "tetrapods_list_sensitivity.RData"
 ))
 
-# Boxplot comparing units between north and south
-sp_north <- df_wallacean_100 %>%
-  filter(GlobalNorth == 1) %>%
-  distinct(speciesKey)
-nrow(sp_north)
+# ETAPA 1. Registros por polígono
+# Conta quantos registros de ocorrência há em cada polígono (name_en).
+# ungroup(): o objeto está agrupado por speciesKey; sem isso o count()
+# contaria dentro de cada espécie.
+records_by_unit <- data_wallacean_unnested %>%
+  ungroup() %>%
+  filter(!is.na(name_en)) %>%
+  count(name_en, name = "n_records")
 
-sp_south <- df_wallacean_100 %>%
-  filter(GlobalNorth == 0) %>%
-  distinct(speciesKey)
-nrow(sp_south)
+# ETAPA 2. Tabela de polígonos com país, classe Norte/Sul e área
+# Uma linha por (admin, name_en). A área é calculada a partir da geometria
+# (km²) e somada caso um mesmo polígono tenha várias feições.
+# GlobalNorth: 1 = Norte, 0 = Sul.
+unit_tbl <- geographic_shape_data %>%
+  mutate(area_km2 = as.numeric(st_area(geometry)) / 1e6) %>%
+  st_drop_geometry() %>%
+  group_by(admin, name_en) %>%
+  summarise(
+    GlobalNorth = first(na.omit(GlobalNorth)),
+    area_km2    = sum(area_km2, na.rm = TRUE),
+    .groups = "drop"
+  )
 
-only_south <- sp_south %>%
-  anti_join(sp_north, by = "speciesKey") %>%
-  left_join(sp_count, by = "speciesKey") %>%
-  mutate(only_north = 0)
-nrow(only_south) # only south 10912
+# CHECAGEM 2a: name_en não pode se repetir (ex.: mesmo nome em países
+# diferentes), senão registros e riqueza seriam duplicados nos joins.
+# Esperado: tabela vazia.
+unit_tbl %>% count(name_en) %>% filter(n > 1)
 
-only_north <- sp_north %>%
-  anti_join(sp_south, by = "speciesKey") %>%
-  left_join(sp_count, by = "speciesKey") %>%
-  mutate(only_north = 1)
-nrow(only_north) # only norte 1414
+# ETAPA 3. Riqueza de espécies por país (espécies DISTINTAS)
+# 3a. Pares únicos espécie x polígono, a partir da lista de espécies de
+#     cada polígono (species_admin_all).
+# 3b. Associa cada polígono ao seu país e conta speciesKey distintos por país,
+#     de modo que uma espécie presente em vários estados conta uma vez só.
+species_by_unit <- species_admin_all %>%
+  ungroup() %>%
+  select(name_en, all_species) %>%
+  unnest(cols = c(all_species)) %>%
+  distinct(name_en, speciesKey)
 
-both <- sp_north %>%
-  inner_join(sp_south, by = "speciesKey")
-nrow(both) # 2944 com occ no norte e no sul
+richness_country <- species_by_unit %>%
+  inner_join(unit_tbl %>% select(admin, name_en), by = "name_en") %>%
+  distinct(admin, speciesKey) %>%
+  count(admin, name = "richness_country")
 
-df <- bind_rows(
-  only_south,
-  only_north
-)
+# CHECAGEM 3a: polígonos da tabela de espécies que não existem em unit_tbl
+# (ficariam de fora da riqueza por país). Esperado: vazio.
+species_by_unit %>% distinct(name_en) %>% anti_join(unit_tbl, by = "name_en")
 
-hist(df$ua_total)
+# CHECAGEM 3b: a contagem por polígono bate com a polygons_richness antiga?
+# `divergentes` deve ser 0 se ela veio da mesma tabela.
+species_by_unit %>%
+  count(name_en, name = "n_sp") %>%
+  full_join(richness_all, by = "name_en") %>%
+  summarise(sem_richness_all = sum(is.na(polygons_richness)),
+            sem_species_tbl  = sum(is.na(n_sp)),
+            divergentes      = sum(n_sp != polygons_richness, na.rm = TRUE))
 
-plot <- ggplot(df, aes(
-  x = factor(only_north, labels = c("Global South", "Global North")),
-  y = ua_total,
-  fill = factor(only_north)
-)) +
-  geom_boxplot() +
-  labs(
-    x = "",
-    y = "N. of occupied \nadministrative units"
-  ) +
-  scale_fill_manual(
-    values = c("0" = "#c40e3e", "1" = "#2DA5E8"),
-    labels = c("0" = "Global South", "1" = "Global North")
-  ) +
-  theme_minimal() +
-  theme(
-    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
-    axis.ticks.y = element_line(color = "black"),
-    axis.ticks.x = element_blank(),
-    legend.position = "none",              # remove legenda
-    axis.text.x = element_text(size = 14), # aumenta fonte eixo X
-    axis.text.y = element_text(size = 14), # aumenta fonte eixo Y
-    axis.title.y = element_text(size = 16) # aumenta título do eixo Y
-  ); plot
+# ETAPA 4. Tabela final por país
+# Une registros ao nível do polígono e agrega por país:
+#  - n_records: soma dos registros dos polígonos do país
+#  - area_km2:  soma das áreas
+#  - GlobalNorth: classe do país (n_gn_values deve ser 1; é calculado ANTES
+#    de GlobalNorth ser reescrito, senão a checagem não funciona)
+#  - richness_country: espécies distintas (etapa 3)
+df_unit <- unit_tbl %>%
+  left_join(records_by_unit, by = "name_en") %>%
+  mutate(n_records = coalesce(n_records, 0L))   # polígono sem registro = 0
 
-ggsave(file.path(drive, "FigS4.tiff"), 
-       plot = plot, 
-       width = 8, 
-       height = 7, 
-       dpi = 300, 
-       bg = "white")
+df <- df_unit %>%
+  group_by(admin) %>%
+  summarise(
+    n_gn_values = n_distinct(GlobalNorth, na.rm = TRUE),
+    GlobalNorth = first(na.omit(GlobalNorth)),
+    n_records   = sum(n_records),
+    area_km2    = sum(area_km2, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(region = if_else(GlobalNorth == 1, "Global North", "Global South")) %>%
+  left_join(richness_country, by = "admin")
 
+# CHECAGEM 4a: registros cujo polígono não existe em unit_tbl (ficam de fora).
+anti_join(records_by_unit, unit_tbl, by = "name_en")
+# Total de registros perdidos nessa junção (esperado: 0 ou muito pouco):
+sum(records_by_unit$n_records) - sum(df$n_records)
+
+# CHECAGEM 4b: países com subunidades em classes Norte e Sul ao mesmo tempo.
+df %>% filter(n_gn_values > 1)
+
+# CHECAGEM 4c: países sem classe ou sem riqueza (serão excluídos da densidade).
+df %>% filter(is.na(GlobalNorth) | is.na(richness_country) | richness_country == 0)
+
+# ETAPA 5. Registros por espécie por unidade de área (rpsa)
+# rpsa = n_records / riqueza / área (km²)
+#  - pooled: razão "agregada" por região (soma de registros / soma de riqueza /
+#    soma de área). Menos sensível a países pequenos. Obs.: a riqueza somada
+#    entre países ainda conta uma espécie uma vez por país.
+#  - média e mediana dos rpsa por país: complementares, mais sensíveis a
+#    países pequenos ou atípicos.
+dens <- df %>%
+  filter(!is.na(richness_country), richness_country > 0) %>%
+  mutate(rpsa = n_records / richness_country / area_km2)
+
+pooled <- dens %>%
+  group_by(region) %>%
+  summarise(records  = sum(n_records),
+            richness = sum(richness_country),
+            area     = sum(area_km2),
+            rpsa     = records / richness / area)
+pooled
+
+# Razão Norte / Sul (agregada)
+pooled$rpsa[pooled$region == "Global North"] /
+  pooled$rpsa[pooled$region == "Global South"]
+
+# Razão Norte / Sul pela média e pela mediana dos países
+dens %>%
+  group_by(region) %>%
+  summarise(mean_rpsa = mean(rpsa), median_rpsa = median(rpsa)) %>%
+  mutate(ratio_mean   = mean_rpsa   / mean_rpsa[region == "Global South"],
+         ratio_median = median_rpsa / median_rpsa[region == "Global South"])
+
+# ETAPA 6. Concentração de registros
+# concentration(): ordena as unidades por n_records (decrescente) e devolve
+#  - n_units:    nº de unidades com pelo menos 1 registro
+#  - top_share:  fração dos registros nas `top` maiores unidades
+#  - n_for_prop: menor nº de unidades que reúnem >= `prop` dos registros
+# Por região, top 10 e 90% são calculados DENTRO de cada grupo (sobre o total
+# da região). Usa todos os países de `df`, mesmo os sem riqueza.
+concentration <- function(x, top = 10, prop = 0.9) {
+  x  <- sort(x[x > 0], decreasing = TRUE)
+  cs <- cumsum(x) / sum(x)
+  tibble(n_units    = length(x),
+         top_share  = cs[top],
+         n_for_prop = which(cs >= prop)[1])
+}
+
+# Global
+concentration(df$n_records)
+
+# Por região
+df %>%
+  group_by(region) %>%
+  summarise(concentration(n_records), .groups = "drop")
+
+# ETAPA 7 (opcional). Sensibilidade: riqueza distinta por REGIÃO
+# Evita contar a mesma espécie uma vez por país dentro de cada região.
+# Responde a uma pergunta ligeiramente diferente: registros por espécie
+# distinta da região, por km².
+richness_region <- species_by_unit %>%
+  inner_join(unit_tbl %>% select(admin, name_en, GlobalNorth), by = "name_en") %>%
+  mutate(region = if_else(GlobalNorth == 1, "Global North", "Global South")) %>%
+  distinct(region, speciesKey) %>%
+  count(region, name = "richness_region")
+
+pooled %>%
+  left_join(richness_region, by = "region") %>%
+  mutate(rpsa_distinct = records / richness_region / area)
