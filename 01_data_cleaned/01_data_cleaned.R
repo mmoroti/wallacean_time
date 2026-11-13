@@ -101,8 +101,8 @@ package_vec <- c(
 sapply(package_vec, install.load.package)
 
 # Set directory 
-local_directory <- file.path("D:",
-                             "MatheusMoroti",
+local_directory <- file.path("F:",
+                             "datasets_centrais",
                              "wallacean_time") 
 
 # FILTER AND CLEAN ----
