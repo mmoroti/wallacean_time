@@ -7,83 +7,187 @@ install.load.package <- function(x) {
   require(x, character.only = TRUE)
 }
 
-comparative_plot <- function(data_original, data_filtered,
-                             year_column, title = "Comparative Plot") {
+# functions to filter birds
+# Atribui unidade administrativa + GlobalNorth a cada registro
+atribuir_geografia <- function(df, shapes) {
   
-  # Criar tabelas de frequência para os anos
-  df_filter <- as.data.frame(table(data_filtered[[year_column]])) %>%
-    rename(Year = Var1)
-  df_original <- as.data.frame(table(data_original[[year_column]])) %>%
-    rename(Year = Var1)
+  valid <- !is.na(df$decimalLatitude) & !is.na(df$decimalLongitude) &
+    df$decimalLatitude  >= -90  & df$decimalLatitude  <= 90 &
+    df$decimalLongitude >= -180 & df$decimalLongitude <= 180
   
-  # Converter a coluna 'Year' para numérico, caso seja fator
-  df_filter$Year <- as.numeric(as.character(df_filter$Year))
-  df_original$Year <- as.numeric(as.character(df_original$Year))
+  # Padrão: sem coordenada válida
+  df$name_en     <- "unassigned_coord"
+  df$GlobalNorth <- "unassigned"
   
-  # Fazer o join e preparar o dataframe comparativo
-  df_comparative <- full_join(df_original, df_filter, by = "Year") %>%
-    rename(Original = Freq.x, Filtered = Freq.y) %>%
-    pivot_longer(cols = c(Original, Filtered), names_to = "Dataset", values_to = "Occurences") %>%
-    replace_na(list(Occurences = 0))
+  coords <- df[valid, ] %>%
+    distinct(decimalLongitude, decimalLatitude)
   
-  # Criar o gráfico comparativo
-  ggplot(df_comparative, aes(x = Year, y = Occurences, fill = Dataset)) +
-    geom_bar(stat = "identity", position = "dodge", width = 2, alpha = 0.6) +
-    geom_line(stat = "smooth", aes(color = Dataset), linewidth = 1.0, linetype = "dashed") + 
-    theme_bw() +
-    labs(title = title, y = "Frequency of occurrences") +
-    scale_x_continuous(breaks = c(1900, 1940, 1980, 2020), limits = c(1900, 2020)) +
-    theme(
-    axis.title.x = element_text(size = 18),      # Tamanho do título do eixo x
-    axis.title.y = element_text(size = 18),      # Tamanho do título do eixo y
-    axis.text.x = element_text(size = 16),       # Tamanho dos textos do eixo x
-    axis.text.y = element_text(size = 16),       # Tamanho dos textos do eixo y
-    plot.title = element_text(size = 18, hjust = 0.5)  # Tamanho do título do gráfico e centralização
-  )
+  pts <- st_as_sf(coords,
+                  coords = c("decimalLongitude", "decimalLatitude"),
+                  crs = 4326, remove = FALSE) %>%
+    st_transform(st_crs(shapes))
+  
+  hits   <- st_intersects(pts, shapes)
+  n_hits <- lengths(hits)
+  idx    <- vapply(hits, function(h) if (length(h) == 1) h else NA_integer_,
+                   integer(1))
+  
+  coords$name_en <- ifelse(n_hits == 1, shapes$name_en[idx],
+                           ifelse(n_hits == 0, "unassigned_no_polygon",
+                                  "unassigned_overlap"))
+  coords$GlobalNorth <- ifelse(n_hits == 1,
+                               as.character(shapes$GlobalNorth[idx]),
+                               "unassigned")
+  
+  # Junta de volta (apenas nos registros com coordenada válida)
+  geo <- df[valid, c("decimalLongitude", "decimalLatitude")] %>%
+    left_join(coords, by = c("decimalLongitude", "decimalLatitude"))
+  
+  df$name_en[valid]     <- geo$name_en
+  df$GlobalNorth[valid] <- geo$GlobalNorth
+  df
 }
 
-validar_dados <- function(data) {
-  # Lista para armazenar mensagens de validação
-  inconsistencias <- list()
-  # Verificação de latitude = 0
-  if (nrow(data %>% filter(decimalLatitude == 0 & decimalLongitude != 0)) > 0) {
-    inconsistencias <- append(inconsistencias, "Inconsistência: Latitude igual a 0 com Longitude diferente de 0")
+# Marca a etapa de perda (só em quem ainda está vivo).
+# NA em 'manter' conta como remoção, igual ao filter().
+marcar <- function(df, manter, etapa) {
+  remover <- is.na(df$lost_at) & !coalesce(manter, FALSE)
+  df$lost_at[remover] <- etapa
+  df
+}
+
+processar_ordem <- function(ordem_dir, parquet_dir, parquet_clean,
+                            dir_stats, shapes_adj, arrow_threads = NULL) {
+  
+  ordem_nome <- sub("/.*", "", sub("^family=", "", ordem_dir))
+  arq_rds    <- file.path(dir_stats, paste0(ordem_nome, ".rds"))
+  
+  # Retomada: o .rds só existe se o parquet já foi escrito
+  if (file.exists(arq_rds)) {
+    return(list(order = ordem_nome, ok = TRUE, pulou = TRUE, msg = NA_character_))
   }
-  # Verificação de longitude = 0
-  if (nrow(data %>% filter(decimalLatitude != 0 & decimalLongitude == 0)) > 0) {
-    inconsistencias <- append(inconsistencias, "Inconsistência: Longitude igual a 0 com Latitude diferente de 0")
-  }
-  # Verificação de latitude e longitude = 0
-  if (nrow(data %>% filter(decimalLatitude == 0 & decimalLongitude == 0)) > 0) {
-    inconsistencias <- append(inconsistencias, "Inconsistência: Latitude e Longitude iguais a 0")
-  }
-  # Verificação de anos com NA
-  if (nrow(data %>% filter(is.na(year))) > 0) {
-    inconsistencias <- append(inconsistencias, "Inconsistência: Ano com valor NA")
-  }
-  # Verificação de coordenadas com com NA
-  if (nrow(data %>% filter(is.na(decimalLatitude) | is.na(decimalLongitude))) > 0) {
-    inconsistencias <- append(inconsistencias, "Inconsistência: Ano com valor NA")
-  }
-  # Verificação de anos igual a 0
-  if (nrow(data %>% filter(year == 0)) > 0) {
-    inconsistencias <- append(inconsistencias, "Inconsistência: Ano igual a 0")
-  }
-  # Verificação de anos no futuro
-  if (nrow(data %>% filter(year > 2024)) > 0) {
-    inconsistencias <- append(inconsistencias, "Inconsistência: Ano posterior a 2024")
-  }
-  # Verificação de anos anteriores a 1900
-  if (nrow(data %>% filter(year < 1900)) > 0) {
-    inconsistencias <- append(inconsistencias, "Inconsistência: Ano anterior a 1900")
-  }
-  # Retornar resultado
-  if (length(inconsistencias) == 0) {
-    print("Nenhuma inconsistência encontrada")
-  } else {
-    print("Inconsistências encontradas:")
-    print(inconsistencias)
-  }
+  
+  res <- tryCatch({
+    sf::sf_use_s2(FALSE)
+    if (!is.null(arrow_threads)) {
+      arrow::set_cpu_count(arrow_threads)
+      arrow::set_io_thread_count(arrow_threads)
+    }
+    
+    aves_all <- open_dataset(file.path(parquet_dir, ordem_dir)) %>%
+      collect() %>%
+      mutate(.rid = row_number(),
+             lost_at = NA_character_,
+             origin_of_data = "gbif",
+             eventDate = na_if(eventDate, ""))
+    
+    n_original <- nrow(aves_all)
+    
+    # Geografia ANTES de qualquer exclusão (uma única vez)
+    aves_all <- atribuir_geografia(aves_all, shapes_adj)
+    
+    # Etapas
+    aves_all <- marcar(aves_all,
+                       !is.na(aves_all$decimalLatitude) &
+                         !is.na(aves_all$decimalLongitude) &
+                         aves_all$decimalLatitude  >= -90  & aves_all$decimalLatitude  <= 90 &
+                         aves_all$decimalLongitude >= -180 & aves_all$decimalLongitude <= 180,
+                       "01_NA_lat_lon")
+    
+    aves_all <- marcar(aves_all,
+                       !aves_all$name_en %in% c("unassigned_no_polygon",
+                                                "unassigned_overlap"),
+                       "02_sem_localizacao")
+    
+    aves_all <- marcar(aves_all, !is.na(aves_all$year), "03_sem_ano")
+    
+    aves_all <- marcar(aves_all,
+                       aves_all$taxonRank %in% c("SPECIES", "SUBSPECIES") &
+                         aves_all$occurrenceStatus != "ABSENT",
+                       "04_taxon_occurrenceStatus")
+    
+    aves_all$countryCode <- countrycode(
+      aves_all$countryCode,
+      origin = "iso2c", destination = "iso3c",
+      custom_match = c("XK" = "XKX"))
+    
+    idx_vivos <- which(is.na(aves_all$lost_at))
+    if (length(idx_vivos) > 0) {
+      flags <- clean_coordinates(
+        x = aves_all[idx_vivos, ],
+        lon = "decimalLongitude", lat = "decimalLatitude",
+        countries = "countryCode", species = "species",
+        tests = c("equal", "gbif", "institutions", "seas", "zeros")
+      )
+      aves_all$lost_at[idx_vivos[!flags$.summary]] <- "05_coordinateCleaner"
+    }
+    
+    aves_all <- marcar(aves_all,
+                       aves_all$coordinateUncertaintyInMeters / 1000 <= 10 |
+                         is.na(aves_all$coordinateUncertaintyInMeters),
+                       "06_incerteza_coord")
+    
+    aves_all <- marcar(aves_all, aves_all$year < 2026, "07_year_2026")
+    
+    # 08: arredondamento, ordenação e duplicatas
+    aves_clean <- aves_all[is.na(aves_all$lost_at), ] %>%
+      mutate(
+        decimalLatitude  = round(decimalLatitude, 2),
+        decimalLongitude = round(decimalLongitude, 2),
+        month = ifelse(month > 12 | month < 1, NA, month),
+        day   = ifelse(day > 31 | day < 1, NA, day)
+      ) %>%
+      arrange(speciesKey, year, month, day)
+    
+    dup_ok <- if (nrow(aves_clean) > 0) {
+      cc_dupl(aves_clean,
+              lon = "decimalLongitude", lat = "decimalLatitude",
+              species = "speciesKey", value = "flagged")
+    } else logical(0)
+    
+    # .rid = posição original em aves_all (que nunca foi reordenado)
+    aves_all$lost_at[aves_clean$.rid[!dup_ok]] <- "08_duplicatas"
+    aves_clean <- aves_clean[dup_ok, ]
+    n_final <- nrow(aves_clean)
+    
+    # Tabela de perdas desta ordem + conferências
+    perdas_ordem <- aves_all %>%
+      mutate(etapa = coalesce(lost_at, "99_retido")) %>%
+      count(etapa, GlobalNorth, name_en, name = "n") %>%
+      mutate(order = ordem_nome, .before = 1)
+    
+    stopifnot(
+      sum(perdas_ordem$n) == n_original,
+      sum(perdas_ordem$n[perdas_ordem$etapa == "99_retido"]) == n_final,
+      !any(perdas_ordem$GlobalNorth == "unassigned" &
+             !perdas_ordem$etapa %in% c("01_NA_lat_lon", "02_sem_localizacao"),
+           na.rm = TRUE)
+    )
+    
+    # Salva parquet (sem colunas auxiliares) e, por último, o checkpoint
+    aves_out <- aves_clean %>% select(-.rid, -lost_at)
+    write_parquet(aves_out,
+                  sink = file.path(parquet_clean,
+                                   paste0("clean_", ordem_nome, ".parquet")))
+    
+    estat <- data.frame(order = ordem_nome,
+                        registros_originais = n_original,
+                        registros_clean = n_final)
+    saveRDS(list(estat = estat, perdas = perdas_ordem), arq_rds)
+    
+    list(order = ordem_nome, ok = TRUE, pulou = FALSE, msg = NA_character_)
+    
+  }, error = function(e) {
+    msg <- conditionMessage(e)
+    cat(sprintf("[%s] %s: %s\n", Sys.time(), ordem_nome, msg),
+        file = file.path(dir_stats, "erros_log.txt"), append = TRUE)
+    list(order = ordem_nome, ok = FALSE, pulou = FALSE, msg = msg)
+  })
+  
+  # libera a memória da ordem antes de devolver
+  rm(list = setdiff(ls(), "res"))
+  invisible(gc())
+  res
 }
 
 ## names of packages we want installed (if not installed yet) and loaded
@@ -236,7 +340,7 @@ table(data_tetrapods_filter_spatialpoints$GlobalNorth)
 
 # filter coordinates uncertain > 100km
 data_tetrapods_filtered <- data_tetrapods_filter_spatialpoints %>%
-  filter(coordinateUncertaintyInMeters / 1000 <= 100 | 
+  filter(coordinateUncertaintyInMeters / 1000 <= 10 | 
            is.na(coordinateUncertaintyInMeters)) 
 nrow(data_tetrapods_filtered) # 13319194 
 table(data_tetrapods_filtered$GlobalNorth)
@@ -355,27 +459,54 @@ table(data_nonbirds_filter_spatialpoints$GlobalNorth)
 # filter coordinates uncertain > 100km
 # filter years from 1900
 data_nonbirds_filtered <- data_nonbirds_filter_spatialpoints %>%
-  filter(coordinateUncertaintyInMeters / 1000 <= 100 | 
+  filter(coordinateUncertaintyInMeters / 1000 <= 10 | 
            is.na(coordinateUncertaintyInMeters)) 
 
 nrow(data_nonbirds_filtered) # 35058217 Global species occ
 table(data_nonbirds_filtered$GlobalNorth)
 
 ## Human observation birds ----
-# Extract ZIP file from eBird
-#arquivo_zip <- file.path(local_directory,
-#                         "00_raw_data",
-#                         "0018107-251025141854904.zip")
-#temp_dir <- file.path(local_directory,
-#                      "00_raw_data",
-#                      "temp_extract")
-#dir.create(temp_dir, showWarnings = FALSE)
-#unzip(arquivo_zip, exdir = temp_dir)
+nivel <- "order"  # process "order" ou "family"
 
-# save raw .parquet files 
-parquet_dir <- file.path(local_directory, 
-                         "00_raw_data",
-                         "parquet_por_ordem")
+if (nivel == "order") {
+  
+  dir_stats <- file.path(
+    local_directory,
+    "00_raw_data",
+    "clean_statistics",
+    if (nivel == "order") "por_ordem" else "por_familia"
+  )
+  # Birds orders non-passeriformes
+  parquet_dir <- file.path(local_directory, 
+                           "00_raw_data",
+                           "parquet_por_ordem")
+  
+  ordens_disponiveis <- list.dirs(
+    parquet_dir,
+    recursive = FALSE,
+    full.names = FALSE
+  )
+  ordens_disponiveis <- ordens_disponiveis[
+    ordens_disponiveis != "order=Passeriformes"
+  ]
+} else if (nivel == "family") {
+  
+  # Family Passeriformes
+  parquet_dir <- file.path(local_directory, 
+                           "00_raw_data",
+                           "parquet_por_ordem",
+                           "Order=Passeriformes",
+                           "family")
+  
+  ordens_disponiveis <- list.dirs(
+    parquet_dir,
+    recursive = FALSE,
+    full.names = FALSE
+  )
+  
+} else {
+  stop("Nível taxonômico inválido. Escolha 'order' ou 'family'.")
+}
 
 # save clean .parquet files
 parquet_clean <- file.path(local_directory,
@@ -390,272 +521,97 @@ nested_cols <- c("speciesKey", "class", "order",
                  "coordinateUncertaintyInMeters", "occurrenceStatus",
                  "taxonRank", "countryCode", "eventDate")
 
-ebird_data <- arrow::open_delim_dataset(
-  file.path(temp_dir, "0018107-251025141854904.csv"), 
-  parse_options = csv_parse_options(
-    delimiter = "\t", 
-    newlines_in_values = TRUE),
-  read_options = list(
-    block_size = 1000000000L, 
-    use_threads = TRUE)) %>%
-  select(all_of(nested_cols))
+# shapes_adj, parquet_dir, parquet_clean, local_directory; sf_use_s2(FALSE)
+dir.create(dir_stats,     recursive = TRUE, showWarnings = FALSE)
+dir.create(parquet_clean, recursive = TRUE, showWarnings = FALSE)
 
-# create multiple .parquet files
-ebird_data |> 
-  group_by(order) |> 
-  write_dataset(path = parquet_dir,
-                format = "parquet")
-
-tibble(
-  arquivos = list.files(parquet_dir, recursive = TRUE),
-  tamanho_MB = file.size(file.path(parquet_dir, arquivos)) / 1024^2
-) %>% View()
-
-# Cleaning each Order
-ordens_disponiveis <- list.dirs(parquet_dir,
-                                recursive = FALSE,
-                                full.names = FALSE)
-
-ordens_disponiveis <- ordens_disponiveis[
-  ordens_disponiveis != "order=Passeriformes"]
-
-# Estatísticas finais
-estatisticas <- data.frame(
-  order = character(),
-  registros_originais = integer(),
-  registros_clean = integer(),
-  stringsAsFactors = FALSE
-)
-
+# Execução sequencial (para paralelo, use o rodar() das mensagens anteriores
+resultados <- vector("list", length(ordens_disponiveis))
 for (i in seq_along(ordens_disponiveis)) {
-  
-  tryCatch({
-    cat("Processando", ordens_disponiveis[i])
-    
-    aves <- open_dataset(file.path(parquet_dir, ordens_disponiveis[i]))
-    aves_clean <- aves %>%
-      collect()
-    
-    n_original <- nrow(aves_clean)
-    
-    # Filter start
-    aves_clean <- aves_clean %>%
-      filter(taxonRank == "SPECIES" | taxonRank == "SUBSPECIES") %>%
-      filter(occurrenceStatus != "ABSENT") %>%
-      mutate(origin_of_data = "gbif") %>%
-      mutate(eventDate = na_if(eventDate, "")) %>%
-      drop_na(decimalLatitude,
-              decimalLongitude,
-              year)
-    
-    # Remove invalidity coordinates
-    aves_clean <- aves_clean %>%
-      filter(
-        !is.na(decimalLatitude),
-        !is.na(decimalLongitude),
-        decimalLatitude >= -90 & decimalLatitude <= 90,
-        decimalLongitude >= -180 & decimalLongitude <= 180
-      ) 
-    
-    aves_clean$countryCode <-  countrycode(
-      aves_clean$countryCode,
-      origin =  'iso2c',
-      destination = 'iso3c',
-      custom_match = c("XK" = "XKX"))
-    
-    # CoordinateCleaner 
-    flags <- clean_coordinates(
-      x = aves_clean,
-      lon = "decimalLongitude",
-      lat = "decimalLatitude",
-      countries = "countryCode",
-      species = "species",
-      tests = c("equal", "gbif", "institutions", "seas", "zeros")
-    )
-    
-    aves_clean <- aves_clean[flags$.summary, ] %>%
-      filter(
-        coordinateUncertaintyInMeters / 1000 <= 100 | is.na(coordinateUncertaintyInMeters),
-        year < 2026 
-      )
-    
-    aves_clean <- aves_clean %>%
-      mutate(
-        # duas casas decimais = 1.11 km 
-        decimalLatitude = round(decimalLatitude, 2), 
-        decimalLongitude = round(decimalLongitude, 2),
-        month = ifelse(month > 12 | month < 1, NA, month),
-        day = ifelse(day > 31 | day < 1, NA, day)          
-      ) %>%
-      arrange(speciesKey, year, month, day) 
-    
-    duplicated_flags <- cc_dupl(
-      aves_clean,
-      lon = "decimalLongitude",
-      lat = "decimalLatitude",
-      species = "speciesKey",
-      value = "flagged"
-    )
-    
-    aves_clean <- aves_clean[
-      duplicated_flags == TRUE, ]
-    
-    # Filter end
-    n_final <- nrow(aves_clean)
-    
-    # Save new parquet file - Ordem
-    ordem_nome <- sub("/.*", "", sub("^order=", "", ordens_disponiveis[i]))
-    write_parquet(aves_clean, 
-                  sink = file.path(parquet_clean,
-                                   paste0("clean_", ordem_nome, ".parquet")))
-    # How much data did we lose?
-    estatisticas <- rbind(estatisticas, data.frame(
-      taxa = ordem_nome,
-      registros_originais = n_original,
-      registros_clean = n_final
-    ))
-    
-  }, error = function(e) {
-    cat("\n❌ Erro em", ordem_nome, ":", e$message, "\n")
-  })
+  cat(sprintf("[%d/%d] %s\n", i, length(ordens_disponiveis), ordens_disponiveis[i]))
+  resultados[[i]] <- processar_ordem(ordens_disponiveis[i], parquet_dir,
+                                     parquet_clean, dir_stats,
+                                     geographic_shape_data_adj)
 }
 
-# How much data was cleaned? 
+# Falhas
+falhas <- Filter(function(x) !isTRUE(x$ok), resultados)
+if (length(falhas) > 0) print(bind_rows(lapply(falhas, as.data.frame)))
+
+# Consolidar a partir dos checkpoints
+todos <- lapply(list.files(dir_stats,
+                           pattern = "\\.rds$", 
+                           full.names = TRUE), readRDS)
+estatisticas <- bind_rows(lapply(todos, `[[`, "estat"))
+perdas       <- bind_rows(lapply(todos, `[[`, "perdas"))
+
+# Conferência: algum táxon ficou sem checkpoint?
+print(setdiff(
+  sub(paste0("^", nivel, "="), "", ordens_disponiveis),
+  estatisticas[[nivel]]
+))
+
 print(estatisticas)
-write.table(estatisticas, file.path(
-  local_directory, "00_raw_data", "clean_statistics",
-  "clean_statistics_order.txt"))
 
-# Passeriformes cannot be processed; let's separate them into families.
-aves_passeriformes <- open_dataset(file.path(parquet_dir, 	
-                                             "order=Passeriformes/part-0.parquet"))
-
-parquet_dir_family <- file.path(local_directory, 
-                                "parquet_por_ordem",
-                                "order=Passeriformes",
-                                "family")
-
-aves_passeriformes |>
-  group_by(family) |> 
-  write_dataset(path = parquet_dir_family,
-                format = "parquet")
-
-tibble(
-  arquivos = list.files(parquet_dir_family, recursive = TRUE),
-  tamanho_MB = file.size(file.path(parquet_dir_family, arquivos)) / 1024^2
-) %>% View() 
-
-familias_disponiveis <- list.dirs(parquet_dir_family,
-                                  recursive = FALSE,
-                                  full.names = FALSE) 
-
-# Estatisticas finais
-estatisticas <- data.frame(
-  ordem = character(),
-  registros_originais = integer(),
-  registros_clean = integer(),
-  stringsAsFactors = FALSE
+# Salvar estatísticas e perdas
+write.table(
+  estatisticas,
+  file.path(local_directory, "00_raw_data",
+            "clean_statistics",
+            paste0("clean_statistics_", nivel, ".txt"))
+)
+write.table(
+  perdas,
+  file.path(local_directory, "00_raw_data",
+            "clean_statistics",
+            paste0("clean_losses_", nivel, "_step_region.txt"))
 )
 
-for (i in seq_along(familias_disponiveis)) {
-  
-  tryCatch({
-    cat("Processando", familias_disponiveis[i])
-    
-    aves <- open_dataset(file.path(parquet_dir_family, familias_disponiveis[i]))
-    aves_clean <- aves %>%
-      collect()
-    
-    n_original <- nrow(aves_clean)
-    
-    # Filter start
-    aves_clean <- aves_clean %>%
-      filter(taxonRank == "SPECIES" | taxonRank == "SUBSPECIES") %>%
-      filter(occurrenceStatus != "ABSENT") %>%
-      mutate(origin_of_data = "gbif") %>%
-      mutate(eventDate = na_if(eventDate, "")) %>%
-      drop_na(decimalLatitude,
-              decimalLongitude,
-              year)
-    
-    # Remove invalidity coordinates
-    aves_clean <- aves_clean %>%
-      filter(
-        !is.na(decimalLatitude),
-        !is.na(decimalLongitude),
-        decimalLatitude >= -90 & decimalLatitude <= 90,
-        decimalLongitude >= -180 & decimalLongitude <= 180
-      ) 
-    
-    aves_clean$countryCode <-  countrycode(
-      aves_clean$countryCode,
-      origin =  'iso2c',
-      destination = 'iso3c',
-      custom_match = c("XK" = "XKX"))
-    
-    # CoordinateCleaner 
-    flags <- clean_coordinates(
-      x = aves_clean,
-      lon = "decimalLongitude",
-      lat = "decimalLatitude",
-      countries = "countryCode",
-      species = "species",
-      tests = c("equal", "gbif", "institutions", "seas", "zeros")
-    )
-    
-    aves_clean <- aves_clean[flags$.summary, ] %>%
-      filter(
-        coordinateUncertaintyInMeters / 1000 <= 100 | is.na(coordinateUncertaintyInMeters),
-        year < 2026 #year > 1899 & 
-      )
-    
-    aves_clean <- aves_clean %>%
-      mutate(
-        # duas casas decimais = 1.11 km 
-        decimalLatitude = round(decimalLatitude, 2), 
-        decimalLongitude = round(decimalLongitude, 2),
-        month = ifelse(month > 12 | month < 1, NA, month),
-        day = ifelse(day > 31 | day < 1, NA, day)          
-      ) %>%
-      arrange(speciesKey, year, month, day) 
-    
-    duplicated_flags <- cc_dupl(
-      aves_clean,
-      lon = "decimalLongitude",
-      lat = "decimalLatitude",
-      species = "speciesKey",
-      value = "flagged"
-    )
-    
-    aves_clean <- aves_clean[
-      duplicated_flags == TRUE, ]
-    
-    # Filter end
-    n_final <- nrow(aves_clean)
-    
-    # Save new parquet file - Family
-    family_nome <- sub("/.*", "", sub("^family=", "", familias_disponiveis[i]))
-    write_parquet(aves_clean, 
-                  sink = file.path(parquet_clean,
-                                   paste0("clean_", family_nome, ".parquet")))
-    
-    # How much data did we lose?
-    estatisticas <- rbind(estatisticas, data.frame(
-      taxa = family_nome,
-      registros_originais = n_original,
-      registros_clean = n_final
-    ))
-    
-  }, error = function(e) {
-    cat("\n❌ Erro em",  family_name, ":", e$message, "\n")
-  })
-}
+# Resumo 1: perdas por etapa × GlobalNorth
+perdas %>%
+  group_by(etapa, GlobalNorth) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  tidyr::pivot_wider(names_from = GlobalNorth, values_from = n, values_fill = 0)
 
-# How much data was cleaned? 
-print(estatisticas)
-write.table(estatisticas,file.path(
-  local_directory, "00_raw_data", "clean_statistics",
-  "clean_statistics_family.txt"))
+# Resumo 2: detalhe das etapas 01 e 02
+perdas %>%
+  filter(etapa %in% c("01_NA_lat_lon", "02_sem_localizacao")) %>%
+  group_by(etapa, name_en) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  filter(name_en %in% c("unassigned_coord", "unassigned_no_polygon",
+                        "unassigned_overlap"))
+
+perdas_etapa <- perdas %>%
+  group_by(etapa, GlobalNorth) %>%
+  summarise(n = sum(n), .groups = "drop")
+
+# Total original de cada grupo (perdidos + retidos)
+total_g <- perdas_etapa %>%
+  group_by(GlobalNorth) %>%
+  summarise(total = sum(n), .groups = "drop")
+
+# Retidos após cada etapa = total - perdas acumuladas
+retidos <- perdas_etapa %>%
+  filter(etapa != "99_retido") %>%
+  tidyr::complete(etapa, GlobalNorth, fill = list(n = 0)) %>%
+  arrange(GlobalNorth, etapa) %>%
+  group_by(GlobalNorth) %>%
+  mutate(perdidos_acum = cumsum(n)) %>%
+  ungroup() %>%
+  left_join(total_g, by = "GlobalNorth") %>%
+  mutate(retidos = total - perdidos_acum) %>%
+  select(etapa, GlobalNorth, retidos)
+
+# Linha de partida (antes de qualquer filtro)
+original <- total_g %>%
+  transmute(etapa = "00_original", GlobalNorth, retidos = total)
+
+tab_retidos <- bind_rows(original, retidos) %>%
+  tidyr::pivot_wider(names_from = GlobalNorth, values_from = retidos) %>%
+  mutate(total = rowSums(across(-etapa))) %>%
+  arrange(etapa)
+
+print(tab_retidos, n = Inf)
 
 ## BioTIME 2.0v ----
 rm(list = setdiff(ls(), c("local_directory",
@@ -858,7 +814,7 @@ table(data_splink_filter_spatialpoints$GlobalNorth)
 # filter years from 1900
 data_splink_filtered <- data_splink_filter_spatialpoints %>%
   mutate(coordinateprecision = as.numeric(coordinateprecision)) %>%
-  filter(coordinateprecision / 1000 <= 100 | is.na(coordinateprecision))
+  filter(coordinateprecision / 1000 <= 10 | is.na(coordinateprecision))
 
 nrow(data_splink_filter_spatialpoints)
 table(data_splink_filter_spatialpoints$GlobalNorth)
