@@ -8,7 +8,7 @@ install.load.package <- function(x) {
 }
 
 # functions to filter birds
-# Atribui unidade administrativa + GlobalNorth a cada registro
+# Assigns an administrative unit + GlobalNorth to each record
 atribuir_geografia <- function(df, shapes) {
   
   valid <- !is.na(df$decimalLatitude) & !is.na(df$decimalLongitude) &
@@ -48,8 +48,8 @@ atribuir_geografia <- function(df, shapes) {
   df
 }
 
-# Marca a etapa de perda (só em quem ainda está vivo).
-# NA em 'manter' conta como remoção, igual ao filter().
+# Marks the loss stage (only for those still alive).
+# An 'NA' in 'keep' counts as a removal, just like in filter().
 marcar <- function(df, manter, etapa) {
   remover <- is.na(df$lost_at) & !coalesce(manter, FALSE)
   df$lost_at[remover] <- etapa
@@ -59,10 +59,14 @@ marcar <- function(df, manter, etapa) {
 processar_ordem <- function(ordem_dir, parquet_dir, parquet_clean,
                             dir_stats, shapes_adj, arrow_threads = NULL) {
   
-  ordem_nome <- sub("/.*", "", sub("^family=", "", ordem_dir))
+  ordem_nome <- sub(
+    paste0(".*", nivel, "=([^/]+).*"),
+    "\\1",
+    ordem_dir
+  )
   arq_rds    <- file.path(dir_stats, paste0(ordem_nome, ".rds"))
   
-  # Retomada: o .rds só existe se o parquet já foi escrito
+  # Recap: the .rds file only exists if the Parquet file has already been written
   if (file.exists(arq_rds)) {
     return(list(order = ordem_nome, ok = TRUE, pulou = TRUE, msg = NA_character_))
   }
@@ -83,10 +87,10 @@ processar_ordem <- function(ordem_dir, parquet_dir, parquet_clean,
     
     n_original <- nrow(aves_all)
     
-    # Geografia ANTES de qualquer exclusão (uma única vez)
+    # Geography BEFORE any exclusion (one time only)
     aves_all <- atribuir_geografia(aves_all, shapes_adj)
     
-    # Etapas
+    # Steps
     aves_all <- marcar(aves_all,
                        !is.na(aves_all$decimalLatitude) &
                          !is.na(aves_all$decimalLongitude) &
@@ -129,7 +133,7 @@ processar_ordem <- function(ordem_dir, parquet_dir, parquet_clean,
     
     aves_all <- marcar(aves_all, aves_all$year < 2026, "07_year_2026")
     
-    # 08: arredondamento, ordenação e duplicatas
+    # rounding, sorting, and duplicates
     aves_clean <- aves_all[is.na(aves_all$lost_at), ] %>%
       mutate(
         decimalLatitude  = round(decimalLatitude, 2),
@@ -145,12 +149,12 @@ processar_ordem <- function(ordem_dir, parquet_dir, parquet_clean,
               species = "speciesKey", value = "flagged")
     } else logical(0)
     
-    # .rid = posição original em aves_all (que nunca foi reordenado)
+    # .rid = original position in aves_all (which was never reordered)
     aves_all$lost_at[aves_clean$.rid[!dup_ok]] <- "08_duplicatas"
     aves_clean <- aves_clean[dup_ok, ]
     n_final <- nrow(aves_clean)
     
-    # Tabela de perdas desta ordem + conferências
+    # Losses table for this order + checks
     perdas_ordem <- aves_all %>%
       mutate(etapa = coalesce(lost_at, "99_retido")) %>%
       count(etapa, GlobalNorth, name_en, name = "n") %>%
@@ -164,7 +168,7 @@ processar_ordem <- function(ordem_dir, parquet_dir, parquet_clean,
            na.rm = TRUE)
     )
     
-    # Salva parquet (sem colunas auxiliares) e, por último, o checkpoint
+    # Save Parquet (without auxiliary columns) and, finally, the checkpoint
     aves_out <- aves_clean %>% select(-.rid, -lost_at)
     write_parquet(aves_out,
                   sink = file.path(parquet_clean,
@@ -184,7 +188,7 @@ processar_ordem <- function(ordem_dir, parquet_dir, parquet_clean,
     list(order = ordem_nome, ok = FALSE, pulou = FALSE, msg = msg)
   })
   
-  # libera a memória da ordem antes de devolver
+  # release the order's memory before returning
   rm(list = setdiff(ls(), "res"))
   invisible(gc())
   res
@@ -213,8 +217,9 @@ local_directory <- file.path("F:",
 ## GBIF ----
 # load data
 rm(list = setdiff(ls(), c("local_directory",
-                          "validar_dados",
-                          "comparative_plot"))); gc()
+                          "atribuir_geografia",
+                          "marcar",
+                          "processar_ordem"))); gc()
 load(file.path(
   local_directory,
   "00_raw_data",
@@ -282,14 +287,14 @@ data_occurences_geo <- st_join(data_occurences_gbif,
                                geographic_shape_data_adj, 
                                join = st_intersects,
                                left = TRUE) %>% 
-  filter(!is.na(name_en)) %>% # 'col' filtra NA's (buracos) nos poligonos
+  filter(!is.na(name_en)) %>% # remove NAs
   group_by(ID) %>%
-  filter(n() == 1) %>% # remove registros em polígonos sobrepostos
+  filter(n() == 1) %>% # remove records in overlapping polygons
   ungroup()
 
 any(duplicated(data_occurences_geo$ID))
-# 907.533 occ registros fora do poligonos (oceano, areas em litigio, etc)
-nrow(data_occurences_gbif)-nrow(data_occurences_geo) # 907.533 occ removidas 
+# 907,533 occurrence records outside of polygons (ocean, disputed areas, etc.)
+nrow(data_occurences_gbif)-nrow(data_occurences_geo) 
 names(data_occurences_geo)
 table(data_occurences_geo$GlobalNorth)
 
@@ -305,7 +310,7 @@ data_tetrapods_filter <- data_tetrapods_filter %>%
   filter(occurrenceStatus != "ABSENT") %>%
   mutate(origin_of_data = "gbif") %>%
   #mutate(eventDate = na_if(eventDate, "")) %>%
-  # U. ricardinii aparece sem classificacao de classe
+  # U. ricardinii appears without a class classification
   mutate(class = if_else(class == "", "Squamata", class))
 
 nrow(data_tetrapods_filter) # 24.402.844
@@ -347,8 +352,9 @@ table(data_tetrapods_filtered$GlobalNorth)
 
 ## Human observation non-birds ----
 rm(list = setdiff(ls(), c("local_directory",
-                          "validar_dados",
-                          "comparative_plot",
+                          "atribuir_geografia",
+                          "marcar",
+                          "processar_ordem",
                           "data_tetrapods_filtered",
                           "geographic_shape_data_adj"))); gc()
 
@@ -402,21 +408,21 @@ data_occurences_hononbirds <- data_occurences_hononbirds %>%
   mutate(ID = 1:nrow(data_occurences_hononbirds))
 any(duplicated(data_occurences_hononbirds$ID))
 
+# Without spatial id
 data_occurences_geo <- st_join(data_occurences_hononbirds,
                                geographic_shape_data_adj, 
                                join = st_intersects,
                                left = TRUE) %>% 
-  filter(!is.na(name_en)) %>% # 'col' filtra NA's (buracos) nos poligonos
+  filter(!is.na(name_en)) %>% 
   group_by(ID) %>%
-  filter(n() == 1) %>% # remove registros em polígonos sobrepostos
+  filter(n() == 1) %>%
   ungroup()
 
 any(duplicated(data_occurences_geo$ID))
-# occ registros fora do poligonos (oceano, areas em litigio, etc)
 nrow(data_occurences_geo)
 table(data_occurences_geo$GlobalNorth)
 
-# sem data
+# Without data
 data_occurences_geo_date <- data_occurences_geo %>%
   drop_na(year) 
 
@@ -456,8 +462,7 @@ data_nonbirds_filter_spatialpoints <- data_nonbirds_clean[
 nrow(data_nonbirds_filter_spatialpoints) # 35.209.287 Global species occ
 table(data_nonbirds_filter_spatialpoints$GlobalNorth)
 
-# filter coordinates uncertain > 100km
-# filter years from 1900
+# filter coordinates uncertain > 10km
 data_nonbirds_filtered <- data_nonbirds_filter_spatialpoints %>%
   filter(coordinateUncertaintyInMeters / 1000 <= 10 | 
            is.na(coordinateUncertaintyInMeters)) 
@@ -466,16 +471,42 @@ nrow(data_nonbirds_filtered) # 35058217 Global species occ
 table(data_nonbirds_filtered$GlobalNorth)
 
 ## Human observation birds ----
-nivel <- "order"  # process "order" ou "family"
+#
+# Data are large and were split into multiple .parquet files; 
+# Passeriformes records were further partitioned by family.
+#
+# nested_cols <- c("speciesKey", "class", "order", 
+#                 "family", "species", "gbifID",
+#                 "day", "month", "year",
+#                 "decimalLatitude", "decimalLongitude",
+#                 "coordinateUncertaintyInMeters", "occurrenceStatus",
+#                 "taxonRank", "countryCode", "eventDate")
+#
+#ebird_data <- arrow::open_delim_dataset(
+#  file.path(temp_dir, "0018107-251025141854904.csv"), 
+#  parse_options = csv_parse_options(
+#    delimiter = "\t", 
+#    newlines_in_values = TRUE),
+#  read_options = list(
+#    block_size = 1000000000L, 
+#    use_threads = TRUE)) %>%
+#  select(all_of(nested_cols))
+
+# create multiple .parquet files
+#ebird_data |> 
+#  group_by(order) |> 
+#  write_dataset(path = parquet_dir,
+#                format = "parquet")
+
+#tibble(
+#  arquivos = list.files(parquet_dir, recursive = TRUE),
+#  tamanho_MB = file.size(file.path(parquet_dir, arquivos)) / 1024^2
+#) %>% View()
+
+nivel <- "order"  # select whether to process 'order' or 'family'
 
 if (nivel == "order") {
   
-  dir_stats <- file.path(
-    local_directory,
-    "00_raw_data",
-    "clean_statistics",
-    if (nivel == "order") "por_ordem" else "por_familia"
-  )
   # Birds orders non-passeriformes
   parquet_dir <- file.path(local_directory, 
                            "00_raw_data",
@@ -508,24 +539,25 @@ if (nivel == "order") {
   stop("Nível taxonômico inválido. Escolha 'order' ou 'family'.")
 }
 
+# dir stats of .rds
+dir_stats <- file.path(
+  local_directory,
+  "01_data_cleaned",
+  "parquet_clean",
+  "clean_statistics",
+  if (nivel == "order") "por_ordem" else "por_familia"
+)
+
 # save clean .parquet files
 parquet_clean <- file.path(local_directory,
                            "01_data_cleaned",
                            "parquet_clean")
 
-# Obtain human observation data
-nested_cols <- c("speciesKey", "class", "order", 
-                 "family", "species", "gbifID",
-                 "day", "month", "year",
-                 "decimalLatitude", "decimalLongitude",
-                 "coordinateUncertaintyInMeters", "occurrenceStatus",
-                 "taxonRank", "countryCode", "eventDate")
-
 # shapes_adj, parquet_dir, parquet_clean, local_directory; sf_use_s2(FALSE)
 dir.create(dir_stats,     recursive = TRUE, showWarnings = FALSE)
 dir.create(parquet_clean, recursive = TRUE, showWarnings = FALSE)
 
-# Execução sequencial (para paralelo, use o rodar() das mensagens anteriores
+# Recap: the .rds file only exists if the Parquet file has already been written
 resultados <- vector("list", length(ordens_disponiveis))
 for (i in seq_along(ordens_disponiveis)) {
   cat(sprintf("[%d/%d] %s\n", i, length(ordens_disponiveis), ordens_disponiveis[i]))
@@ -556,13 +588,17 @@ print(estatisticas)
 # Salvar estatísticas e perdas
 write.table(
   estatisticas,
-  file.path(local_directory, "00_raw_data",
+  file.path(local_directory,
+            "01_data_cleaned",
+            "parquet_clean",
             "clean_statistics",
             paste0("clean_statistics_", nivel, ".txt"))
 )
 write.table(
   perdas,
-  file.path(local_directory, "00_raw_data",
+  file.path(local_directory,
+            "01_data_cleaned",
+            "parquet_clean",
             "clean_statistics",
             paste0("clean_losses_", nivel, "_step_region.txt"))
 )
@@ -652,13 +688,12 @@ data_occurences_geo <- st_join(data_occurences_biotime,
                                geographic_shape_data_adj, 
                                join = st_intersects,
                                left = TRUE) %>% 
-  filter(!is.na(name_en)) %>% # 'col' filtra NA's (buracos) nos poligonos
+  filter(!is.na(name_en)) %>% 
   group_by(ID) %>%
-  filter(n() == 1) %>% # remove registros em polígonos sobrepostos
+  filter(n() == 1) %>% 
   ungroup()
 
 any(duplicated(data_occurences_geo$ID))
-# 907.533 occ registros fora do poligonos (oceano, areas em litigio, etc)
 nrow(data_occurences_biotime)-nrow(data_occurences_geo) 
 nrow(data_occurences_geo)
 table(data_occurences_geo$GlobalNorth)
@@ -767,13 +802,12 @@ data_occurences_geo <- st_join(data_occurences_splink,
                                geographic_shape_data_adj, 
                                join = st_intersects,
                                left = TRUE) %>% 
-  filter(!is.na(name_en)) %>% # 'col' filtra NA's (buracos) nos poligonos
+  filter(!is.na(name_en)) %>% 
   group_by(ID) %>%
-  filter(n() == 1) %>% # remove registros em polígonos sobrepostos
+  filter(n() == 1) %>% 
   ungroup()
 
 any(duplicated(data_occurences_geo$ID))
-# occ registros fora do poligonos (oceano, areas em litigio, etc)
 nrow(data_occurences_splink)-nrow(data_occurences_geo) 
 nrow(data_occurences_geo)
 table(data_occurences_geo$GlobalNorth)
@@ -831,143 +865,16 @@ save(
     "datasets_filtered.RData")
 )
 
-# CHECK DATASETS ----
-dados_perdidos <- read.csv2("Figures/cleaned_data.csv") # atualizar manualmente
-totais_bases <- c(GBIF = nrow(data_tetrapods_clean),
-                  BioTime = nrow(data_biotime_clean),
-                  Specieslink = nrow(data_splink_clean))
-
-dados_long <- dados_perdidos %>%
-  pivot_longer(cols = c(GBIF, BioTime, Specieslink),
-               names_to = "font", 
-               values_to = "value") #%>%
-               #select(-Total) %>%
-               #filter(Filter != "Total temporal filter" & Filter != "Total spatial filter" )
-
-# Calcular a porcentagem dentro de cada "Filter"
-dados_long <- dados_long %>%
-  mutate(total_specie = case_when(
-    font == "GBIF" ~ totais_bases["GBIF"],
-    font == "BioTime" ~ totais_bases["BioTime"],
-    font == "Specieslink" ~ totais_bases["Specieslink"]
-  )) %>%
-  mutate(percentage = (value / total_specie) * 100)
-
-plot <- ggplot(dados_long, aes(x = font, y = percentage, fill = Filter)) +
-  geom_bar(stat = "identity", position = "fill") +  # Barras empilhadas normalizadas para 100%
-  #facet_wrap(~ specie) +  # Um gráfico para cada base
-  labs(y = "Proportion of occurrences removed (%)", x = "", fill = "Filtro") +
-  scale_y_continuous(labels = scales::percent_format(scale = 1)) +  # Eixo Y em porcentagem
-  coord_flip() +  # Inverte os eixos
-  theme_minimal() +
-  theme(
-    text = element_text(size = 16),  # Aumenta o tamanho do texto
-    axis.title.x = element_text(size = 16),  # Título do eixo X
-    axis.title.y = element_text(size = 16),  # Título do eixo Y
-    legend.title = element_blank(),  # Título da legenda
-    legend.text = element_text(size = 12),  # Texto da legenda
-    legend.justification = c(0.9, 1),  # Justifica a legenda em relação ao seu centro
-    legend.position = "bottom",  # Posiciona a legenda em cima
-    legend.direction = "horizontal"  # Direção horizontal
-  ) +
-  guides(fill = guide_legend(ncol = 5))
-
-plot
-ggsave("Figures/filter_per_data.png", plot, width = 12, height = 6, dpi = 300)
-
-#--- GBIF
-nrow(data_tetrapods_clean) - nrow(data_tetrapods_filtered)
-# check difference per species
-length(unique(data_tetrapods_clean$speciesKey)) # 9786 spp
-length(unique(data_tetrapods_filtered$speciesKey)) # 7897 spp
-
-# check difference per class
-count_species_clean <- data_tetrapods_clean %>%
-  filter(year >1899) %>%
-  distinct(speciesKey, .keep_all = TRUE)
-table(count_species_clean$class)
-
-count_species_filter <- data_tetrapods_filtered %>%
-  distinct(speciesKey, .keep_all = TRUE)
-table(count_species_filter$class)
-
-# Comparative plots of original vs filtered GBIF datasets
-gbif_plot <- comparative_plot(
-  data_tetrapods_clean %>% filter(year >1899),
-  data_tetrapods_filtered,
-  year_column = "year",
-  title = "GBIF dataset")
-
-# coordenadas ou anos com zero e/ou NA
-# algum ano < 1900 ou > 2024
-validar_dados(data_tetrapods_filtered)
-
-#data_tetrapods_filtered %>% 
-#  summarise(missing_lat = sum(is.na(decimalLatitude)),
-#            missing_long = sum(is.na(decimalLongitude)), 
-#            missing_year = sum(is.na(year))) # without missing data
-
-#--- BIOTIME
-# quantos registros foram perdidos depois do coordscleaned
-nrow(data_biotime_clean) - nrow(data_biotime_filtered)
-
-# check difference per class
-count_species_clean <- data_biotime_clean %>%
-  #filter(year > 1899) %>%
-  distinct(speciesKey, .keep_all = TRUE)
-table(count_species_clean$class)
-
-count_species_filter <- data_biotime_filtered %>%
-  distinct(speciesKey, .keep_all = TRUE)
-table(count_species_filter$class)
-
-biotime_plot <- comparative_plot(data_biotime_clean,
-                 data_biotime_filtered,
-                 "year", title = "BioTime dataset")
-
-# coordenadas ou anos com zero e/ou NA
-# algum ano < 1900 ou > 2024
-validar_dados(data_biotime_filtered)
-
-#--- SPECIESLINK
-nrow(data_splink_clean) - nrow(data_splink_filtered) # 303.476
-# the wrongs years difficult to visualize temporal series tendence
-data_splink_clean_compare <- data_splink_clean %>%
-  filter(year >1899 & year < 2025)
-
-# check difference per class
-count_species_clean <- data_splink_clean %>%
-  distinct(speciesKey, .keep_all = TRUE)
-nrow(count_species_clean) #7330
-
-count_species_filter <- data_splink_filtered %>%
-  distinct(speciesKey, .keep_all = TRUE)
-nrow(count_species_filter) #6171
-
-splink_plot <- comparative_plot(
-  data_splink_clean_compare,
-  data_splink_filtered,
-  "year", 
-  title = "splink dataset")
-
-# coordenadas ou anos com zero e/ou NA
-# algum ano < 1900 ou > 2024
-validar_dados(data_splink_filtered)
-
-# plot grid
-cowplot::plot_grid(gbif_plot, biotime_plot, splink_plot, align = "v", ncol=1)
-ggsave("Figures/comparing_filter_data.tiff", dpi = 300, units = "in")
-
 # UNIFYING OCCURENCES DATA ---- 
 # load data
 rm(list = setdiff(ls(), c("local_directory"))); gc()
 
-# Eu tenho que remover todas as chaves que NAO estao em 
-# `species_list_tetrapods_filter` , porque aqui sao todas as especies 
-# encontradas no TetrapodTraits, e podem ter saido no data_tetrapods_filtered
-# por exemplo, Cristidorsa otai esta no TetrapodTraits, mas todas as ocorrencias
-# estao sem data nas observaçoes feitas por especialistas, mas tem dados nas occ
-# de observacoes humanas com data. Ou seja, essa chave deve ser mantida. 
+# Retain only keys present in `species_list_tetrapods_filter`, which contains
+# all species recorded in TetrapodTraits. Some species may have been excluded
+# from `data_tetrapods_filtered` because their expert observations lack dates,
+# even though dated records exist from human observations. For example,
+# Cristidorsa otai must be retained because it has dated human observation
+# records.
 load(file.path(
   local_directory,
   "00_raw_data",
@@ -995,18 +902,18 @@ load(file.path(
   "datasets_filtered.RData")
 )
 
-# BioTIME chaves perdidas
+# BioTIME lost keys
 chaves_perdidas_biotime <- setdiff(
   data_biotime_filtered$speciesKey,
   species_list_tetrapods_filter$speciesKey
 ) 
-# Mantenha APENAS as speciesKeys que NÃO estão na lista de perdidas
+# Retain ONLY speciesKeys that are NOT included in the lost species list.
 data_biotime_filtered <- data_biotime_filtered %>% 
   filter(!(speciesKey %in% chaves_perdidas_biotime)) %>%
   mutate(day = as.integer(day),
          month = as.integer(month))
 
-# speciesLink chaves perdidas
+# speciesLink lost keys
 chaves_perdidas_splink <- setdiff(
   data_splink_filtered$speciesKey,
   species_list_tetrapods_filter$speciesKey
@@ -1017,11 +924,12 @@ data_splink_filtered <- data_splink_filtered %>%
   mutate(day = as.integer(day),
          month = as.integer(month))
 
-# Non-Birds HumanObsevation chaves perdidas
+# Non-Birds HumanObsevation lost keys
 chaves_perdidas_nonbirdsHO <- setdiff(
   data_nonbirds_filtered$speciesKey,
   species_list_tetrapods_filter$speciesKey
-) # nenhuma chave eh perdida, pq todas foram baixadas baseado no speciesKey 
+) 
+# No speciesKeys are missing, as all records were downloaded based on speciesKey. 
 
 data_nonbirds_filtered <- data_nonbirds_filtered %>% 
   #filter(!(speciesKey %in% chaves_perdidas_nonbirdsHO)) %>%
@@ -1029,11 +937,12 @@ data_nonbirds_filtered <- data_nonbirds_filtered %>%
          month = as.integer(month)) %>%
   mutate(origin_of_data = "HUMAN_OBSERVATION")
 
-# Birds HumanObsevation chaves perdidas
+# Birds HumanObsevation lost keys
 chaves_perdidas_birdsHO <- setdiff(
   data_birds$speciesKey,
   species_list_tetrapods_filter$speciesKey
-) # nenhuma chave eh perdida, pq todas foram baixadas baseado no speciesKey
+) 
+# No speciesKeys are missing, as all records were downloaded based on speciesKey.
 
 data_birds <- data_birds %>% 
   #filter(!(speciesKey %in% chaves_perdidas_birdsHO)) %>%
@@ -1057,15 +966,15 @@ nested_cols <- c("speciesKey", "class", "order", "family", "species",
 data_occurences_precleaned <- data_occurences_precleaned %>% 
   select(all_of(nested_cols))
 
-write_parquet(data_occurences_precleaned,  # dados limpos e integrados
+write_parquet(data_occurences_precleaned,  # Cleaned and integrated data
               sink = file.path(
                 local_directory,
                 "01_data_cleaned",
                 "data_occurences_filtered.parquet"))
 
-# Criar dataframe combinando todos os vetores
-# TODO da para usar para baixar o registro de occ para mais especies com essas 
-# chaves, e buscar + poligonos se necessarios. 
+# Create a dataframe combining all vectors.
+# TODO: Use these keys to download occurrence records for additional species
+# and retrieve more polygons if needed.
 chaves_perdidas_combinadas <- bind_rows(
   data.frame(speciesKey = chaves_perdidas_biotime, Database = "Biotime"),
   data.frame(speciesKey = chaves_perdidas_splink, Database = "splink"),
@@ -1074,9 +983,9 @@ chaves_perdidas_combinadas <- bind_rows(
 ) %>%
   arrange(speciesKey, Database)
 
-# 852 chaves ao todo perdidas, estao no BioTime e/ou speciesLink, mas nao
-# no TetrapodTraits. Essas podemos conferir para ver se entram ou nao em nossos
-# dados.
+# A total of 852 keys are missing from TetrapodTraits but are present in
+# BioTime and/or speciesLink. These records can be checked to determine
+# whether they should be included in our dataset.
 chaves_perdidas_combinadas %>% 
   distinct(speciesKey) %>% nrow() 
 
@@ -1138,69 +1047,46 @@ load(file = file.path(
   "00_raw_data",
   "tetrapods_polygons_key.RData")) # From TetrapodTraits
 
-# Original 
-# deixar apenas as especies que tem poligonos
-data_wallacean_knownledge_sa <- data_occurences_precleaned_duplicate %>%
-  filter(speciesKey %in% tetrapods_polygons_key$speciesKey)
-# deixar apenas os poligonos que tem dados de distribuicao
-data_tetrapods_sa <- tetrapods_polygons_key %>% 
-  filter(speciesKey %in% data_occurences_precleaned_duplicate$speciesKey) 
-
-length(unique(data_wallacean_knownledge_sa$speciesKey)) # 28455
-length(unique(data_tetrapods_sa$speciesKey)) 
-
-# run cc_iucn()
-# terra::vect(data_tetrapods_sa) se funcionar vai dar certo
-data_tetrapods_sa_transf <- st_cast(data_tetrapods_sa,
-                                    "MULTIPOLYGON")
-# Verificar se a conversão funcionou
-geometry_types <- st_geometry_type(data_tetrapods_sa_transf)
-table(geometry_types)
-
-# Sensitivity shapefiles expanded 110km and 220km
+# The 110 km and 220 km scenarios represent expansions of each species' original range,
+# aiming to capture occurrences that may fall outside the mapped polygons due to
+# spatial limitations in the original range boundaries.
 load(file = file.path(
   local_directory,
   "00_raw_data",
   "tetrapods_polygons_sensitivity.RData")
-  )
-# 110km expansion
-tetrapods_polygons_key_110 <- tetrapods_polygons_sensitivity %>%
-  filter(scenario == "buffer_110km")
-data_wallacean_knownledge_110 <- data_occurences_precleaned_duplicate %>%
-  filter(speciesKey %in% tetrapods_polygons_key_110$speciesKey)
-# deixar apenas os poligonos que tem dados de distribuicao
-data_tetrapods_110 <- tetrapods_polygons_key_110 %>% 
+)
+
+cenario <- "110km" # "original", "110km", "220km"
+# shapefile
+if (cenario == "base") {
+  data_tetrapods_sa <- tetrapods_polygons_key
+} else if (cenario == "110km") {
+  data_tetrapods_sa <- tetrapods_polygons_sensitivity %>%
+    filter(scenario == "buffer_110km")
+} else if (cenario == "220km") {
+  data_tetrapods_sa <- tetrapods_polygons_sensitivity %>%
+    filter(scenario == "buffer_220km")
+} else {
+  stop("Cenário inválido. Escolha: original, 110km ou 220km.")
+}
+
+# occurence filter
+data_wallacean_knownledge_sa <- data_occurences_precleaned_duplicate %>%
+  filter(speciesKey %in% data_tetrapods_sa$speciesKey)
+# polygons filter
+data_tetrapods_sa <- data_tetrapods_sa %>%
   filter(speciesKey %in% data_occurences_precleaned_duplicate$speciesKey)
 
-length(unique(data_wallacean_knownledge_110$speciesKey)) # 28440 spp
-length(unique(data_tetrapods_110$speciesKey)) 
+# Number of species
+length(unique(data_wallacean_knownledge_sa$speciesKey))
+length(unique(data_tetrapods_sa$speciesKey))
 
-# run cc_iucn()
-# terra::vect(data_tetrapods_sa) se funcionar vai dar certo
-data_tetrapods_110_transf <- st_cast(data_tetrapods_110,
-                                    "MULTIPOLYGON")
-# Verificar se a conversão funcionou
-geometry_types <- st_geometry_type(data_tetrapods_110_transf)
-table(geometry_types)
-
-# 220km expansion
-tetrapods_polygons_key_220 <- tetrapods_polygons_sensitivity %>%
-  filter(scenario == "buffer_220km")
-data_wallacean_knownledge_220 <- data_occurences_precleaned_duplicate %>%
-  filter(speciesKey %in% tetrapods_polygons_key_220$speciesKey)
-# deixar apenas os poligonos que tem dados de distribuicao
-data_tetrapods_220 <- tetrapods_polygons_key_220 %>% 
-  filter(speciesKey %in% data_occurences_precleaned_duplicate$speciesKey)
-
-length(unique(data_wallacean_knownledge_220$speciesKey)) # 28440 spp
-length(unique(data_tetrapods_220$speciesKey)) 
-
-# run cc_iucn()
-# terra::vect(data_tetrapods_sa) se funcionar vai dar certo
-data_tetrapods_220_transf <- st_cast(data_tetrapods_220,
-                                     "MULTIPOLYGON")
-# Verificar se a conversão funcionou
-geometry_types <- st_geometry_type(data_tetrapods_110_transf)
+# geometry
+data_tetrapods_sa_transf <- st_cast(
+  data_tetrapods_sa,
+  "MULTIPOLYGON"
+)
+geometry_types <- st_geometry_type(data_tetrapods_sa_transf)
 table(geometry_types)
 
 # check if list_occurences_clean is empty before run
@@ -1209,16 +1095,16 @@ list_occurences_clean <- data.frame()
 species_keys_with_errors <- c()
 
 for (species_key in unique_species_keys) {
-  # Usar tryCatch para capturar erros
+  # Use tryCatch to catch errors
   tryCatch({
-    # Selecionar o polígono correspondente à espécie
+    # Select the polygon corresponding to the species
     especie_poligono <- data_tetrapods_sa_transf %>%
       filter(speciesKey == species_key)
     
     subset_data <- data_wallacean_knownledge_sa %>%
       filter(speciesKey == species_key)
     
-    # Aplicar a função cc_iucn
+    # Apply the cc_iucn function
     range_flags <- cc_iucn(
       x = subset_data,
       range = especie_poligono,
@@ -1228,20 +1114,20 @@ for (species_key in unique_species_keys) {
       value = "flagged"
     )
     
-    # Filtrar os dados usando os valores retornados por range_flags
+    # Filter the data using the values returned by range_flags
     subset_data_filtered <- subset_data[range_flags == TRUE, ]
     
-    # Adicionar os dados filtrados à lista final
+    # Add the filtered data to the final list
     list_occurences_clean <- rbind(list_occurences_clean, subset_data_filtered)
     
   }, error = function(e) {
-    # Se ocorrer um erro, salvar o species_key no vetor
+    # If an error occurs, save the species_key to the vector
     species_keys_with_errors <<- c(species_keys_with_errors, species_key)
-    # Opcional: Printar o erro ou a species_key para depuração
+    # Optional: Print the error or the species_key for debugging
     message(paste("Erro no speciesKey:", species_key, "-", e$message))
   })
 }
-# Verificar speciesKey que tiveram erros
+# Check for speciesKeys that encountered errors
 print("SpeciesKey com erro:")
 print(species_keys_with_errors)
 #end_time <- Sys.time()
@@ -1250,9 +1136,6 @@ print(species_keys_with_errors)
 #data_tetrapods_sa_transf <- data_tetrapods_sa %>%
 #    filter(speciesKey %in% species_keys_with_errors)
 
-# 405.215 ocorrencias usando dados espaciais do  (7893 spp)
-# 269.333 ocorrencias usando poligonos de especialistas (5748 spp)
-# 263.628 ocorrencias com poligonos e filtro temporal
 nrow(list_occurences_clean) # 124068850
 nrow(data_wallacean_knownledge_sa)-nrow(list_occurences_clean) # 14926904 removed
 length(unique(list_occurences_clean$speciesKey)) # 27402 spp 
@@ -1262,42 +1145,23 @@ length(
       unique(list_occurences_clean$speciesKey)) # 1053 spp removed
 
 table(list_occurences_clean$GlobalNorth)
-# Quantas espécies para cada grupo?
 list_species <- list_occurences_clean %>%
  distinct(speciesKey, .keep_all=TRUE)
 table(list_species$class)
-# Amphibia  4229                         
-# Aves      6617                                                   
-# Crocodylia 17
-# Mammalia 4139
-# Sphenodontia 1
-# Squamata 6787
-# Testudines 257
 
-write_parquet(list_occurences_clean,  # dados limpos e integrados
-              sink = file.path(
-                local_directory, 
-                "01_data_cleaned",
-                "list_occurences_clean.parquet"))
-
-# Compare
-plot_sujo <- ggplot() +
-  coord_fixed() +
-  borders("world", colour = "gray50", fill = "gray50") +
-  geom_point(data = data_wallacean_knownledge_sa,
-             aes(x = decimalLongitude, y = decimalLatitude),
-             colour = "darkred",
-             size = 0.5) +
-  theme_bw()
-
-plot_clean <- ggplot() +
-  coord_fixed() +
-  borders("world", colour = "gray50", fill = "gray50") +
-  geom_point(data = list_occurences_clean,
-             aes(x = decimalLongitude, y = decimalLatitude),
-             colour = "darkred",
-             size = 0.5) +
-  theme_bw()
+# cleaned and integrated data
+write_parquet(
+  list_occurences_clean,  
+  sink = file.path(
+    local_directory,
+    "01_data_cleaned",
+    paste0(
+      "list_occurences_clean",
+      if (cenario != "base") paste0("_", cenario),
+      ".parquet"
+    )
+  )
+)
 
 # NESTED DATAFRAME WITH BIOLOGICAL TRAITS ----
 rm(list = setdiff(ls(), c("local_directory"))); gc()
