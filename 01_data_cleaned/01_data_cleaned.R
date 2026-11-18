@@ -1174,42 +1174,38 @@ data_occurences_units <- open_dataset(
     "list_occurences_clean.parquet")
 ) %>% collect()
 
-# To access sensitivity analysis
-#load(file = file.path(
-#  local_directory,
-#  "01_data_cleaned",
-#  "data_occurences_geolocation_220.RData")
-#)
-
 load(file.path(
   local_directory,
   "00_raw_data",
   "trait_data.RData")
 ) # match taxonomic and trait information with speciesKey
 
-# Algumas especies presentes no TetrapodTraits sao consideradas sinonimos,
-# entao precisamos manter apenas as espécies mais antigas, e lidar com os atributos delas
+# Some species listed in TetrapodTraits are considered synonyms.
+# Therefore, we need to retain only the oldest valid species names
+# and handle their associated traits accordingly.
 #trait_data %>%
 #  arrange(speciesKey, YearOfDescription) %>%
 # filter(duplicated(speciesKey) | duplicated(speciesKey, fromLast = TRUE)) %>%
 #  View()
 tetrapods_key_species <- trait_data %>%
-  # Especies com o mesmo speciesKey fico com a mais antiga
+  # For species sharing the same speciesKey, retain the oldest species name.
   arrange(speciesKey, YearOfDescription) %>%
   select("speciesKey","scientificName","Class", "Order","Family", 
          "YearOfDescription","BodyLength_mm","ImputedLength","BodyMass_g",
-         "ImputedMass","Diu","Noc","Nocturnality", "Fos", "Ter", "Aqu", "Arb", "Aer",
-         "ImputedHabitat","Verticality","ImputedActTime","ImputedMajorHabitat","RangeSize",
-         "HumanDensity", "AssessedStatus", "Latitude", "Elevation", "ETA50K", "AnnuMeanTemp") %>%
+         "ImputedMass","Diu","Noc","Nocturnality", 
+         "Fos", "Ter", "Aqu", "Arb", "Aer",
+         "ImputedHabitat","Verticality","ImputedActTime","ImputedMajorHabitat",
+         "RangeSize", "AssessedStatus", "Latitude", "Elevation", "ETA50K",
+         "AnnuMeanTemp") %>%
   distinct(speciesKey, .keep_all = TRUE) # 31594 spp
 
-anyDuplicated(tetrapods_key_species$speciesKey) # ok
+anyDuplicated(tetrapods_key_species$speciesKey)
 
 data_tetrapods_nested <- data_occurences_units %>%
-  group_by(speciesKey) %>%  # Agrupa pelo speciesKey
+  group_by(speciesKey) %>%
   nest() %>%
   rename(event_table = data)
-anyDuplicated(data_tetrapods_nested$speciesKey) # ok
+anyDuplicated(data_tetrapods_nested$speciesKey) 
 
 data_wallacean_nested <- left_join(
   data_tetrapods_nested,
@@ -1220,9 +1216,8 @@ data_wallacean_nested <- left_join(
   arrange(Class, Order, scientificName)
 
 # check data
-table(data_wallacean_nested$Class)
-
-anyDuplicated(data_wallacean_nested$speciesKey)
+length(keys_with_occ) # 26678 species
+nrow(data_wallacean_unnested) # 122808820 rows
 
 # unnest data
 data_wallacean_unnested <- data_wallacean_nested %>%
@@ -1276,37 +1271,44 @@ load(file.path(
 tetrapods_key_species <- trait_data %>%
   arrange(speciesKey, YearOfDescription) %>%
   dplyr::select("speciesKey","scientificName","Class", "Order","Family", 
-         "YearOfDescription","BodyLength_mm","ImputedLength","BodyMass_g",
-         "ImputedMass","Diu","Noc","Nocturnality", "Fos", "Ter", "Aqu", "Arb", "Aer",
-         "ImputedHabitat","Verticality","MajorHabitatSum","ImputedMajorHabitat","RangeSize",
-         "HumanDensity", "AssessedStatus", "Latitude", "Elevation", "ETA50K", "AnnuMeanTemp") %>%
+                "YearOfDescription","BodyLength_mm","ImputedLength","BodyMass_g",
+                "ImputedMass","Diu","Noc","Nocturnality",
+                "Fos", "Ter", "Aqu", "Arb", "Aer",
+                "ImputedHabitat","Verticality","MajorHabitatSum","ImputedMajorHabitat",
+                "RangeSize", "AssessedStatus", "Latitude", "Elevation", "ETA50K", 
+                "AnnuMeanTemp") %>%
   distinct(speciesKey, .keep_all = TRUE) 
 
-# pegando todas as chaves que tem nos dados baixados e filtrados pelos poligonos
+# Extracting all keys from the downloaded data filtered 
+# by the distribution polygons
 keys_with_occ <- data_wallacean_unnested %>%
   dplyr::select(speciesKey) %>%
   distinct() %>%
   pull()
-length(keys_with_occ) # 27.395 especies com occ filtradas 
+length(keys_with_occ) # 26,678 species with filtered occurrence records
 
-# pegando a chave das especies que tem poligono mas nao estao nas nossas ocorrencias
-# aqui eu to pegando todas as especies que nao achei ocorrencia, 
-# ou pq sairam devido as ocorrencias cairem fora do poligono de especialista
-keys_without_occ <- tetrapods_polygons_key %>% # 31583 com poligono
+# Extracting species keys for taxa with distribution polygons but no occurrence records.
+# This includes all species for which no occurrences were found in our dataset,
+# either because no records were available or because all records fell outside
+# the expert-derived distribution polygons.
+keys_without_occ <- tetrapods_polygons_key %>% # 31583 sp with polygons
   filter(!speciesKey %in% keys_with_occ) %>%
   st_drop_geometry() %>%
-  # Pegando só as chaves speciesKey delas
+  # only specieskey
   select(speciesKey) %>%
   distinct() %>%
   pull()
-# 4188 especies com poligonos mas nao estao nos nossos dados
-length(keys_without_occ) 
 
-# Tem occ perdidas por mismatch espacial?
-# as especies que tiverem em 'lost_occurences' 
-# sao as especies que tem poligono, recuperamos ocorrencias, mas foram excluidas
-# porque existe um mismatch entre as duas fontes de dados. O erro pode estar
-# tanto nos pontos, quanto nos poligonos, mudanças taxonômicas entre as bases, etc
+# Species with distribution polygons but no retained occurrence records,
+# including those with spatial mismatches.
+length(keys_without_occ) # 4,905
+
+# Are any occurrences lost due to spatial mismatches?
+# Species listed in 'lost_occurrences' have distribution polygons and occurrence
+# records were retrieved, but these records were excluded because they did not
+# spatially overlap with the expert-derived polygons. Potential causes include
+# errors in occurrence coordinates or distribution polygons, as well as
+# taxonomic discrepancies between data sources.
 lost_occurences <- data_occurences_precleaned %>%
   filter(speciesKey %in% keys_without_occ) %>%
   select(speciesKey) %>%
@@ -1314,93 +1316,126 @@ lost_occurences <- data_occurences_precleaned %>%
   collect() %>%
   pull()
 length(lost_occurences)
-# 1064 perdemos pq os pontos de ocorrencia cairam todos fora dos poligonos
-# para essas especies nao podemos considerar no completeness pq tem dados delas
-# no GBIF, mas por algum motivo, as ocorrencias delas tem mismatch espacial com
-# os poligonos. 
+# 1,095 species were excluded because all their occurrence records fell outside
+# the distribution polygons. These species should not be considered in the
+# completeness analysis as data are available for them in GBIF, but their
+# occurrence records show a spatial mismatch with the expert-derived polygons.
+
+# Species with distribution polygons and GBIF occurrence records, but all
+# occurrences were excluded due to spatial mismatches with the polygons.
 count_loss_class <- left_join(data.frame(speciesKey = lost_occurences),
                               tetrapods_key_species, by = "speciesKey")
 table(count_loss_class$Class)
-# Quem sao as 3124 especies que temos poligono, mas nao temos ocorrencia
+
+# Species with distribution polygons but no occurrence records in our dataset,
+# excluding those already identified as spatial mismatches.
 count_withoutocc_class <- left_join(
   data.frame(speciesKey = setdiff(keys_without_occ, lost_occurences)),
   tetrapods_key_species, by = "speciesKey")
 table(count_withoutocc_class$Class)
 
+# If TRUE, all species with distribution polygons but no retained occurrences
+# are accounted for across the two groups: species with spatial mismatches
+# and species with no occurrence records.
+nrow(count_withoutocc_class) + nrow(count_loss_class) == length(keys_without_occ)
+
+###
+# Retain species with occurrence records that do not show spatial mismatches
+# and merge multiple distribution polygons belonging to the same species.
 tetrapods_polygons_completeness <- tetrapods_polygons_key %>%
   filter(!speciesKey %in% lost_occurences) %>% 
   group_by(speciesKey) %>% 
   summarise(geometry = st_union(geometry))
 
-# Montar a lista
+# Check whether both spatial datasets use the same coordinate reference system.
 st_crs(tetrapods_polygons_completeness) == st_crs(geographic_shape_data)
 
-# Obter a area total de cada unidade administrativa
+# Calculate the total area of each administrative unit.
 admin_units_sf <- geographic_shape_data %>%
   mutate(area_total = st_area(geometry))
 
-# Interseccao das especies com as unidades administrativas
+# Perform a spatial intersection between species distribution polygons
+# and administrative units to identify the areas occupied by each species.
 species_admin_intersect <- st_intersection(
   tetrapods_polygons_completeness %>% select(speciesKey, geometry),
   admin_units_sf %>% select(name_en, area_total, geometry)
 ) %>%
+  # Calculate the area of each species' distribution within each unit
+  # and its percentage relative to the total area of that unit.
   mutate(
     area_species_in_unit = st_area(geometry),
     cover_percent = as.numeric(area_species_in_unit / area_total * 100)) %>%
-  st_set_geometry(NULL)  %>%
-  # adicionando dados das especies
+  st_set_geometry(NULL) %>%
+  # Add species taxonomic information.
   left_join(tetrapods_key_species %>%
               select("speciesKey",
                      "scientificName",
-                     "Class", "Order","Family"), by = "speciesKey") 
+                     "Class", "Order", "Family"), 
+            by = "speciesKey")
 
-# Aqui estamos gerando algumas listas de ocorrencias esperadas (poligonos) e
-# listas de ocorrencias observadas (pontos de ocorrencia). Essas listas
-# serao usadas para calcular o completeness usando diferentes 'cortes' para
-# testar a robustez dos nossos dados.
-
-# lista de todas ocorrencias observadas (pontos de ocorrencia)
-# lista de todas as ocorrencias dos poligonos possiveis (algumas spp tem no darwin core team, mas nao tem ocorrencia)
-# lista de especies por und adm 
-# lista de especies que tem occ&poligono nest()
-# lista de especies com cobertura > 1% na und adm.
-# lista de especies com cobertura > 0.5% na und adm
-# lista de especies com cobertura > 0.1% na und adm
-
-# Todas as ocorrencias observadas por unidade administrativa
+# Create a nested dataset containing all observed species in
+# each administrative unit.
 occ_nested <- data_wallacean_unnested %>%
+  # Retain species keys and their corresponding administrative units.
   dplyr::select(speciesKey, name_en) %>%
+  # Remove duplicate species–administrative unit combinations.
   distinct() %>%
+  # Group records by administrative unit.
   group_by(name_en) %>%
+  # Nest species records into a separate data frame for each unit.
   nest() %>%
   rename(observed_df = data) %>%
+  # Calculate observed species richness in each administrative unit.
   mutate(observerd_rich = map_int(observed_df, ~ n_distinct(.x$speciesKey)))
 
-# Todas as especies que tem poligonos mas podem nao ter ocorrencia
+## Administrative-unit-level completeness ----
+# Here, we generate nested datasets of expected species (distribution polygons)
+# and observed species (occurrence records). These datasets will be used to
+# calculate completeness under different spatial coverage thresholds and assess
+# the robustness of our results.
+
+# List of all observed occurrences (occurrence records).
+# List of all potential occurrences based on distribution polygons.
+# List of species with distribution polygons for each administrative unit.
+# List of species with both occurrence records and distribution polygons.
+# List of species with distribution polygons covering >1% of each administrative unit.
+# List of species with distribution polygons covering >0.5% of each administrative unit.
+# List of species with distribution polygons covering >0.1% of each administrative unit.
+
+# Include all species with distribution polygons, regardless of whether
+# occurrence records are available for them in our dataset.
 species_admin_all <- species_admin_intersect %>%
   group_by(name_en) %>%
   nest() %>%
   rename(all_species = data) %>%
+  # Calculate expected species richness in each administrative unit.
   mutate(expected_rich = map_int(all_species, ~ n_distinct(.x$speciesKey))) %>%
+  # Add observed species records for each administrative unit.
   left_join(occ_nested, by = "name_en") %>%
+  # Match expected and observed species within each administrative unit.
+  # Species without occurrence records are retained and marked as unobserved.
   mutate(
     joined_df = map2(
       all_species,
       observed_df,
       ~ left_join(
         .x, 
-        if (is.null(.y)) tibble(speciesKey = integer(), observed = logical()) else .y %>% mutate(observed = TRUE),
+        if (is.null(.y)) tibble(
+          speciesKey = integer(), observed = logical()) else .y %>%
+          mutate(observed = TRUE),
         by = "speciesKey"
       ) %>%
         mutate(observed = if_else(is.na(observed), FALSE, TRUE))
     )
   ) %>%
+  # Calculate the number of observed species among all expected species
+  # and estimate completeness for each administrative unit.
   mutate(
     observed_rich_all = map_int(joined_df, ~ sum(.x$observed)),
     completeness_all  = observed_rich_all / expected_rich
   )
 
-# Corte de 1%
+# Cut 1%
 species_admin_1perc <- species_admin_intersect %>%
   filter(cover_percent >= 1) %>%
   group_by(name_en) %>%
@@ -1413,8 +1448,12 @@ species_admin_1perc <- species_admin_intersect %>%
       perc_1,
       observed_df,
       ~ left_join(
-        .x, 
-        if (is.null(.y)) tibble(speciesKey = integer(), observed = logical()) else .y %>% mutate(observed = TRUE),
+        .x,
+        if (is.null(.y)) {
+          tibble(speciesKey = integer(), observed = logical())
+        } else {
+          .y %>% mutate(observed = TRUE)
+        },
         by = "speciesKey"
       ) %>%
         mutate(observed = if_else(is.na(observed), FALSE, TRUE))
@@ -1422,24 +1461,28 @@ species_admin_1perc <- species_admin_intersect %>%
   ) %>%
   mutate(
     observed_rich_all = map_int(joined_df, ~ sum(.x$observed)),
-    completeness_all  = observed_rich_all / expected_rich
+    completeness_all = observed_rich_all / expected_rich
   )
 
-# Corte de 0.5%
+# Cut 0.5%
 species_admin_05perc <- species_admin_intersect %>%
   filter(cover_percent >= 0.5) %>%
   group_by(name_en) %>%
   nest() %>%
   rename(perc_05 = data) %>%
   mutate(expected_rich = map_int(perc_05, ~ n_distinct(.x$speciesKey))) %>%
-  left_join(occ_nested, by = "name_en")  %>%
+  left_join(occ_nested, by = "name_en") %>%
   mutate(
     joined_df = map2(
       perc_05,
       observed_df,
       ~ left_join(
-        .x, 
-        if (is.null(.y)) tibble(speciesKey = integer(), observed = logical()) else .y %>% mutate(observed = TRUE),
+        .x,
+        if (is.null(.y)) {
+          tibble(speciesKey = integer(), observed = logical())
+        } else {
+          .y %>% mutate(observed = TRUE)
+        },
         by = "speciesKey"
       ) %>%
         mutate(observed = if_else(is.na(observed), FALSE, TRUE))
@@ -1447,10 +1490,10 @@ species_admin_05perc <- species_admin_intersect %>%
   ) %>%
   mutate(
     observed_rich_all = map_int(joined_df, ~ sum(.x$observed)),
-    completeness_all  = observed_rich_all / expected_rich
+    completeness_all = observed_rich_all / expected_rich
   )
 
-# Corte de 0.1%
+# Cut 0.1%
 species_admin_01perc <- species_admin_intersect %>%
   filter(cover_percent >= 0.1) %>%
   group_by(name_en) %>%
@@ -1463,8 +1506,12 @@ species_admin_01perc <- species_admin_intersect %>%
       perc_01,
       observed_df,
       ~ left_join(
-        .x, 
-        if (is.null(.y)) tibble(speciesKey = integer(), observed = logical()) else .y %>% mutate(observed = TRUE),
+        .x,
+        if (is.null(.y)) {
+          tibble(speciesKey = integer(), observed = logical())
+        } else {
+          .y %>% mutate(observed = TRUE)
+        },
         by = "speciesKey"
       ) %>%
         mutate(observed = if_else(is.na(observed), FALSE, TRUE))
@@ -1472,10 +1519,10 @@ species_admin_01perc <- species_admin_intersect %>%
   ) %>%
   mutate(
     observed_rich_all = map_int(joined_df, ~ sum(.x$observed)),
-    completeness_all  = observed_rich_all / expected_rich
-  ) 
+    completeness_all = observed_rich_all / expected_rich
+  )
 
-# Apenas especies com ocorrencia e com poligonos
+# Only occurences with polygons
 species_admin_occ_polygons <- species_admin_intersect %>%
   filter(speciesKey %in% keys_with_occ) %>%
   group_by(name_en) %>%
@@ -1488,8 +1535,12 @@ species_admin_occ_polygons <- species_admin_intersect %>%
       occ_polygons,
       observed_df,
       ~ left_join(
-        .x, 
-        if (is.null(.y)) tibble(speciesKey = integer(), observed = logical()) else .y %>% mutate(observed = TRUE),
+        .x,
+        if (is.null(.y)) {
+          tibble(speciesKey = integer(), observed = logical())
+        } else {
+          .y %>% mutate(observed = TRUE)
+        },
         by = "speciesKey"
       ) %>%
         mutate(observed = if_else(is.na(observed), FALSE, TRUE))
@@ -1497,13 +1548,16 @@ species_admin_occ_polygons <- species_admin_intersect %>%
   ) %>%
   mutate(
     observed_rich_all = map_int(joined_df, ~ sum(.x$observed)),
-    completeness_all  = observed_rich_all / expected_rich
-  ) 
+    completeness_all = observed_rich_all / expected_rich
+  )
 
 species_admin_occ_polygons %>%
   filter(observed_rich_all != observerd_rich | is.na(observerd_rich))
 
-# Summarise statistics 
+# Completeness is calculated using only species shared between the observed
+# occurrences and the expected species set defined by distribution polygons.
+# This avoids discrepancies caused by occurrences assigned to administrative
+# units that are not intersected by the corresponding species polygons.
 specieslist_count <- species_admin_all %>%
   select(name_en, expected_rich, completeness_all) %>%
   rename(expected_rich_all = expected_rich,
@@ -1517,7 +1571,7 @@ specieslist_count <- species_admin_all %>%
     species_admin_1perc %>%
       select(name_en, expected_rich, completeness_all) %>%
       rename(expected_rich_1 = expected_rich,
-            completeness_all_1 = completeness_all), by = "name_en") %>% 
+             completeness_all_1 = completeness_all), by = "name_en") %>% 
   left_join(
     species_admin_05perc %>%
       select(name_en, expected_rich, completeness_all) %>%
@@ -1531,41 +1585,20 @@ specieslist_count <- species_admin_all %>%
              completeness_all_01 = completeness_all), by = "name_en"
   ) 
 
-# Completeness species-level
-completeness01 <- species_admin_01perc %>%
-  select(name_en, perc_01) %>%
-  unnest(perc_01) %>%
-  select(speciesKey, name_en) %>%
-  group_by(speciesKey) %>%
-  summarise(ua_total01 = n_distinct(name_en))
-
-completeness05 <- species_admin_05perc %>%
-  select(name_en, perc_05) %>%
-  unnest(perc_05) %>%
-  select(speciesKey, name_en) %>%
-  group_by(speciesKey) %>%
-  summarise(ua_total05 = n_distinct(name_en))
-
-completeness1 <- species_admin_1perc %>%
-  select(name_en, perc_1) %>%
-  unnest(perc_1) %>%
-  select(speciesKey, name_en) %>%
-  group_by(speciesKey) %>%
-  summarise(ua_total1 = n_distinct(name_en))
-
+# Save the nested list of observed species per administrative unit,
+# the species–administrative unit polygon intersection table,
+# and the nested datasets used to calculate administrative-unit completeness
+# under different spatial coverage thresholds.
 save(
-  specieslist_count,         # data.frame com as contagens por threshold
-  occ_nested,                # lista de todas ocorrencias 
-  species_admin_intersect,   # lista de todas as ocorrencias dos poligonos 
-  species_admin_all,         # lista de especies por und adm nest()
-  species_admin_occ_polygons,# lista de especies que tem occ&poligono nest()
-  keys_with_occ,             # chaves das especies que tem occ baixadas
-  species_admin_1perc,       # lista de especies com cobertura > 1% na und adm.
-  species_admin_05perc,      # lista de especies com cobertura > 0.5% na und adm
-  species_admin_01perc,      # lista de especies com cobertura > 0.1% na und adm
-  completeness01,
-  completeness05,
-  completeness1,
+  specieslist_count,         # Summary of species richness and completeness across coverage thresholds
+  occ_nested,                # Nested list of observed species per administrative unit
+  species_admin_intersect,   # Table of species distribution polygon intersections with administrative units
+  species_admin_all,         # Nested list of expected species per administrative unit, without a coverage threshold
+  species_admin_occ_polygons,# Nested list of species with both occurrence records and intersecting distribution polygons
+  keys_with_occ,             # Species keys for which occurrence records were retrieved
+  species_admin_1perc,       # Nested list of species whose polygons cover >=1% of each administrative unit
+  species_admin_05perc,      # Nested list of species whose polygons cover >=0.5% of each administrative unit
+  species_admin_01perc,      # Nested list of species whose polygons cover >=0.1% of each administrative unit
   file = file.path(
     local_directory,
     "00_raw_data",
