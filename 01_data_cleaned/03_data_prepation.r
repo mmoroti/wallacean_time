@@ -1,24 +1,160 @@
-library(tidyverse)
-library(sf)
-library(arrow)
+# Functions and packages ----
+build_wallacean_time <- function(
+    data_wallacean_all,
+    completeness,                 # speciesKey + ua_total (n_distinct(name_en) por espécie)
+    data_socieconomic_temporal,
+    data_humandensity_temporal,
+    countries_without_gdp = NULL, # data.frame com coluna name_en (opcional)
+    min_year   = 1500,
+    end_date   = as.POSIXct("2026-01-01", tz = "UTC"),
+    origin_cal = as.POSIXct("1756-01-01", tz = "UTC"),
+    seed       = NULL             # para reprodutibilidade do desempate aleatório
+) {
+  if (!is.null(seed)) set.seed(seed)
+  yr_secs <- 86400 * 365.25
+  
+  # completeness scenarios
+  comp <- completeness %>%
+    distinct(speciesKey, ua_total) %>%
+    mutate(
+      ua_total_75 = as.integer(ceiling(ua_total * 0.75)),
+      ua_total_50 = as.integer(ceiling(ua_total * 0.50))
+    )
+  
+  # occurences + variables
+  dat <- data_wallacean_all %>%
+    filter(year > min_year)
+  
+  if (!is.null(countries_without_gdp)) {
+    dat <- dat %>% filter(!name_en %in% countries_without_gdp$name_en)
+  }
+  
+  dat <- dat %>%
+    # espécie só pode ser encontrada depois de descrita
+    mutate(year_modified = if_else(year < YearOfDescription, YearOfDescription, year)) %>%
+    distinct(speciesKey, year_modified, name_en, .keep_all = TRUE) %>%
+    mutate(
+      year_modified = as.integer(year_modified),
+      month = if_else(is.na(month), 1L, as.integer(month)),
+      day   = if_else(is.na(day),   1L, as.integer(day)),
+      date  = as.POSIXct(make_datetime(year_modified, month, day), tz = "UTC") + seconds(1)
+    ) %>%
+    left_join(comp, by = "speciesKey") %>%
+    left_join(data_socieconomic_temporal, by = c("name_en", "year_modified" = "year")) %>%
+    left_join(
+      data_humandensity_temporal %>% select(speciesKey, year, HumanDensityTime),
+      by = c("speciesKey", "year_modified" = "year")
+    ) %>%
+    select(speciesKey, scientificName, Class, Order, Family,
+           name_en, date, year_modified, log_gdp_final, gdp_rank, gdp_percentile,
+           gdp_percentile_country,
+           BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
+           HumanDensityTime, Latitude, Elevation, ETA50K, AssessedStatus,
+           ua_total, ua_total_75, ua_total_50,
+           YearOfDescription, RangeSize, origin_of_data)
+  
+  # Chave aleatória só ordena os empates; o "empurrão" de +1s é o mesmo do
+  # loop original, só que vetorizado: c_i = max(d_i, c_{i-1} + 1)
+  dat <- dat %>%
+    mutate(.rand = runif(n())) %>%
+    arrange(speciesKey, date, .rand) %>%
+    group_by(speciesKey) %>%
+    distinct(name_en, date, .keep_all = TRUE) %>%
+    mutate(
+      .idx = row_number() - 1L,
+      .sec = cummax(as.numeric(date) - .idx) + .idx,
+      date = as.POSIXct(.sec, origin = "1970-01-01", tz = "UTC")
+    ) %>%
+    ungroup() %>%
+    select(-.rand, -.idx, -.sec)
+  
+  # tabela de tempo até o evento
+  tt <- dat %>%
+    group_by(speciesKey) %>%
+    arrange(date, .by_group = TRUE) %>%
+    mutate(
+      t.stop.date  = date,
+      t.start.date = lag(t.stop.date),
+      t.start.date = if_else(is.na(t.start.date),
+                             as.POSIXct(make_date(YearOfDescription, 1, 1), tz = "UTC"),
+                             t.start.date),
+      t.stop.date  = if_else(is.na(t.stop.date), end_date, t.stop.date),
+      event        = if_else(!duplicated(name_en), 1L, 0L),
+      ua_acumulada = cumsum(!duplicated(name_en)),
+      duracao_evento = as.numeric(difftime(t.stop.date, t.start.date, units = "secs")),
+      duracao_evento = if_else(duracao_evento <= 0, 1, duracao_evento),
+      t.start = cumsum(lag(duracao_evento, default = 0)) / yr_secs,
+      t.stop  = t.start + duracao_evento / yr_secs,
+      t.start.year = as.numeric(difftime(t.start.date, origin_cal, units = "secs")) / yr_secs + year(origin_cal),
+      t.stop.year  = as.numeric(difftime(t.stop.date,  origin_cal, units = "secs")) / yr_secs + year(origin_cal)
+    ) %>%
+    ungroup()
+  
+  # corte após o evento terminal, por cenário
+  cut_scenario <- function(df, ua_col) {
+    df %>%
+      filter(!is.na(.data[[ua_col]])) %>%
+      group_by(speciesKey) %>%
+      mutate(
+        WallaceCompletude = event == 1L & ua_acumulada == .data[[ua_col]],
+        # mantém linhas até (e incluindo) o primeiro evento terminal
+        .antes = cumsum(lag(WallaceCompletude, default = FALSE))
+      ) %>%
+      filter(.antes == 0) %>%
+      ungroup() %>%
+      mutate(WallaceCompletude = as.integer(WallaceCompletude)) %>%
+      select(speciesKey, Class, Order, Family, scientificName, name_en, date,
+             t.start.date, t.stop.date, t.start, t.stop, t.start.year, t.stop.year,
+             event, WallaceCompletude, log_gdp_final, gdp_rank, gdp_percentile,
+             gdp_percentile_country,
+             BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
+             HumanDensityTime, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize,
+             ua_total, ua_total_75, ua_total_50, origin_of_data, YearOfDescription)
+  }
+  
+  list(
+    c100 = cut_scenario(tt, "ua_total"),
+    c75  = cut_scenario(tt, "ua_total_75"),
+    c50  = cut_scenario(tt, "ua_total_50")
+  )
+}
 
-rm(list=ls()); gc() # clean local enviroment
+install.load.package <- function(x) {
+  if (!require(x, character.only = TRUE)) {
+    #renv::restore()
+    install.packages(x, repos = "http://cran.us.r-project.org")
+  }
+  require(x, character.only = TRUE)
+}
+
+## names of packages we want installed (if not installed yet) and loaded
+package_vec <- c(
+  "sf",
+  "tidyverse",
+  "arrow"
+)
+
+# executing install & load for each package
+sapply(package_vec, install.load.package)
 
 # Set directory 
-local_directory <- file.path("F:",
-                             "datasets_centrais",
-                             "wallacean_time") 
+rm(list = setdiff(ls(), c("build_wallacean_time",
+                          "cut_scenario"))); gc()
+local_directory <- file.path("C:",
+                             "Users", "Mathias-190925-2", "OneDrive",
+                             "Pesquisa", "wallacean_time") 
 
 # Load data ----
 # occurences data
 load(
-    file = file.path(
-      local_directory,
-      "01_data_cleaned",
-      "dataset_occurences.RData")
+  file = file.path(
+    local_directory,
+    "01_data_cleaned",
+    "dataset_occurences.RData")
 )
 
 rm(list = setdiff(ls(), c("local_directory",
+                          "build_wallacean_time",
                           "list_per_admunit",
                           "data_wallacean_unnested"))); gc()
 # trait data
@@ -48,10 +184,10 @@ load(
     local_directory,
     "00_raw_data",
     "tetrapods_list_sensitivity.RData"
-    )
   )
+)
 
-# Completeness list ----
+# Adm. unit completeness list ----
 # Amphibia
 rich_admunit_expected_amphibia <- species_admin_all %>%
   select(name_en, all_species) %>%
@@ -151,243 +287,220 @@ save(
   richness_completude_aves,
   richness_completude_mammalia,
   file = file.path(
-   local_directory,
-   "02_data_analysis",
-   "richness_completude_220.RData")
+    local_directory,
+    "02_data_analysis",
+    "richness_completude.RData")
 )
 
-# Species count per adm. unit ----
-list_per_admunit <- species_admin_all %>%
+## Species-level completeness ----
+# Species-level completeness is based on the number of administrative units
+# expected to contain each species according to its distribution polygons.
+# For each species, we count the distinct administrative units where its
+# polygon intersects the unit (all polygons) or reaches the specified minimum
+# coverage threshold (0.1%, 0.5%, or 1%). These counts represent the expected
+# geographic distribution of each species across administrative units and
+# serve as the denominator for calculating species-level completeness.
+completeness_all <- species_admin_occ_polygons %>%
   filter(!name_en %in% countries_without_gdp$name_en) %>%
-  select(name_en, all_species) %>%
-  unnest(all_species)
-
-sp_count <- list_per_admunit %>% 
+  select(name_en, occ_polygons) %>%
+  unnest(occ_polygons) %>%
+  select(speciesKey, name_en) %>%
+  distinct() %>%
   group_by(speciesKey) %>%
-  mutate(ua_total = n()) %>%
-  distinct(speciesKey, .keep_all = TRUE) %>%
-  select(speciesKey, ua_total)
-any(is.na(data_wallacean_unnested$year))
-# na analise de sensibilidade, checar 2421643
-
-# Create time-to-event table ----
-data_wallacean_unnested_modified <- data_wallacean_unnested %>%
-  #filter(speciesKey %in% c("2426805")) %>%
-  #filter(speciesKey %in% c("2433011", "2423581", "2472164","2426805")) %>% 
-  filter(year > 1500) %>% 
-  # filter only adm unit with GDP information
-  filter(!name_en %in% countries_without_gdp$name_en) %>%
-  # spp so pode ser encontrada depois de ja ter sido descrita
-  mutate(year_modified = if_else(year < YearOfDescription, YearOfDescription, year)) %>%
-  distinct(speciesKey, year_modified, name_en, .keep_all = TRUE) %>%
-  relocate(year, YearOfDescription, year_modified, .after = species) %>%
-  mutate(
-    # Substitui valores ausentes com o mínimo possível válido
-    year_modified = as.integer(year_modified),
-    month = if_else(is.na(month), 1L, as.integer(month)),
-    day = if_else(is.na(day), 1L, as.integer(day)),
-    # cria uma data completa
-    date = make_datetime(year_modified, month, day),
-    date = as.POSIXct(date, tz = "UTC"),
-    date = date + seconds(1) # TODO CHECAR SPP QUE SOH TEM ANO NO PRIMEIRO REGISTRO
-  ) %>%
-  # completeness sensitivity 
-  left_join(sp_count, by = "speciesKey") %>% # adm. unit count
-  left_join(completeness01, by = "speciesKey") %>%
-  left_join(completeness05, by = "speciesKey") %>%
-  left_join(completeness1, by = "speciesKey") %>%
-  # Join socieconomic data with occurences
-  # TODO: aqui tem uma premissa, nao necessariamente a ocorrencia
-  # representa o ano que o registro aconteceu. devido a colocarmos o ano de ocorrencia
-  # sempre depois da descricao. entao se usarmos "year", teremos NA's porque
-  # mudamos o ano de ocorrencia para ser sempre depois da descricao (year_modified).
-  left_join(data_socieconomic_temporal, by = c("name_en", "year_modified" = "year")) %>%
-  # join human density over time
-  left_join(data_humandensity_temporal %>%
-              select(speciesKey, year, HumanDensityTime),
-            by = c("speciesKey", "year_modified" = "year")) %>%
-  select(speciesKey, scientificName, Class, Order, Family, 
-         name_en, date, year_modified, log_gdp_final, gdp_rank, gdp_percentile,
-         BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
-         HumanDensityTime, Latitude, Elevation, ETA50K, AssessedStatus,
-         ua_total, ua_total01, ua_total05, ua_total1,
-         YearOfDescription, RangeSize, origin_of_data)
-
-data_wallacean_unnested_modified <- data_wallacean_unnested_modified %>%
-  group_by(speciesKey) %>%
-  #mutate(date = as.Date(date)) %>%
-  arrange(date, .by_group = TRUE) %>%
-  # REMOVE COMBINATIONS OF SPECIESKEY-ADMUNIT-DATE
-  distinct(name_en, date, .keep_all = TRUE) %>%
-  # Adiciona secundos sequenciais (0, 1, 2...) para cada data repetida
-  # TODO uma premissa chatinha porque algo pode ter vindo antes,
-  # como a escala da analise é em anos, acho que acabara ficando diluido
-  # ao diferenciar as ocorrencias em segundos!
-  mutate(
-    date_corrigida = {
-      datas <- date
-      if (length(datas) > 1) {
-        for (i in 2:length(datas)) {
-          if (datas[i] <= datas[i - 1]) {
-            datas[i] <- datas[i - 1] + seconds(1)
-          }
-        }
-      }
-      datas
-    }
-  ) %>%
-  mutate(date = date_corrigida) %>%
-  select(-date_corrigida) %>%
-  ungroup()
-
-# Create time to event table 
-df_wallacean_time <- data_wallacean_unnested_modified %>%
-  #filter(ua_total > 2) %>% # pelo menos tres unidades administrativas
-  group_by(speciesKey) %>%
-  arrange(date, .by_group = TRUE) %>%
-  mutate(
-    # se o ano da descrição for anterior a 1900, inicia em 1900
-    #ano_descricao = if_else(YearOfDescription < 1900, 1900, YearOfDescription),
-    # a data do stop corresponde a data da ocorrencia (evento ou censura)
-    #t.stop.date = as.Date(date),
-    t.stop.date = as.POSIXct(date, tz = "UTC"),
-    # a data de start corresponde a ultima data de ocorrencia
-    t.start.date = lag(t.stop.date),
-    # o primeiro e o ultimo valor sempre terminam com NA, por isso para cada
-    # especie, a data de inicio corresponde a descricao da especie - ou seja - 
-    # inicia a possibilidade de geolocacao
-    t.start.date = if_else(is.na(t.start.date), make_date(YearOfDescription, 1,1), t.start.date),
-    t.stop.date = if_else(is.na(t.stop.date), make_date(2026, 1,1), t.stop.date),
-    # event
-    event = if_else(!duplicated(name_en), 1L, 0L),
-    ua_acumulada = cumsum(!duplicated(name_en)),
-    # se 1L em event, a wallacecompletude eh junto do ultimo evento
-    # se 0L em event, a wallacecompletude eh depois do ultimo evento
-    WallaceCompletude = if_else(event == 1L & ua_acumulada == ua_total, 1L, 0L),
-    WallaceCompletude01 = if_else(event == 1L & ua_acumulada == ua_total01, 1L, 0L),
-    WallaceCompletude05 = if_else(event == 1L & ua_acumulada == ua_total05, 1L, 0L),
-    WallaceCompletude1 = if_else(event == 1L & ua_acumulada == ua_total1, 1L, 0L)) %>%
-    #Wallace75 = if_else(event == 1L & ua_acumulada >= ua_total * 0.75, 1L, 0L),
-    #Wallace50 = if_else(event == 1L & ua_acumulada >= ua_total * 0.5, 1L, 0L)) %>%
-  # cria o t.start e o t.stop em dias e transforma em anos
-  mutate(
-    duracao_evento = as.numeric(difftime(t.stop.date, t.start.date, units = "secs")),
-    duracao_evento = if_else(duracao_evento <= 0, 1, duracao_evento),
-    t.start = cumsum(lag(duracao_evento, default = 0)) / (86400 * 365.25),
-    t.stop  = t.start + duracao_evento / (86400 * 365.25)
-  ) %>% 
-  mutate(
-    t.start.cal = as.numeric(difftime(t.start.date,
-                                      as.POSIXct("1756-01-01 00:00:00", tz="UTC"),
-                                      units = "secs")) / (365.25 * 24 * 3600),
-    t.stop.cal  = as.numeric(difftime(t.stop.date,
-                                      as.POSIXct("1756-01-01 00:00:00", tz="UTC"), 
-                                      units = "secs")) / (365.25 * 24 * 3600)
-  ) %>%
-  mutate(
-    t.start.year = t.start.cal + 1756,
-    t.stop.year  = t.stop.cal  + 1756
+  summarise(
+    ua_total = n_distinct(name_en),
+    .groups = "drop"
   )
 
-df_wallacean_100 <- df_wallacean_time %>%
-  filter(!is.na(WallaceCompletude)) %>% # spp sem poligono que entraram aqui
-  # remove todos eventos apos completude 
-  mutate(
-    linha = row_number(),
-    pos_completude = if (any(WallaceCompletude == 1)) min(linha[WallaceCompletude == 1]) else Inf
-  ) %>%
-  filter(linha <= pos_completude) %>%
-  ungroup() %>%
-  select(speciesKey, Class, Order, Family, scientificName, name_en, date,
-         t.start.date, t.stop.date, t.start, t.stop, t.start.year, t.stop.year,
-         event, WallaceCompletude, log_gdp_final, gdp_rank, gdp_percentile,
-         BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
-         HumanDensityTime, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
-         ua_total, ua_total01, ua_total05, ua_total1, origin_of_data, YearOfDescription) # 24969 spp
+completeness01 <- species_admin_01perc %>%
+  filter(!name_en %in% countries_without_gdp$name_en) %>%
+  select(name_en, perc_01) %>%
+  unnest(perc_01) %>%
+  select(speciesKey, name_en) %>%
+  distinct() %>%
+  group_by(speciesKey)  %>%
+  summarise(
+    ua_total = n_distinct(name_en),
+    .groups = "drop"
+  )
 
-df_wallacean_01 <- df_wallacean_time %>%
-  filter(!is.na(WallaceCompletude01)) %>% # spp sem poligono que entraram aqui
-  # remove com cobertura pequena dos poligonos
-  select(-WallaceCompletude, -WallaceCompletude05, -WallaceCompletude1) %>%
-  remove_missing() %>%
-  # remove todos eventos apos completude 
-  mutate(
-    linha = row_number(),
-    pos_completude = if (any(WallaceCompletude01 == 1)) min(linha[WallaceCompletude01 == 1]) else Inf
-  ) %>%
-  filter(linha <= pos_completude) %>%
-  ungroup() %>%
-  select(speciesKey, Class, Order, Family, scientificName, name_en, date,
-         t.start.date, t.stop.date, t.start, t.stop, t.start.year, t.stop.year,
-         event, WallaceCompletude01, log_gdp_final, gdp_rank, gdp_percentile,
-         BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
-         HumanDensityTime, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
-         ua_total01, origin_of_data, YearOfDescription)
+completeness05 <- species_admin_05perc %>%
+  filter(!name_en %in% countries_without_gdp$name_en) %>%
+  select(name_en, perc_05) %>%
+  unnest(perc_05) %>%
+  select(speciesKey, name_en) %>%
+  distinct() %>%
+  group_by(speciesKey)  %>%
+  summarise(
+    ua_total = n_distinct(name_en),
+    .groups = "drop"
+  )
 
-df_wallacean_05 <- df_wallacean_time %>%
-  filter(!is.na(WallaceCompletude05)) %>% # spp sem poligono que entraram aqui
-  # remove com cobertura pequena dos poligonos
-  select(-WallaceCompletude, -WallaceCompletude01, -WallaceCompletude1) %>%
-  remove_missing() %>%
-  # remove todos eventos apos completude 
-  mutate(
-    linha = row_number(),
-    pos_completude = if (any(WallaceCompletude05 == 1)) min(linha[WallaceCompletude05 == 1]) else Inf
-  ) %>%
-  filter(linha <= pos_completude) %>%
-  ungroup() %>%
-  select(speciesKey, Class, Order, Family, scientificName, name_en, date, 
-         t.start.date, t.stop.date, t.start,t.stop, t.start.year, t.stop.year,
-         event, WallaceCompletude05, log_gdp_final, gdp_rank, gdp_percentile,
-         BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
-         HumanDensityTime, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
-         ua_total05, origin_of_data, YearOfDescription) 
+completeness1 <- species_admin_1perc %>%
+  filter(!name_en %in% countries_without_gdp$name_en) %>%
+  select(name_en, perc_1) %>%
+  unnest(perc_1) %>%
+  select(speciesKey, name_en) %>%
+  distinct() %>%
+  group_by(speciesKey)  %>%
+  summarise(
+    ua_total = n_distinct(name_en),
+    .groups = "drop"
+  ) 
 
-df_wallacean_1 <- df_wallacean_time %>%
-  filter(!is.na(WallaceCompletude1)) %>% # spp sem poligono que entraram aqui
-  # remove com cobertura pequena dos poligonos
-  select(-WallaceCompletude, -WallaceCompletude01, -WallaceCompletude05) %>%
-  remove_missing() %>%
-  # remove todos eventos apos completude 
-  mutate(
-    linha = row_number(),
-    pos_completude = if (any(WallaceCompletude1 == 1)) min(linha[WallaceCompletude1 == 1]) else Inf
-  ) %>%
-  filter(linha <= pos_completude) %>%
-  ungroup() %>%
-  select(speciesKey, Class, Order, Family, scientificName, name_en, date, 
-         t.start.date, t.stop.date, t.start,t.stop, t.start.year, t.stop.year,
-         event, WallaceCompletude1, log_gdp_final, gdp_rank, gdp_percentile,
-         BodyLength_mm, BodyMass_g, Nocturnality, Verticality,
-         HumanDensityTime, Latitude, Elevation, ETA50K, AssessedStatus, RangeSize, 
-         ua_total1, origin_of_data, YearOfDescription) 
+# Species list filtering ----
+# Without filtering, the occurrences could be counted in an administrative
+# unit that is not part of the species' expected distribution according to
+# its distribution polygons. Therefore, temporal completeness at the species
+# level should be calculated only across administrative units considered
+# expected. This prevents occurrences in unexpected units from artificially
+# contributing to the completeness of the expected distribution.
+#
+# For example: 
+# SpeciesKey 5231640 (Carduelis tristis, American Goldfinch): occurrence records
+# were originally assigned to New Mexico, but the current administrative
+# boundary layer assigns them to Oklahoma. The records are approximately
+# 68–72 m from the New Mexico boundary.
+expected_admin_all <- species_admin_occ_polygons %>%
+  select(name_en, occ_polygons) %>%
+  unnest(occ_polygons) %>%
+  select(speciesKey, name_en) %>%
+  distinct()
 
-# TODO Precisa pensar em validacoes para atender o modelo de evento
-df_wallacean_time %>%
-  filter(t.start >= t.stop) %>% View()
+expected_admin_01 <- species_admin_01perc %>%
+  select(name_en, perc_01) %>%
+  unnest(perc_01) %>%
+  select(speciesKey, name_en) %>%
+  distinct()
 
-table(df_wallacean_time$WallaceCompletude) 
-# 1988 completeness sem threshold
-# 2546 completeness com 0.1%
-# 3000 completeness com 0.5%
-# 3294 completeness com 1%
+expected_admin_05 <- species_admin_05perc %>%
+  select(name_en, perc_05) %>%
+  unnest(perc_05) %>%
+  select(speciesKey, name_en) %>%
+  distinct()
 
-table(df_wallacean_time$WallaceCompletude01) 
-table(df_wallacean_time$WallaceCompletude05) 
-table(df_wallacean_time$WallaceCompletude1) 
+expected_admin_1 <- species_admin_1perc %>%
+  select(name_en, perc_1) %>%
+  unnest(perc_1) %>%
+  select(speciesKey, name_en) %>%
+  distinct()
 
+# Create time-to-event table ----
+## Uncut dataset ----
+data_wallacean_all <- data_wallacean_unnested %>%
+  # Remove countries without economic data
+  filter(!name_en %in% countries_without_gdp$name_en) %>%
+  # Retain occurrences within expected administrative units
+  semi_join(expected_admin_all, by = c("speciesKey", "name_en"))
 
-# bons exemplos para checar problemas
-# 2433011
-# 2423581
-# 2472164
+df_time_wallacean <- build_wallacean_time(
+  data_wallacean_all, 
+  completeness_all,
+  data_socieconomic_temporal,
+  data_humandensity_temporal,
+  countries_without_gdp = countries_without_gdp,
+  seed = 42
+)
 
-save(df_wallacean_100,
-     df_wallacean_01,
-     df_wallacean_05,
-     df_wallacean_1,
-    file = file.path(
-      local_directory,
-      "02_data_analysis",
-      "data_wallacean_time_220.RData")
+save(df_time_wallacean,
+     file = file.path(
+       local_directory,
+       "02_data_analysis",
+       "data_wallacean_time.RData")
+)
+
+## Cut 0.1% ----
+rm(list = setdiff(ls(), c("local_directory",
+                          "countries_without_gdp",
+                          "completeness01",
+                          "expected_admin_01",
+                          "completeness05",
+                          "expected_admin_05",
+                          "completeness1",
+                          "expected_admin_1",
+                          "build_wallacean_time",
+                          "data_socieconomic_temporal",
+                          "data_humandensity_temporal",
+                          "data_wallacean_unnested"))); gc()
+
+data_wallacean_01 <- data_wallacean_unnested %>%
+  filter(!name_en %in% countries_without_gdp$name_en) %>%
+  semi_join(expected_admin_01, by = c("speciesKey", "name_en"))
+
+df_time_wallacean01 <- build_wallacean_time(
+  data_wallacean_01, 
+  completeness01,
+  data_socieconomic_temporal,
+  data_humandensity_temporal,
+  countries_without_gdp = countries_without_gdp,
+  seed = 42
+)
+
+save(df_time_wallacean01,
+     file = file.path(
+       local_directory,
+       "02_data_analysis",
+       "data_wallacean_time01.RData")
+)
+
+## Cut 0.5% ----
+rm(list = setdiff(ls(), c("local_directory",
+                          "countries_without_gdp",
+                          "completeness05",
+                          "expected_admin_05",
+                          "completeness1",
+                          "expected_admin_1",
+                          "data_socieconomic_temporal",
+                          "data_humandensity_temporal",
+                          "data_wallacean_unnested",
+                          "build_wallacean_time"))); gc()
+
+data_wallacean_05 <- data_wallacean_unnested %>%
+  filter(!name_en %in% countries_without_gdp$name_en) %>%
+  semi_join(expected_admin_05, by = c("speciesKey", "name_en"))
+
+df_time_wallacean05 <- build_wallacean_time(
+  data_wallacean_05, 
+  completeness05,
+  data_socieconomic_temporal,
+  data_humandensity_temporal,
+  countries_without_gdp = countries_without_gdp,
+  seed = 42
+)
+
+save(df_time_wallacean05,
+     file = file.path(
+       local_directory,
+       "02_data_analysis",
+       "data_wallacean_time05.RData")
+)
+
+## Cut 1% ----
+rm(list = setdiff(ls(), c("local_directory",
+                          "countries_without_gdp",
+                          "completeness1",
+                          "expected_admin_1",
+                          "data_socieconomic_temporal",
+                          "data_humandensity_temporal",
+                          "data_wallacean_unnested",
+                          "build_wallacean_time"))); gc()
+
+data_wallacean_1 <- data_wallacean_unnested %>%
+  filter(!name_en %in% countries_without_gdp$name_en) %>%
+  semi_join(expected_admin_1, by = c("speciesKey", "name_en"))
+
+df_time_wallacean1 <- build_wallacean_time(
+  data_wallacean_1, 
+  completeness1,
+  data_socieconomic_temporal,
+  data_humandensity_temporal,
+  countries_without_gdp = countries_without_gdp,
+  seed = 42
+)
+
+save(df_time_wallacean1,
+     file = file.path(
+       local_directory,
+       "02_data_analysis",
+       "data_wallacean_time1.RData")
 )
